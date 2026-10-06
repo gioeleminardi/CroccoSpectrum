@@ -1,0 +1,127 @@
+[
+  {
+    "bytes": 400000000,
+    "allocated_bytes": 400003072,
+    "operation": "spectrum",
+    "cache": "advised_cold",
+    "elapsed_seconds": 0.000548545,
+    "process_wall_seconds": 0.00486391600134084,
+    "peak_rss_kib": 19916,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 0.07689174499682849
+  },
+  {
+    "bytes": 400000000,
+    "allocated_bytes": 400003072,
+    "operation": "average",
+    "cache": "advised_cold",
+    "elapsed_seconds": 1.029476305,
+    "process_wall_seconds": 1.0337275749989203,
+    "peak_rss_kib": 22548,
+    "throughput_MB_s": 388.5470681134327,
+    "fixture_extension_seconds": 0.07689174499682849
+  },
+  {
+    "bytes": 400000000,
+    "allocated_bytes": 400003072,
+    "operation": "spectrum",
+    "cache": "warm",
+    "elapsed_seconds": 0.000385067,
+    "process_wall_seconds": 0.0038114310009405017,
+    "peak_rss_kib": 20428,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 0.07689174499682849
+  },
+  {
+    "bytes": 400000000,
+    "allocated_bytes": 400003072,
+    "operation": "average",
+    "cache": "warm",
+    "elapsed_seconds": 1.012440282,
+    "process_wall_seconds": 1.0168441809946671,
+    "peak_rss_kib": 22992,
+    "throughput_MB_s": 395.08503080283407,
+    "fixture_extension_seconds": 0.07689174499682849
+  },
+  {
+    "bytes": 400000000,
+    "operation": "GUI first preview and paint, including 100 ms settle",
+    "process_wall_seconds": 0.13795808100258
+  },
+  {
+    "bytes": 4000000000,
+    "allocated_bytes": 4000002048,
+    "operation": "spectrum",
+    "cache": "advised_cold",
+    "elapsed_seconds": 0.0010388,
+    "process_wall_seconds": 0.00528883800143376,
+    "peak_rss_kib": 20428,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 0.44170684599521337
+  },
+  {
+    "bytes": 4000000000,
+    "allocated_bytes": 4000002048,
+    "operation": "average",
+    "cache": "advised_cold",
+    "elapsed_seconds": 10.159782833,
+    "process_wall_seconds": 10.164047307996952,
+    "peak_rss_kib": 23060,
+    "throughput_MB_s": 393.7092028195324,
+    "fixture_extension_seconds": 0.44170684599521337
+  },
+  {
+    "bytes": 4000000000,
+    "allocated_bytes": 4000002048,
+    "operation": "spectrum",
+    "cache": "warm",
+    "elapsed_seconds": 0.000380698,
+    "process_wall_seconds": 0.004127157000766601,
+    "peak_rss_kib": 20684,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 0.44170684599521337
+  },
+  {
+    "bytes": 4000000000,
+    "allocated_bytes": 4000002048,
+    "operation": "average",
+    "cache": "warm",
+    "elapsed_seconds": 10.00723821,
+    "process_wall_seconds": 10.011299933001283,
+    "peak_rss_kib": 22812,
+    "throughput_MB_s": 399.7106810151569,
+    "fixture_extension_seconds": 0.44170684599521337
+  },
+  {
+    "bytes": 4000000000,
+    "operation": "GUI first preview and paint, including 100 ms settle",
+    "process_wall_seconds": 0.13097950399969704
+  },
+  {
+    "bytes": 40000000000,
+    "allocated_bytes": 40000000000,
+    "operation": "spectrum",
+    "cache": "advised_cold",
+    "elapsed_seconds": 0.000517456,
+    "process_wall_seconds": 0.017034509997756686,
+    "peak_rss_kib": 20684,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 4.806109971999831
+  },
+  {
+    "bytes": 40000000000,
+    "allocated_bytes": 40000000000,
+    "operation": "spectrum",
+    "cache": "warm",
+    "elapsed_seconds": 0.00035543,
+    "process_wall_seconds": 0.0034331780043430626,
+    "peak_rss_kib": 20684,
+    "throughput_MB_s": null,
+    "fixture_extension_seconds": 4.806109971999831
+  },
+  {
+    "bytes": 40000000000,
+    "operation": "GUI first preview and paint, including 100 ms settle",
+    "process_wall_seconds": 0.14983809499972267
+  }
+]

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CroccoSpectrum
+Comment=Analyze offline real and quadrature RF recordings
+Exec=croccospectrum %f
+Icon=croccospectrum
+StartupWMClass=CroccoSpectrum
+Terminal=false
+Categories=Science;Engineering;
+MimeType=application/octet-stream;

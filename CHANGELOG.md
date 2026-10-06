@@ -1,0 +1,48 @@
+# Changelog
+
+This file records release history and behavior changes. See
+[Feature status](FEATURE_STATUS.md) for current capabilities and
+[Validation](docs/VALIDATION.md) for test evidence and coverage.
+
+## 0.1.1 — 2026-10-06 — Initial public release
+
+- Native Linux desktop application built with C++20, Qt 6 Widgets, and FFTW.
+- Read-only access to large recordings with bounded reads, 64-bit sample ranges,
+  input-change detection, and explicit format interpretation.
+- Real/IQ/QI decoding for signed and unsigned 8/16/24/32/64-bit integers and
+  IEEE binary16/32/64, with both byte orders.
+- Raw binary, single-stream SigMF core metadata, and exported recording
+  descriptor import.
+- Power-of-two FFTs from 256 to 1,048,576 points, four window functions,
+  configurable overlap, DC removal, and spectral inversion.
+- Spectrum and PSD scaling in dBFS and dBFS/Hz, with documented normalization
+  and real-input one-sided scaling.
+- Exact interval and whole-recording spectral averages, max hold, and a
+  waterfall overview that processes every required window.
+- Waveform inspection and exact min/max envelopes across selected intervals.
+- Dockable spectrum, waterfall, average/max-hold, and waveform panels with linked
+  navigation, sample/time selection, frequency zoom/pan, palettes, and color limits.
+- Background analysis and exports with progress reporting, cancellation,
+  stale-result protection, and a bounded 64 MiB preview cache.
+- Optional UTC capture timestamps and frequency axes that account for retunes
+  and unknown center frequencies.
+- Atomic JSON preferences and sessions, persisted workspace layouts, bookmarks,
+  and lossless 64-bit sample indices.
+- Numeric CSV, plot PNG with embedded metadata, and byte-preserving sample-range
+  exports with sidecars, trimmed capture segments, and annotations.
+- Transactional export publication that refuses existing output paths and
+  discards cancelled writes.
+- Headless command-line tools for inspection, spectra, averages, waveforms,
+  and sample exports.
+- Embedded application artwork and Linux desktop launcher integration.
+- Portable Linux folder and AppImage packages with bundled dependencies,
+  license notices, complete application/dependency sources, and checksums.
+- GitHub and Gitea CI builds for Release, Debug, and ASAN/UBSAN configurations,
+  with downloadable artifacts and test reports.
+- Pinned CI actions and packaging downloads, verified runtime checksums, and
+  offline package smoke checks on Ubuntu and Fedora.
+- Core and GUI integration tests, 167 independent NumPy/SciPy numerical checks,
+  parser stress tests, sanitizer procedures, and sustained-use test tools.
+- Installation, analysis, architecture, testing, and benchmark documentation.
+  Recorded test environments and coverage are detailed in
+  [Validation](docs/VALIDATION.md).

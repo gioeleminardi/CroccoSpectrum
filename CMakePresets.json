@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {"name": "debug", "generator": "Ninja", "binaryDir": "${sourceDir}/build/debug", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}},
+    {"name": "release", "generator": "Ninja", "binaryDir": "${sourceDir}/build/release", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}},
+    {"name": "asan", "inherits": "debug", "binaryDir": "${sourceDir}/build/asan", "cacheVariables": {"RF_ENABLE_ASAN": "ON"}},
+    {"name": "tsan", "inherits": "debug", "binaryDir": "${sourceDir}/build/tsan", "cacheVariables": {"RF_ENABLE_TSAN": "ON"}}
+  ],
+  "buildPresets": [
+    {"name": "debug", "configurePreset": "debug"},
+    {"name": "release", "configurePreset": "release"},
+    {"name": "asan", "configurePreset": "asan"},
+    {"name": "tsan", "configurePreset": "tsan"}
+  ],
+  "testPresets": [
+    {"name": "debug", "configurePreset": "debug", "output": {"outputOnFailure": true}},
+    {"name": "release", "configurePreset": "release", "output": {"outputOnFailure": true}},
+    {"name": "asan", "configurePreset": "asan", "output": {"outputOnFailure": true}}
+  ]
+}

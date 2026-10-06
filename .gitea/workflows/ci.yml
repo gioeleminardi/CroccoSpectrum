@@ -1,0 +1,74 @@
+name: Build, test and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Register an amd64 runner with this label, Node 20+, and Docker access.
+# Build containers receive source via the API, not host-path bind mounts.
+jobs:
+  verify:
+    name: All targets (${{ matrix.configuration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, asan]
+    env:
+      RF_CI_COMMIT: ${{ gitea.sha }}
+    steps:
+      - name: Check out source
+        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build every target and run all tests
+        run: bash ci/build.sh "${{ matrix.configuration }}"
+      - name: Upload development binaries and checksums
+        # The Gitea-compatible v4 action supports the artifact service on Gitea 1.22+.
+        uses: https://github.com/ChristopherHX/gitea-upload-artifact@81f940d004763f986ba3582c007fd842dd5cb0d7
+        with:
+          name: CroccoSpectrum-linux-amd64-${{ matrix.configuration }}
+          path: dist/ci/${{ matrix.configuration }}/packages/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Upload build and test reports
+        if: always()
+        uses: https://github.com/ChristopherHX/gitea-upload-artifact@81f940d004763f986ba3582c007fd842dd5cb0d7
+        with:
+          name: reports-${{ matrix.configuration }}
+          path: dist/ci/${{ matrix.configuration }}/reports/
+          if-no-files-found: warn
+          retention-days: 30
+
+  release:
+    name: Portable Linux amd64 packages
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RF_CI_COMMIT: ${{ gitea.sha }}
+    steps:
+      - name: Check out source
+        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build, test, package and check supported distributions
+        run: bash ci/build.sh release
+      - name: Upload portable packages, all target outputs and sources
+        uses: https://github.com/ChristopherHX/gitea-upload-artifact@81f940d004763f986ba3582c007fd842dd5cb0d7
+        with:
+          name: CroccoSpectrum-linux-amd64-release
+          path: dist/ci/release/packages/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Upload package verification and test reports
+        if: always()
+        uses: https://github.com/ChristopherHX/gitea-upload-artifact@81f940d004763f986ba3582c007fd842dd5cb0d7
+        with:
+          name: reports-release
+          path: dist/ci/release/reports/
+          if-no-files-found: warn
+          retention-days: 30

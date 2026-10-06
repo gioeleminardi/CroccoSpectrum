@@ -1,0 +1,6 @@
+/.git
+/.cache
+/build
+/dist
+**/__pycache__
+aqtinstall.log
