@@ -1,10 +1,23 @@
 # Validation evidence
 
-Recorded checks for CroccoSpectrum 0.1.0 and 0.1.1 as of 2026-10-06.
+Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
+0.1.2 as of 2026-10-07.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Waterfall hover included in 0.1.2: all four CTest suites pass on Fedora 44 in the
+  Debug build with Qt 6.11.2. GUI checks cover frame 0, first/middle/last-row
+  highlight geometry, rapid hover and selection/DSP changes, zoom preservation,
+  known/unknown capture frequencies, invalid windows, sampled/exact overviews,
+  uninterrupted averages/exports, and displayed-frame CSV bins/PNG metadata.
+  The rendered hover screenshot was visually inspected.
+- Shared waveform cursor and click freeze: all four Fedora Debug CTest suites
+  pass. Checks cover vertical marker geometry above 2^53, docked/floating
+  waveform interaction, locking/releasing from either plot, frozen markers after
+  pointer exit, ignored right/margin clicks, selection reset, double-click seek,
+  and local waveform previews beyond the initial region while retaining exact
+  full-selection waveforms. The frozen-frame screenshot was visually inspected.
 - CroccoSpectrum 0.1.1 rebrand: all four Ubuntu-baseline CTest suites pass,
   including embedded icon/logo loading, About-dialog rendering and legacy
   preference migration. Installed and portable launcher icons match the project
@@ -57,6 +70,11 @@ Performance and original sanitizer evidence above was collected for 0.1.0.
 The local CI runs add fresh 0.1.1 Release/Debug and ASAN/UBSAN evidence. TSAN was
 not repeated for the CI change; the numerical algorithms and recording/session
 formats remain unchanged.
+
+The synchronized frame and freeze changes included in 0.1.2 were checked in the
+Fedora Debug build before the version bump. No build or package qualification
+was completed for the version bump; the older sanitizer, Qt 6.4 compatibility,
+packaging, and benchmark evidence does not include these changes.
 
 Sanitizer checks used the Ubuntu builder with compiler-matched runtimes.
 Build/test logs are generated under the ignored `build/` directory.

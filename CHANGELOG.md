@@ -4,6 +4,18 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.1.2 — 2026-10-07 — Synchronized frame inspection
+
+- Hovering the waterfall highlights one row and displays its exact FFT window
+  in the frequency spectrum, preserving frequency zoom/pan. New recordings
+  start at frame 0; leaving the waterfall retains the last spectrum.
+- Hover analysis uses a separate background controller so averages and exports
+  continue. Spectrum exports and retune-aware labels follow the displayed frame.
+- Waveform hover shares the spectrum frame and waterfall highlight, with a
+  vertical waveform marker. Clicking either time plot freezes both markers
+  and the spectrum; the next click resumes following the pointer. Bounded
+  waveform previews follow frames outside their current range.
+
 ## 0.1.1 — 2026-10-06 — Initial public release
 
 - Native Linux desktop application built with C++20, Qt 6 Widgets, and FFTW.

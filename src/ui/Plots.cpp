@@ -81,11 +81,12 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
 }
-void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result)
+void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
 {
     preview_ = std::move(result);
     average_.reset();
-    resetFrequency();
+    if (resetZoom)
+        resetFrequency();
     update();
 }
 void SpectrumPlot::setAverage(std::shared_ptr<const AverageResult> result, bool maxHold)
@@ -154,11 +155,13 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
     base(painter, *this,
          average_ ? (maxHold_ ? "MAX HOLD · complete interval pass"
                               : "AVERAGE SPECTRUM · linear-power mean")
-                  : "FREQUENCY SPECTRUM · exact first window");
+                  : preview_ ? QString("FREQUENCY SPECTRUM · exact window at frame %1")
+                                   .arg(preview_->spectrumStart)
+                             : "FREQUENCY SPECTRUM");
     if (power.empty() || frequency.empty()) {
         painter.setPen(foreground);
         painter.drawText(area(*this), Qt::AlignCenter,
-                         preview_ ? "Invalid/discontinuous first window" : "Open an RF recording");
+                         preview_ ? "Invalid/discontinuous window" : "Open an RF recording");
         return;
     }
     const auto plot = area(*this);
@@ -290,6 +293,8 @@ WaterfallPlot::WaterfallPlot(QWidget *parent) : QWidget(parent)
 void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate)
 {
     result_ = std::move(result);
+    hoveredRow_ = -1;
+    frameFrozen_ = false;
     sampleRate_ = sampleRate;
     if (result_ && result_->frequencies.size() > 1) {
         left_ = result_->frequencies.front();
@@ -312,9 +317,23 @@ void WaterfallPlot::setFrequencyRange(double left, double right)
     right_ = right;
     update();
 }
+void WaterfallPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool frozen)
+{
+    frameFrozen_ = frozen;
+    hoveredRow_ = -1;
+    if (result_ && frame && *frame >= result_->range.begin && *frame < result_->range.end) {
+        const auto row = std::upper_bound(result_->rowStarts.begin(), result_->rowStarts.end(),
+                                          *frame);
+        if (row != result_->rowStarts.begin())
+            hoveredRow_ = static_cast<int>(row - result_->rowStarts.begin() - 1);
+    }
+    update();
+}
 void WaterfallPlot::clear()
 {
     result_.reset();
+    hoveredRow_ = -1;
+    frameFrozen_ = false;
     image_ = {};
     update();
 }
@@ -355,6 +374,12 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
                         (right_ - left_) / (fullRight - fullLeft) * image_.width(),
                         image_.height());
     painter.drawImage(plot, image_, source);
+    if (hoveredRow_ >= 0) {
+        const double rowHeight = plot.height() / static_cast<double>(result_->rowStarts.size());
+        painter.fillRect(QRectF(plot.left(), plot.top() + hoveredRow_ * rowHeight, plot.width(),
+                                rowHeight),
+                         QColor(255, 255, 255, frameFrozen_ ? 180 : 90));
+    }
     painter.setPen(foreground);
     const double timeScale = static_cast<double>(result_->range.end) / sampleRate_ < 0.1 ? 1000 : 1;
     for (int tick = 0; tick <= 4; ++tick) {
@@ -383,35 +408,59 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
                          QPointF(legend.right(), legend.top() + y));
     }
 }
+std::optional<std::size_t> WaterfallPlot::rowAt(const QPointF &position) const
+{
+    if (!result_ || !area(*this).contains(position))
+        return {};
+    const auto plot = area(*this);
+    return std::min(static_cast<std::size_t>((position.y() - plot.top()) / plot.height() *
+                                            static_cast<double>(result_->rowStarts.size())),
+                    result_->rowStarts.size() - 1);
+}
 void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!result_ || !area(*this).contains(event->position()))
+    const auto row = rowAt(event->position());
+    if (!row) {
+        leaveEvent(nullptr);
         return;
+    }
     const auto plot = area(*this);
-    const auto row =
-        std::min(static_cast<std::size_t>((event->position().y() - plot.top()) / plot.height() *
-                                          static_cast<double>(result_->rowStarts.size())),
-                 result_->rowStarts.size() - 1);
+    if (!frameFrozen_ && hoveredRow_ != static_cast<int>(*row)) {
+        hoveredRow_ = static_cast<int>(*row);
+        update();
+    }
     const double frequency =
         left_ + (event->position().x() - plot.left()) / plot.width() * (right_ - left_) +
         (view_.absoluteFrequency ? center_ : 0);
-    emit cursorChanged(QString("Preview row %1 · frame %2 · %3 s · %4 Hz · double-click to seek")
-                           .arg(row)
-                           .arg(result_->rowStarts[row])
-                           .arg(number(static_cast<double>(result_->rowStarts[row]) / sampleRate_))
-                           .arg(QString::number(frequency, 'g', 17)));
-    emit frameHovered(result_->rowStarts[row]);
+    emit cursorChanged(QString("%1 row %2 · frame %3 · %4 s · %5 Hz · click to %6 · "
+                               "double-click to seek")
+                           .arg(result_->aggregated ? "Overview" : "Preview")
+                           .arg(*row)
+                           .arg(result_->rowStarts[*row])
+                           .arg(number(static_cast<double>(result_->rowStarts[*row]) / sampleRate_))
+                           .arg(QString::number(frequency, 'g', 17))
+                           .arg(frameFrozen_ ? "unfreeze" : "freeze"));
+    emit frameHovered(result_->rowStarts[*row]);
+}
+void WaterfallPlot::leaveEvent(QEvent *)
+{
+    if (!frameFrozen_) {
+        hoveredRow_ = -1;
+        update();
+    }
+    emit cursorLeft();
+}
+void WaterfallPlot::mousePressEvent(QMouseEvent *event)
+{
+    const auto row = rowAt(event->position());
+    if (event->button() == Qt::LeftButton && row)
+        emit frameClicked(result_->rowStarts[*row]);
 }
 void WaterfallPlot::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (!result_ || !area(*this).contains(event->position()))
-        return;
-    const auto plot = area(*this);
-    const auto row =
-        std::min(static_cast<std::size_t>((event->position().y() - plot.top()) / plot.height() *
-                                          static_cast<double>(result_->rowStarts.size())),
-                 result_->rowStarts.size() - 1);
-    emit frameSelected(result_->rowStarts[row]);
+    const auto row = rowAt(event->position());
+    if (row)
+        emit frameSelected(result_->rowStarts[*row]);
 }
 
 WaveformPlot::WaveformPlot(QWidget *parent) : QWidget(parent)
@@ -432,9 +481,17 @@ void WaveformPlot::setMode(int mode)
     mode_ = mode;
     update();
 }
+void WaveformPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool frozen)
+{
+    cursorFrame_ = frame;
+    frameFrozen_ = frozen;
+    update();
+}
 void WaveformPlot::clear()
 {
     result_.reset();
+    cursorFrame_.reset();
+    frameFrozen_ = false;
     update();
 }
 void WaveformPlot::paintEvent(QPaintEvent *)
@@ -442,7 +499,7 @@ void WaveformPlot::paintEvent(QPaintEvent *)
     QPainter painter(this);
     base(painter, *this,
          result_ && !result_->complete
-             ? "WAVEFORM · bounded first-region preview · use Exact waveform for the full selection"
+             ? "WAVEFORM · bounded region preview · use Exact waveform for the full selection"
              : "WAVEFORM · exact min/max envelopes");
     if (!result_ || result_->points.empty())
         return;
@@ -487,6 +544,14 @@ void WaveformPlot::paintEvent(QPaintEvent *)
             painter.drawPoint(QPointF(x, y(point.maxQ)));
         }
     }
+    if (cursorFrame_ && *cursorFrame_ >= result_->range.begin &&
+        *cursorFrame_ < result_->range.end) {
+        const double x = plot.left() +
+                         static_cast<double>(*cursorFrame_ - result_->range.begin) /
+                             static_cast<double>(result_->range.size()) * plot.width();
+        painter.fillRect(QRectF(x - 1, plot.top(), 2, plot.height()),
+                         QColor(255, 255, 255, frameFrozen_ ? 180 : 90));
+    }
     painter.restore();
     painter.setPen(foreground);
     painter.drawText(QRectF(0, plot.top() - 8, 68, 18), Qt::AlignRight, number(maximum));
@@ -500,35 +565,57 @@ void WaveformPlot::paintEvent(QPaintEvent *)
                          .arg(result_->invalidSamples)
                          .arg(result_->clippedComponents));
 }
-void WaveformPlot::mouseMoveEvent(QMouseEvent *event)
+const WavePoint *WaveformPlot::pointAt(const QPointF &position) const
 {
-    if (!result_ || result_->points.empty() || !area(*this).contains(event->position()))
-        return;
+    if (!result_ || result_->points.empty() || !area(*this).contains(position))
+        return nullptr;
     const auto plot = area(*this);
     const auto index =
-        std::min(static_cast<std::size_t>((event->position().x() - plot.left()) / plot.width() *
-                                          static_cast<double>(result_->points.size())),
+        std::min(static_cast<std::size_t>((position.x() - plot.left()) / plot.width() *
+                                         static_cast<double>(result_->points.size())),
                  result_->points.size() - 1);
-    const auto &point = result_->points[index];
+    return &result_->points[index];
+}
+void WaveformPlot::mouseMoveEvent(QMouseEvent *event)
+{
+    const auto *point = pointAt(event->position());
+    if (!point) {
+        leaveEvent(nullptr);
+        return;
+    }
+    if (!frameFrozen_) {
+        cursorFrame_ = point->first;
+        update();
+    }
     emit cursorChanged(
-        QString("Frames [%1, %2) · I [%3, %4] · Q [%5, %6] · double-click to inspect here")
-            .arg(point.first)
-            .arg(point.last)
-            .arg(number(point.minI))
-            .arg(number(point.maxI))
-            .arg(number(point.minQ))
-            .arg(number(point.maxQ)));
-    emit frameHovered(point.first);
+        QString("Frames [%1, %2) · I [%3, %4] · Q [%5, %6] · click to %7 · double-click to seek")
+            .arg(point->first)
+            .arg(point->last)
+            .arg(number(point->minI))
+            .arg(number(point->maxI))
+            .arg(number(point->minQ))
+            .arg(number(point->maxQ))
+            .arg(frameFrozen_ ? "unfreeze" : "freeze"));
+    emit frameHovered(point->first);
+}
+void WaveformPlot::leaveEvent(QEvent *)
+{
+    if (!frameFrozen_) {
+        cursorFrame_.reset();
+        update();
+    }
+    emit cursorLeft();
+}
+void WaveformPlot::mousePressEvent(QMouseEvent *event)
+{
+    const auto *point = pointAt(event->position());
+    if (event->button() == Qt::LeftButton && point)
+        emit frameClicked(point->first);
 }
 void WaveformPlot::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (!result_ || result_->points.empty() || !area(*this).contains(event->position()))
-        return;
-    const auto plot = area(*this);
-    const auto index =
-        std::min(static_cast<std::size_t>((event->position().x() - plot.left()) / plot.width() *
-                                          static_cast<double>(result_->points.size())),
-                 result_->points.size() - 1);
-    emit frameSelected(result_->points[index].first);
+    const auto *point = pointAt(event->position());
+    if (point)
+        emit frameSelected(point->first);
 }
 } // namespace rf

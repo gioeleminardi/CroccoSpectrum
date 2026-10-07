@@ -54,8 +54,14 @@ hop, scaling, detrending, and sidedness, instead of relying on library defaults.
 
 ## Threads and ownership
 
-All recording/DSP jobs run on `AnalysisController`'s `std::jthread`. Submitting
-a new job atomically cancels the running token and replaces the pending job.
+Each `AnalysisController` runs recording/DSP jobs on its own `std::jthread`.
+Submitting a new job atomically cancels that controller's running token and
+replaces its pending job. The main window uses a separate controller for
+one-window hover previews, so mouse movement does not cancel averages or exports.
+The main window owns the shared frame cursor and freeze state for both time
+plots. Waveform sample buckets select the corresponding waterfall row start.
+An out-of-range waveform preview follows the selected frame using the hover
+job's bounded waveform snapshot; exact full-selection waveforms are retained.
 There is no file-sized queue. The GUI debounces navigation edits and invalidates
 its current generation immediately. Worker signals are queued to GUI objects;
 slots compare their generation before applying any result.
@@ -79,7 +85,8 @@ change an export midway.
 - Waterfall snapshots: at most 128 × 1,024 double-valued cells.
 - Waveform snapshots: at most 2,048 envelope buckets; every sample in a covered
   bucket contributes to its extrema.
-- Preview LRU: 64 MiB, maintained only by the worker.
+- Preview LRU: 64 MiB per controller, maintained only by its worker; the main
+  window's analysis and hover caches together retain at most 128 MiB.
 
 Cache keys include source identity, full descriptor, DSP settings, and range.
 Identity checks size, inode/device, modification and change timestamps and path

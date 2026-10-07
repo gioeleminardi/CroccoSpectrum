@@ -1,7 +1,7 @@
 # Feature status
 
-Updated: 2026-10-06. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.1.
+Updated: 2026-10-07. Target: C++20 + Qt 6 Widgets on amd64 Linux.
+Application: CroccoSpectrum 0.1.2.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -18,6 +18,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Large recordings, bounded positional reads | Implemented | No whole-file allocation; 32 MiB maximum read call |
 | Positive/fractional sample rates | Implemented | Derived floating arithmetic must remain representable |
 | Default spectrum and waterfall | Implemented | Large waterfall views are explicitly sampled previews |
+| Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
+| Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; local previews follow out-of-range frames |
 | User-selected power-of-two FFT | Implemented | 256 through 1,048,576 |
 | Window, overlap, DC removal, conjugation | Implemented | Hann, rectangular, Hamming, Blackman-Harris |
 | dBFS / PSD and real one-sided scaling | Implemented | Explicit full-scale convention; no calibrated dBm |
@@ -34,8 +36,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | SigMF core recording import | Implemented subset | Single stream; required extensions and embedded later headers rejected |
 | Bookmarks/notes | Implemented | Persist in sessions |
 | Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw + sidecar; cancellable worker writes; refuses overwrite |
-| Background cancellation and stale-result protection | Implemented | One worker; one replaceable pending request |
-| Bounded in-memory preview cache | Implemented | 64 MiB LRU, interpretation/DSP/range/source identity keys |
+| Background cancellation and stale-result protection | Implemented | Separate analysis and hover controllers, each with one worker and one replaceable pending request |
+| Bounded in-memory preview cache | Implemented | 64 MiB LRU per controller, interpretation/DSP/range/source identity keys |
 | Headless CLI | Implemented | Inspection, spectra, averages, waveform, exports |
 | GitHub/Gitea automatic builds and downloadable artifacts | Implemented | All targets in Release/Debug/ASAN; packages, sources/checksums, reports; runner/retention details in docs/CI.md |
 | Self-contained portable folder / AppImage | Implemented | Bundled libraries/plugins/font; tar folder and no-FUSE AppImage extraction path |

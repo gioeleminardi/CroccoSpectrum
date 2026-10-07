@@ -124,6 +124,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     setCentralWidget(central);
     averagePlot_ = new SpectrumPlot(this);
     waveform_ = new WaveformPlot(this);
+    waveform_->setObjectName("waveformPlot");
     auto *averageContainer = new QWidget(this);
     auto *averageLayout = new QVBoxLayout(averageContainer);
     averageLabel_ = new QLabel("Run an interval or whole-recording average", this);
@@ -180,7 +181,13 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
             cursorLabel_->setText(cursorLabel_->text() + " · UTC (ms): " + utc);
     };
     connect(waterfall_, &WaterfallPlot::frameHovered, this, showTime);
+    connect(waterfall_, &WaterfallPlot::frameHovered, this, &MainWindow::hoverFrame);
     connect(waveform_, &WaveformPlot::frameHovered, this, showTime);
+    connect(waveform_, &WaveformPlot::frameHovered, this, &MainWindow::hoverFrame);
+    connect(waterfall_, &WaterfallPlot::frameClicked, this, &MainWindow::toggleFrameFreeze);
+    connect(waveform_, &WaveformPlot::frameClicked, this, &MainWindow::toggleFrameFreeze);
+    connect(waterfall_, &WaterfallPlot::cursorLeft, this, &MainWindow::clearFrameCursor);
+    connect(waveform_, &WaveformPlot::cursorLeft, this, &MainWindow::clearFrameCursor);
     connect(waterfall_, &WaterfallPlot::frameSelected, this, &MainWindow::seekFrame);
     connect(waveform_, &WaveformPlot::frameSelected, this, &MainWindow::seekFrame);
     connect(maxHold_, &QCheckBox::toggled, this, [this](bool checked) {
@@ -313,7 +320,8 @@ void MainWindow::buildMenus()
             "are excluded and counted.\n\n"
             "A sampled waterfall can miss short events. Full averages and Exact waveform process "
             "every required sample/window.\n\n"
-            "Wheel: frequency zoom. Drag spectrum: frequency pan. Double-click waterfall/waveform: "
+            "Wheel: frequency zoom. Drag spectrum: frequency pan. Hover waterfall/waveform: "
+            "inspect the shared frame. Click either plot to freeze/unfreeze it. Double-click: "
             "seek. CSV records analysis settings; sessions preserve interpretation and bookmarks.");
     });
     auto *about = help->addAction("About CroccoSpectrum");
@@ -552,28 +560,31 @@ void MainWindow::connectWorker()
             [this](quint64 generation, std::shared_ptr<const PreviewResult> result) {
                 if (generation != generation_)
                     return;
+                spectrumController_.cancel();
+                ++spectrumGeneration_;
                 preview_ = std::move(result);
-                spectrum_->setPreview(preview_);
+                spectrumFrame_ = preview_->spectrumStart;
                 waterfall_->setPreview(preview_, recording_->descriptor().sampleRate);
                 waveformResult_ = std::make_shared<WaveformResult>(preview_->waveform);
                 waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
                                        recording_->descriptor().format.kind);
-                coverageLabel_->setText(
-                    QString("%1 waterfall · %2 rows\n%3 invalid windows · %4 capture-boundary "
-                            "windows\nSpectrum begins at frame %5")
-                        .arg(preview_->aggregated ? "Exact maximum-aggregated"
-                             : preview_->sampled  ? "Sampled preview"
-                                                  : "Every window shown")
-                        .arg(preview_->rowStarts.size())
-                        .arg(preview_->invalidWindows)
-                        .arg(preview_->boundaryWindows)
-                        .arg(preview_->spectrumStart));
+                displaySpectrum(preview_, true);
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
                     "ENBW shown in CSV/numeric results",
                     QString("ENBW: %1 Hz").arg(number(preview_->spectrum.enbwHz))));
                 setBusy(false, "Preview ready");
                 emit analysisDisplayed();
+            });
+    connect(&spectrumController_, &AnalysisController::previewReady, this,
+            [this](quint64 generation, std::shared_ptr<const PreviewResult> result) {
+                if (generation == spectrumGeneration_)
+                    displaySpectrum(std::move(result), false);
+            });
+    connect(&spectrumController_, &AnalysisController::failed, this,
+            [this](quint64 generation, const QString &message) {
+                if (generation == spectrumGeneration_)
+                    reportError(message);
             });
     connect(&controller_, &AnalysisController::averageReady, this,
             [this](quint64 generation, std::shared_ptr<const AverageResult> result) {
@@ -601,6 +612,7 @@ void MainWindow::connectWorker()
                 waveformResult_ = std::move(result);
                 waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
                                        recording_->descriptor().format.kind);
+                updateFrameCursors();
                 waveformDock_->show();
                 setBusy(false, "Exact waveform complete");
             });
@@ -677,6 +689,12 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
 
 void MainWindow::clearMeasurements()
 {
+    spectrumController_.cancel();
+    ++spectrumGeneration_;
+    spectrumFrame_.reset();
+    frameFrozen_ = false;
+    frameCursorVisible_ = false;
+    spectrumPreview_.reset();
     preview_.reset();
     average_.reset();
     waveformResult_.reset();
@@ -706,6 +724,93 @@ void MainWindow::requestPreview()
         return;
     generation_ = controller_.preview(recording_, range_, preferences_.dsp);
     setBusy(true, "Computing preview…");
+}
+
+void MainWindow::hoverFrame(quint64 frame)
+{
+    if (!frameFrozen_)
+        selectFrame(frame);
+}
+
+void MainWindow::toggleFrameFreeze(quint64 frame)
+{
+    if (!recording_ || !preview_)
+        return;
+    frameFrozen_ = !frameFrozen_;
+    selectFrame(frame);
+    statusBar()->showMessage(frameFrozen_ ? "Frame frozen; click either plot to follow the pointer"
+                                         : "Following the pointer");
+}
+
+void MainWindow::clearFrameCursor()
+{
+    if (!frameFrozen_) {
+        frameCursorVisible_ = false;
+        updateFrameCursors();
+    }
+}
+
+void MainWindow::updateFrameCursors()
+{
+    const auto frame = frameCursorVisible_ ? spectrumFrame_ : std::nullopt;
+    waterfall_->setFrameCursor(frame, frameFrozen_);
+    waveform_->setFrameCursor(frame, frameFrozen_);
+}
+
+void MainWindow::selectFrame(quint64 frame)
+{
+    if (!recording_ || !preview_)
+        return;
+    // Waveform sample buckets snap to the waterfall row containing their time.
+    const auto row = std::upper_bound(preview_->rowStarts.begin(), preview_->rowStarts.end(), frame);
+    frame = row == preview_->rowStarts.begin() ? preview_->rowStarts.front() : *(row - 1);
+    frameCursorVisible_ = true;
+    if (spectrumFrame_ == frame) {
+        updateFrameCursors();
+        return;
+    }
+    spectrumFrame_ = frame;
+    updateFrameCursors();
+    spectrumController_.cancel();
+    ++spectrumGeneration_;
+    if (frame == preview_->spectrumStart) {
+        displaySpectrum(preview_, false);
+        return;
+    }
+    // One-window previews reuse the bounded cache and latest-request worker.
+    // A separate controller keeps mouse movement from cancelling full passes or exports.
+    spectrumGeneration_ = spectrumController_.preview(
+        recording_, {frame, frame + static_cast<std::uint64_t>(preferences_.dsp.fftSize)},
+        preferences_.dsp);
+}
+
+void MainWindow::displaySpectrum(std::shared_ptr<const PreviewResult> result, bool resetZoom)
+{
+    spectrumPreview_ = std::move(result);
+    spectrum_->setPreview(spectrumPreview_, resetZoom);
+    const auto frame = spectrumPreview_->spectrumStart;
+    if (waveformResult_ &&
+        (frame < waveformResult_->range.begin || frame >= waveformResult_->range.end)) {
+        // Keep long recordings bounded: the hover job already supplies local
+        // waveform data. Exact waveforms retain their full selected interval.
+        auto waveform = std::make_shared<WaveformResult>(spectrumPreview_->waveform);
+        waveform->complete = waveform->range == range_;
+        waveformResult_ = std::move(waveform);
+        waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
+                               recording_->descriptor().format.kind);
+    }
+    updateFrameCursors();
+    coverageLabel_->setText(
+        QString("%1 waterfall · %2 rows\n%3 invalid windows · %4 capture-boundary "
+                "windows\nSpectrum begins at frame %5")
+            .arg(preview_->aggregated ? "Exact maximum-aggregated"
+                 : preview_->sampled  ? "Sampled preview"
+                                      : "Every window shown")
+            .arg(preview_->rowStarts.size())
+            .arg(preview_->invalidWindows)
+            .arg(preview_->boundaryWindows)
+            .arg(spectrumPreview_->spectrumStart));
+    updateSpectrumView();
 }
 
 void MainWindow::updateDsp()
@@ -743,9 +848,19 @@ void MainWindow::updateDsp()
 
 double MainWindow::displayCenter() const
 {
-    return recording_ && recording_->descriptor().hasFrequencyAt(range_.begin)
-               ? recording_->descriptor().frequencyAt(range_.begin)
+    const auto frame = spectrumPreview_ ? spectrumPreview_->spectrumStart : range_.begin;
+    return recording_ && recording_->descriptor().hasFrequencyAt(frame)
+               ? recording_->descriptor().frequencyAt(frame)
                : 0;
+}
+
+void MainWindow::updateSpectrumView()
+{
+    auto effective = preferences_.view;
+    const auto frame = spectrumPreview_ ? spectrumPreview_->spectrumStart : range_.begin;
+    effective.absoluteFrequency = effective.absoluteFrequency && recording_ &&
+                                  recording_->descriptor().hasFrequencyAt(frame);
+    spectrum_->setView(effective, preferences_.dsp.scale, displayCenter());
 }
 
 void MainWindow::updateView()
@@ -790,9 +905,7 @@ void MainWindow::updateView()
     const auto averageCenter = uniformCenter(average_ ? average_->range : range_);
     effective.absoluteFrequency = view.absoluteFrequency && averageCenter.has_value();
     averagePlot_->setView(effective, preferences_.dsp.scale, averageCenter.value_or(0));
-    effective.absoluteFrequency = view.absoluteFrequency && recording_ &&
-                                  recording_->descriptor().hasFrequencyAt(range_.begin);
-    spectrum_->setView(effective, preferences_.dsp.scale, displayCenter());
+    updateSpectrumView();
     waveform_->setMode(view.waveformMode);
     saveTimer_->start();
 }
@@ -888,7 +1001,8 @@ void MainWindow::startWaveform()
 
 void MainWindow::exportCsv(bool average)
 {
-    if (!recording_ || (average ? !average_ : !preview_ || !preview_->spectrum.valid)) {
+    if (!recording_ ||
+        (average ? !average_ : !spectrumPreview_ || !spectrumPreview_->spectrum.valid)) {
         reportError("No valid completed spectrum to export");
         return;
     }
@@ -914,15 +1028,15 @@ void MainWindow::exportCsv(bool average)
             {"trailing_frames", QString::number(average_->trailingFrames)},
             {"enbw_hz", average_->enbwHz}};
     } else {
-        request.range = {preview_->spectrumStart,
-                         preview_->spectrumStart +
+        request.range = {spectrumPreview_->spectrumStart,
+                         spectrumPreview_->spectrumStart +
                              static_cast<std::uint64_t>(preferences_.dsp.fftSize)};
-        request.frequencies = preview_->frequencies;
-        request.power = preview_->spectrum.power;
+        request.frequencies = spectrumPreview_->frequencies;
+        request.power = spectrumPreview_->spectrum.power;
         request.method = "single_complete_window";
         request.coverage = {{"complete_pass", true},
                             {"valid_windows", "1"},
-                            {"enbw_hz", preview_->spectrum.enbwHz}};
+                            {"enbw_hz", spectrumPreview_->spectrum.enbwHz}};
     }
     generation_ = controller_.csv(std::move(request));
     setBusy(true, "Exporting CSV…");
@@ -956,9 +1070,13 @@ void MainWindow::exportPng()
         reportError("Calculate an average before exporting it");
         return;
     }
-    const auto range = choice == "Average spectrum"              ? average_->range
-                       : choice == "Waveform" && waveformResult_ ? waveformResult_->range
-                                                                 : range_;
+    auto range = choice == "Average spectrum"              ? average_->range
+                 : choice == "Waveform" && waveformResult_ ? waveformResult_->range
+                                                           : range_;
+    if (choice == "Spectrum")
+        range = {spectrumPreview_->spectrumStart,
+                 spectrumPreview_->spectrumStart +
+                     static_cast<std::uint64_t>(preferences_.dsp.fftSize)};
     PngRequest request;
     request.image = plot->grab().toImage();
     request.output = path;
@@ -971,8 +1089,8 @@ void MainWindow::exportPng()
                         {"dsp", dspToJson(preferences_.dsp)},
                         {"view", viewToJson(preferences_.view)},
                         {"unit", powerUnit(preferences_.dsp.scale)},
-                        {"sampled_preview", preview_->sampled},
-                        {"exact_overview", preview_->aggregated},
+                        {"sampled_preview", choice != "Spectrum" && preview_->sampled},
+                        {"exact_overview", choice != "Spectrum" && preview_->aggregated},
                         {"waveform_complete", waveformResult_ && waveformResult_->complete},
                         {"coverage_label", coverageLabel_->text()},
                         {"average_coverage", average_ ? averageLabel_->text() : QString()}};
@@ -1089,6 +1207,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     previewTimer_->stop();
     controller_.cancel();
+    spectrumController_.cancel();
+    ++spectrumGeneration_;
     persistPreferences();
     event->accept();
 }

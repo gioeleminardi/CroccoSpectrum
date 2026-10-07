@@ -27,6 +27,10 @@ class MainWindow : public QMainWindow
     void openRecording(RecordingDescriptor descriptor, FrameRange range = {});
     void openPath(const QString &path);
     [[nodiscard]] std::shared_ptr<const PreviewResult> previewResult() const { return preview_; }
+    [[nodiscard]] std::shared_ptr<const PreviewResult> spectrumResult() const
+    {
+        return spectrumPreview_;
+    }
     [[nodiscard]] FrameRange selectedRange() const { return range_; }
     [[nodiscard]] DspSettings dspSettings() const { return preferences_.dsp; }
     [[nodiscard]] bool isBusy() const { return busy_; }
@@ -45,6 +49,13 @@ class MainWindow : public QMainWindow
     void applyPreferences();
     void schedulePreview();
     void requestPreview();
+    void hoverFrame(quint64 frame);
+    void selectFrame(quint64 frame);
+    void toggleFrameFreeze(quint64 frame);
+    void clearFrameCursor();
+    void updateFrameCursors();
+    void displaySpectrum(std::shared_ptr<const PreviewResult> result, bool resetZoom);
+    void updateSpectrumView();
     void updateDsp();
     void updateView();
     void updateRanges();
@@ -73,13 +84,19 @@ class MainWindow : public QMainWindow
     std::vector<Annotation> bookmarks_;
     std::shared_ptr<Recording> recording_;
     std::shared_ptr<const PreviewResult> preview_;
+    std::shared_ptr<const PreviewResult> spectrumPreview_;
     std::shared_ptr<const AverageResult> average_;
     std::shared_ptr<const WaveformResult> waveformResult_;
     FrameRange range_;
     quint64 generation_ = 0;
+    quint64 spectrumGeneration_ = 0;
+    std::optional<std::uint64_t> spectrumFrame_;
+    bool frameFrozen_ = false;
+    bool frameCursorVisible_ = false;
     bool busy_ = false;
     bool applying_ = false;
     AnalysisController controller_;
+    AnalysisController spectrumController_;
     SpectrumPlot *spectrum_, *averagePlot_;
     WaterfallPlot *waterfall_;
     WaveformPlot *waveform_;
