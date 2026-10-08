@@ -7,6 +7,7 @@ mode=${1:?Usage: bash ci/build.sh release|debug|asan}
 case "$mode" in release|debug|asan) ;; *) exit 2 ;; esac
 engine=${RF_CI_ENGINE:-docker}
 output="$PWD/dist/ci/$mode"
+rm -rf "$output/packages" "$output/sources" "$output/reports/checksums"
 mkdir -p "$output/reports" "$output/packages"
 containers=()
 cleanup() {
@@ -33,6 +34,10 @@ tar --exclude=./.git --exclude=./.cache --exclude=./build --exclude=./dist \
     | "$engine" exec -i "$builder" tar -xf -
 "$engine" exec "$builder" bash ci/run.sh "$mode" 2>&1 | tee "$output/reports/build.log"
 "$engine" cp "$builder:/workspace/dist/ci/$mode/packages/." "$output/packages/"
+if [[ $mode == release ]]; then
+    mkdir -p "$output/sources"
+    "$engine" cp "$builder:/workspace/dist/ci/$mode/sources/." "$output/sources/"
+fi
 "$engine" cp "$builder:/workspace/dist/ci/$mode/reports/." "$output/reports/"
 
 if [[ $mode == release ]]; then

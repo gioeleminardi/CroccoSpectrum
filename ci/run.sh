@@ -41,20 +41,21 @@ import hashlib,json,os,shutil,subprocess,tarfile
 output=Path(os.environ['RF_CI_OUTPUT']); build=Path(os.environ['RF_CI_BUILD'])
 pins=json.loads(Path('packaging/dependencies.json').read_text())
 mode=os.environ['RF_CI_MODE']
-stage=build/'artifact'; stage.mkdir(exist_ok=True)
-for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-soak-test','librf_core.a','librf_ui.a']:
-    shutil.copy2(build/name,stage/name)
 info={'application':'CroccoSpectrum','version':pins['application'],'configuration':mode,
       'commit':os.environ['RF_CI_COMMIT'],'qt':os.environ['RF_CI_QT'],
       'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
       'platform':'Ubuntu 24.04 x86_64','runtime_note':'Development outputs require matching Qt/FFTW and compiler runtimes. Use the release AppImage or portable folder for bundled dependencies.'}
-(stage/'BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
-shutil.copy2(stage/'BUILD-INFO.json',output/'reports/BUILD-INFO.json')
-archive=output/'packages'/f"croccospectrum-{pins['application']}-linux-x86_64-{mode}.tar.gz"
-with tarfile.open(archive,'w:gz') as target:
-    target.add(stage,arcname=archive.name.removesuffix('.tar.gz'))
-digest=hashlib.sha256(archive.read_bytes()).hexdigest()
-archive.with_name(archive.name+'.sha256').write_text(f'{digest}  {archive.name}\n')
+(output/'reports/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
+if mode != 'release':
+    stage=build/'artifact'; stage.mkdir(exist_ok=True)
+    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-soak-test','librf_core.a','librf_ui.a']:
+        shutil.copy2(build/name,stage/name)
+    shutil.copy2(output/'reports/BUILD-INFO.json',stage/'BUILD-INFO.json')
+    archive=output/'packages'/f"croccospectrum-{pins['application']}-linux-x86_64-{mode}.tar.gz"
+    with tarfile.open(archive,'w:gz') as target:
+        target.add(stage,arcname=archive.name.removesuffix('.tar.gz'))
+    digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_name(archive.name+'.sha256').write_text(f'{digest}  {archive.name}\n')
 (output/'reports/signal.iq').write_bytes(bytes.fromhex('00400000')*8192)
 PY
 
@@ -79,7 +80,10 @@ for key,name in [('appimagetool','appimagetool.AppImage'),('appimage_runtime','a
     path.chmod(0o755)
 PY
     bash packaging/appimage.sh .cache/appimagetool.AppImage "$bundle" "$bundle.AppImage"
-    cp dist/release/*.tar.gz dist/release/*.AppImage dist/release/*.sha256 "$output/packages/"
+    mkdir -p "$output/sources" "$output/reports/checksums"
+    cp "$bundle.tar.gz" "$bundle.AppImage" "$output/packages/"
+    cp "dist/release/croccospectrum-$version-source.tar.gz" dist/release/dependency-sources.tar.gz "$output/sources/"
+    cp dist/release/*.sha256 "$output/reports/checksums/"
     cp "$bundle/bundle-manifest.json" "$output/reports/"
 fi
 
@@ -87,11 +91,12 @@ fi
 python3 - <<'PY'
 from pathlib import Path
 import hashlib,json,os
-packages=Path(os.environ['RF_CI_OUTPUT'])/'packages'
-for checksum in packages.glob('*.sha256'):
+output=Path(os.environ['RF_CI_OUTPUT']); packages=output/'packages'
+for checksum in [*packages.glob('*.sha256'), *(output/'reports/checksums').glob('*.sha256')]:
     digest,name=checksum.read_text().strip().split(maxsplit=1)
     name=Path(name).name
-    if hashlib.sha256((packages/name).read_bytes()).hexdigest()!=digest:
+    archive=packages/name if (packages/name).is_file() else output/'sources'/name
+    if hashlib.sha256(archive.read_bytes()).hexdigest()!=digest:
         raise SystemExit(f'Artifact checksum mismatch: {name}')
     checksum.write_text(f'{digest}  {name}\n')
 PY

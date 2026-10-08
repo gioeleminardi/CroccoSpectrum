@@ -6,6 +6,15 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- CI artifact layout (unreleased): Ubuntu 24.04 container Release and Debug
+  builds pass all four CTest suites. Release produces exactly one executable
+  AppImage and one portable tarball with GUI/CLI launchers and bundled runtime
+  dependencies; sources and checksums are stored separately. Both final packages
+  launch offline on Ubuntu 24.04, Ubuntu 26.04, and Fedora 44. Debug archives retain
+  all build outputs, executable permissions, build identity, and a valid checksum.
+  GitHub and normalized Gitea workflows pass actionlint; shell scripts and embedded
+  Python parse successfully. The local builder was refreshed after a cached Ubuntu
+  library's exact source version became unavailable from the live mirrors.
 - CroccoSpectrum 0.1.6: Fedora 44 Debug and Release builds and all four CTest
   suites pass, including the independent numerical reference checks. Both GUI
   and CLI report 0.1.6; packaging metadata matches the CMake project version.

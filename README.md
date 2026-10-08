@@ -67,9 +67,11 @@ supported formats, and verification results.
 ### Download a CI build
 
 On GitHub or Gitea, open **Actions → a successful workflow run → Artifacts** and
-download **CroccoSpectrum-linux-amd64-release**. Extract the artifact ZIP to get
-the AppImage, portable folder archive, source provisions, and checksums. Debug
-and ASAN/UBSAN builds are also available for development. See [CI builds](docs/CI.md)
+download **CroccoSpectrum-linux-amd64-AppImage** or
+**CroccoSpectrum-linux-amd64-portable**. Each artifact ZIP contains one file:
+the AppImage or the extract-and-run tarball. Accompanying sources are in
+**CroccoSpectrum-linux-amd64-sources**; checksums are in **reports-release**.
+Debug and ASAN/UBSAN builds are also available for development. See [CI builds](docs/CI.md)
 for artifact contents, retention, and Gitea runner setup.
 
 ### Run an AppImage
