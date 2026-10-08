@@ -74,6 +74,11 @@ No publishing token or release secret is required. Use isolated runners for
 untrusted pull requests, as with other jobs that compile and execute repository
 code.
 
+CI rebuilds the Ubuntu builder without the container layer cache on every run.
+Persistent runners can otherwise retain older binary dependencies after Ubuntu
+mirrors stop indexing their exact source versions. Dependency installation runs
+each time to keep the bundled libraries and accompanying sources aligned.
+
 Builds fetch the pinned Qt SDK and checksum-verified packaging tools. The runtime
 asset has an upstream continuous URL; if it changes, CI fails the pinned hash
 check. Review and update the runtime binary hash, commit, source pins, and tool

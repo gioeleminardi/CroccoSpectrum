@@ -22,7 +22,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-"$engine" build -t "croccospectrum-ci:$mode" -f packaging/Containerfile . \
+# Refresh Ubuntu packages on persistent runners so their exact source versions
+# remain available in the live indexes used by release packaging.
+"$engine" build --no-cache -t "croccospectrum-ci:$mode" -f packaging/Containerfile . \
     2>&1 | tee "$output/reports/container-build.log"
 builder=$("$engine" create -w /workspace -e LANG=C.UTF-8 \
     -e RF_CI_COMMIT="${RF_CI_COMMIT:-$(git rev-parse HEAD)}" \
