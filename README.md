@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.2-3B82F6?style=for-the-badge" alt="Version 0.1.2"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.3-3B82F6?style=for-the-badge" alt="Version 0.1.3"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -77,21 +77,21 @@ for artifact contents, retention, and Gitea runner setup.
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.1.2-x86_64.AppImage
-./croccospectrum-0.1.2-x86_64.AppImage
+chmod +x croccospectrum-0.1.3-x86_64.AppImage
+./croccospectrum-0.1.3-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.1.2-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-0.1.3-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.1.2-x86_64.tar.gz
-./croccospectrum-0.1.2-x86_64/AppRun
+tar -xzf croccospectrum-0.1.3-x86_64.tar.gz
+./croccospectrum-0.1.3-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -179,6 +179,7 @@ average is discarded, and an older request cannot replace the latest result.
 | --- | --- |
 | Zoom frequency | Mouse wheel over the spectrum |
 | Pan frequency | Drag the spectrum |
+| Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then the end |
 | Measure waterfall duration | `Shift` + left-click the start row, then the end row |
 | Move / resize a measurement | `Shift` + drag its shaded band / boundary marker |
@@ -219,6 +220,11 @@ density. Its reference is one normalized mean-square unit: a unit complex tone
 is 0 dBFS, and a real sine with peak amplitude 1 is −3.0103 dBFS. These values are
 not calibrated dBm measurements.
 
+Hover over a spectrum to show a crosshair at the pointer, with its frequency
+and power coordinates labeled on the axes. The status bar also retains the
+exact FFT-bin frequency and power. The crosshair follows the current zoom and
+power scale, works on average and max-hold traces, and hides on pointer exit.
+
 **Shift + left-click twice** inside the spectrum to measure a frequency interval.
 The first click sets the start; moving the pointer previews the end, and the
 second Shift-click completes the measurement. Endpoints snap to the nearest FFT
@@ -235,6 +241,14 @@ and end times, and duration calculated from the frame difference and sample
 rate. Sampled previews and aggregated overviews limit how precisely event
 boundaries can be located; zoom into the event for finer row spacing. Selecting
 the same row gives zero duration.
+
+Waterfall markers also fill the **Start frame** and **End frame** fields live,
+ordered from earlier to later, without applying the range. The later row's
+start is the exclusive end. Use **Apply sample range** to change the displayed
+interval, or **Average waterfall selection** in **Recording and analysis** to
+average just the marked interval while keeping the current views. That button
+requires a completed selection spanning at least one FFT window and uses the
+markers even if you subsequently edit the frame fields.
 
 Measurements use yellow boundary markers and shaded bands. **Shift + drag the
 shaded band** to move both endpoints, or **Shift + drag a boundary marker** to
@@ -396,12 +410,12 @@ The bundler records dependency versions, notices, and SHA-256 hashes, and refuse
 to replace an existing generated bundle. Before distribution:
 
 1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-0.1.2-x86_64` there to collect
+   `packaging/sources.py --bundle dist/croccospectrum-0.1.3-x86_64` there to collect
    the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.2-x86_64` to refresh
+2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.3-x86_64` to refresh
    documentation, manifests, and binary/source archives.
 3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.2-x86_64 OUTPUT.AppImage`.
+   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.3-x86_64 OUTPUT.AppImage`.
    Supply the pinned tool and the verified runtime at
    `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
    it explicitly.
@@ -413,7 +427,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.1.2 is an early release.** The recorded checks include 167
+**CroccoSpectrum 0.1.3 is an early release.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 

@@ -16,6 +16,7 @@ namespace
 {
 const QColor background("#101923"), grid("#2a3b4b"), foreground("#c6d5df"), trace("#51d3be");
 const QColor measurementColor("#ffd166");
+const QColor crosshairColor("#8ecae6");
 MeasurementDrag::Target measurementTarget(double position, double start, double end)
 {
     const double startDistance = std::abs(position - start);
@@ -186,6 +187,7 @@ void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFre
 void SpectrumPlot::clear()
 {
     clearMeasurement();
+    hoverPosition_.reset();
     dragX_ = -1;
     preview_.reset();
     average_.reset();
@@ -262,6 +264,39 @@ void SpectrumPlot::paintMeasurement(QPainter &painter)
     painter.drawLine(QPointF(endX, plot.top()), QPointF(endX, plot.bottom()));
     painter.restore();
     measurementReadout(painter, plot, measurementText());
+}
+void SpectrumPlot::paintCrosshair(QPainter &painter, double minimum, double maximum)
+{
+    const auto plot = area(*this);
+    if (!hoverPosition_ || !plot.contains(*hoverPosition_))
+        return;
+    const auto position = *hoverPosition_;
+    const double frequency = left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_) +
+                             (view_.absoluteFrequency ? center_ : 0);
+    const double level =
+        minimum + (plot.bottom() - position.y()) / plot.height() * (maximum - minimum);
+    painter.save();
+    painter.setClipRect(plot);
+    painter.setPen(QPen(crosshairColor, 1, Qt::DashLine));
+    painter.drawLine(QPointF(position.x(), plot.top()), QPointF(position.x(), plot.bottom()));
+    painter.drawLine(QPointF(plot.left(), position.y()), QPointF(plot.right(), position.y()));
+    painter.restore();
+    painter.save();
+    const auto badge = [&painter](const QRectF &rect, const QString &text) {
+        painter.fillRect(rect, background);
+        painter.setPen(crosshairColor);
+        painter.drawRect(rect);
+        painter.drawText(rect, Qt::AlignCenter, text);
+    };
+    const double labelHeight = painter.fontMetrics().height() + 2;
+    const auto frequencyLabel = frequencyText(frequency);
+    const double labelWidth =
+        std::min(plot.width(), painter.fontMetrics().horizontalAdvance(frequencyLabel) + 12.0);
+    badge(QRectF(std::clamp(position.x() - labelWidth / 2, plot.left(), plot.right() - labelWidth),
+                 plot.bottom() + 1, labelWidth, labelHeight), frequencyLabel);
+    badge(QRectF(4, std::clamp(position.y() - labelHeight / 2, plot.top(), plot.bottom() - labelHeight),
+                 68, labelHeight), QString::number(level, 'f', 2));
+    painter.restore();
 }
 std::span<const double> SpectrumPlot::frequencies() const
 {
@@ -376,6 +411,7 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
     painter.setPen(QPen(trace, 1.3));
     painter.drawPath(path);
     painter.restore();
+    paintCrosshair(painter, minimum, maximum);
     paintMeasurement(painter);
 }
 
@@ -413,6 +449,7 @@ void SpectrumPlot::mouseMoveEvent(QMouseEvent *event)
                 update();
             }
         }
+        updateHover(event->position());
         return;
     }
     if (measuring_) {
@@ -420,6 +457,7 @@ void SpectrumPlot::mouseMoveEvent(QMouseEvent *event)
             measurementBins_->second = *bin;
             update();
         }
+        updateHover(event->position());
         return;
     }
     if (dragX_ >= 0) {
@@ -430,23 +468,48 @@ void SpectrumPlot::mouseMoveEvent(QMouseEvent *event)
         emit frequencyRangeChanged(left_, right_);
         update();
     }
+    updateHover(event->position());
+}
+
+void SpectrumPlot::updateHover(const QPointF &position)
+{
+    const auto plot = area(*this);
     const auto frequency = frequencies();
     const auto power = powers();
-    if (frequency.empty() || power.empty() || !plot.contains(event->position()))
+    if (frequency.empty() || power.empty() || !plot.contains(position)) {
+        if (hoverPosition_) {
+            hoverPosition_.reset();
+            update();
+        }
         return;
+    }
+    hoverPosition_ = position;
     const double target =
-        left_ + (event->position().x() - plot.left()) / plot.width() * (right_ - left_);
+        left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_);
     auto found = std::lower_bound(frequency.begin(), frequency.end(), target);
     const auto index =
         std::min(static_cast<std::size_t>(found - frequency.begin()), power.size() - 1);
-    emit cursorChanged(QString("Bin %1 · %2 Hz · %3 %4")
+    const auto [minimum, maximum] = colorLimits(view_, power);
+    const double level =
+        minimum + (plot.bottom() - position.y()) / plot.height() * (maximum - minimum);
+    emit cursorChanged(QString("Bin %1 · %2 Hz · %3 %4 · Cursor: %5 Hz · %6 %4")
                            .arg(index)
                            // A GHz center plus a narrow FFT bin needs more
                            // precision than the compact axis tick labels.
                            .arg(QString::number(
                                frequency[index] + (view_.absoluteFrequency ? center_ : 0), 'g', 17))
                            .arg(number(powerToDb(power[index])))
-                           .arg(powerUnit(scale_)));
+                           .arg(powerUnit(scale_))
+                           .arg(QString::number(target + (view_.absoluteFrequency ? center_ : 0),
+                                                'g', 17))
+                           .arg(number(level)));
+    update();
+}
+
+void SpectrumPlot::leaveEvent(QEvent *)
+{
+    hoverPosition_.reset();
+    update();
 }
 
 void SpectrumPlot::wheelEvent(QWheelEvent *event)
@@ -613,7 +676,16 @@ void WaterfallPlot::clearMeasurement()
     unsetCursor();
     if (active)
         emit measurementActiveChanged(false);
+    emit measurementChanged();
     update();
+}
+std::optional<FrameRange> WaterfallPlot::measurementRange() const
+{
+    if (!measurementRows_)
+        return {};
+    const auto first = result_->rowStarts[measurementRows_->first];
+    const auto last = result_->rowStarts[measurementRows_->second];
+    return FrameRange{std::min(first, last), std::max(first, last)};
 }
 QString WaterfallPlot::measurementText() const
 {
@@ -741,6 +813,7 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
                                                        result_->rowStarts.size());
             if (selection != *measurementRows_) {
                 measurementRows_ = selection;
+                emit measurementChanged();
                 update();
             }
         }
@@ -750,6 +823,7 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
     if (measuring_) {
         if (row) {
             measurementRows_->second = *row;
+            emit measurementChanged();
             update();
         }
         return;
@@ -804,6 +878,7 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
                     setCursor(target == MeasurementDrag::Target::Band ? Qt::SizeAllCursor
                                                                       : Qt::SizeVerCursor);
                     emit measurementActiveChanged(true);
+                    emit measurementChanged();
                     event->accept();
                     return;
                 }
@@ -814,6 +889,7 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
                 measurementRows_ = std::pair{*row, *row};
             measuring_ = !measuring_;
             emit measurementActiveChanged(measuring_);
+            emit measurementChanged();
             update();
         }
         event->accept();
@@ -838,6 +914,7 @@ void WaterfallPlot::mouseReleaseEvent(QMouseEvent *event)
         measuring_ = true;
     } else
         emit measurementActiveChanged(false);
+    emit measurementChanged();
     update();
     event->accept();
 }

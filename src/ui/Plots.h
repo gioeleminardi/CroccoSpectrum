@@ -42,6 +42,7 @@ class SpectrumPlot : public QWidget
   protected:
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
+    void leaveEvent(QEvent *) override;
     void wheelEvent(QWheelEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
@@ -54,6 +55,8 @@ class SpectrumPlot : public QWidget
     std::optional<std::size_t> binAt(const QPointF &position) const;
     void updateMeasurementPower();
     void paintMeasurement(QPainter &painter);
+    void updateHover(const QPointF &position);
+    void paintCrosshair(QPainter &painter, double minimum, double maximum);
     std::shared_ptr<const PreviewResult> preview_;
     std::shared_ptr<const AverageResult> average_;
     ViewSettings view_;
@@ -67,6 +70,7 @@ class SpectrumPlot : public QWidget
     std::optional<double> measurementMean_;
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;
+    std::optional<QPointF> hoverPosition_;
 };
 
 class WaterfallPlot : public QWidget
@@ -85,6 +89,7 @@ class WaterfallPlot : public QWidget
         return measuring_ || measurementDrag_.target != MeasurementDrag::Target::None;
     }
     [[nodiscard]] QString measurementText() const;
+    [[nodiscard]] std::optional<FrameRange> measurementRange() const;
   signals:
     void cursorChanged(QString text);
     void frameHovered(quint64 frame);
@@ -92,6 +97,7 @@ class WaterfallPlot : public QWidget
     void cursorLeft();
     void frameSelected(quint64 frame);
     void measurementActiveChanged(bool active);
+    void measurementChanged();
 
   protected:
     void paintEvent(QPaintEvent *) override;

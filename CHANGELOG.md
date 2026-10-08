@@ -4,8 +4,14 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## Unreleased
+## 0.1.3 — 2026-10-08 — Plot measurements and selection averaging
 
+- Waterfall Shift selections populate the time-selection frame fields without
+  applying the range. A new Average waterfall selection button runs an exact
+  average of the marked interval while preserving the displayed time range.
+- Spectrum hover shows a crosshair with frequency and power axis labels,
+  following zoom, absolute-frequency and spectrum/PSD settings. Cursor
+  coordinates accompany the exact FFT-bin readout in the status bar.
 - Shift-drag a completed measurement's shaded band to move it or either marker
   to resize it, with live power/duration updates and clamping at the data bounds.
 - Shift + left-click two endpoints in the spectrum to measure frequency width

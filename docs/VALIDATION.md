@@ -1,18 +1,36 @@
 # Validation evidence
 
-Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, the changes included in
-0.1.2, and unreleased Shift-click measurements as of 2026-10-08.
+Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
+0.1.2 and 0.1.3 as of 2026-10-08.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- CroccoSpectrum 0.1.3 version bump: Fedora 44 Debug build and all four CTest
+  suites pass. Both GUI and CLI `--version` report 0.1.3; packaging metadata
+  matches the CMake project version.
+- Waterfall selection averaging: all four Fedora 44 Debug CTest suites pass.
+  Forward/reverse GUI cases verify live draft frame fields during placement and
+  band/marker edits, unchanged applied range and preview, and an exact average
+  containing the marked tones while excluding an outside tone. Button checks
+  cover pending, zero/short, cleared and completed selections, Apply, DSP edits,
+  and new recordings. Exact row-start bounds above 2^53 are also checked. These
+  cases and the shared-frame regressions pass at QT_SCALE_FACTOR=2; normal and
+  double-scale button/field layouts were visually inspected offscreen.
+- Spectrum crosshair: all four Fedora 44 Debug CTest suites pass. Two added GUI
+  cases check pointer-centered horizontal/vertical lines, frequency and power
+  coordinates with fixed/automatic limits, zoom and absolute-frequency PSD,
+  margin/leave/empty-data behavior, and compatibility with measurement placement
+  and Shift-drag edits. These cases and the GHz-bin precision regression also
+  pass at QT_SCALE_FACTOR=2. Normal and double-scale renders, including a
+  minimum-size panel and an active measurement, were visually inspected offscreen.
 - Shift-drag editing: all four Fedora 44 Debug CTest suites pass. Four added GUI
   cases cover moving and resizing forward/reverse selections, live power and
   duration updates, marker crossing/overlap, both data boundaries, replacement
   clicks, and Escape during a drag. Shared-frame checks also cover source-frame
   stability while moving a band or resizing a marker, preserving follow/freeze
   state on release. These edit and shared-frame cases pass at QT_SCALE_FACTOR=2.
-- Unreleased Shift-click measurements: all four Fedora 44 Debug CTest suites
+- Shift-click measurements included in 0.1.3: all four Fedora 44 Debug CTest suites
   pass with Qt 6.11.2, including all 167 independent NumPy/SciPy comparisons.
   New GUI cases cover linear-bin means versus dB/pixel means, one million FFT
   bins, spectrum/PSD and average/max-hold units, zero/invalid power, reverse and

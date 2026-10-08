@@ -175,6 +175,8 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         if (active)
             beginMeasurement(waterfall_);
     });
+    connect(waterfall_, &WaterfallPlot::measurementChanged, this,
+            &MainWindow::updateWaterfallSelection);
     connect(spectrum_, &SpectrumPlot::frequencyRangeChanged, averagePlot_,
             &SpectrumPlot::setFrequencyRange);
     connect(averagePlot_, &SpectrumPlot::frequencyRangeChanged, spectrum_,
@@ -466,8 +468,15 @@ void MainWindow::buildControls()
     layout->addWidget(selection);
     auto *average = new QPushButton("Average selected interval", this);
     average->setObjectName("averageSelection");
+    averageWaterfallSelection_ = new QPushButton("Average waterfall selection", this);
+    averageWaterfallSelection_->setObjectName("averageWaterfallSelection");
+    averageWaterfallSelection_->setEnabled(false);
+    averageWaterfallSelection_->setToolTip(
+        "Average between the waterfall markers without applying the time range. "
+        "Complete a selection spanning at least one FFT window to enable this button.");
     auto *exactWave = new QPushButton("Exact waveform for selection", this);
     layout->addWidget(average);
+    layout->addWidget(averageWaterfallSelection_);
     layout->addWidget(exactWave);
     coverageLabel_ = new QLabel("No analysis yet", this);
     coverageLabel_->setWordWrap(true);
@@ -510,6 +519,10 @@ void MainWindow::buildControls()
         seekFrame(position);
     });
     connect(average, &QPushButton::clicked, this, [this] { startAverage(false); });
+    connect(averageWaterfallSelection_, &QPushButton::clicked, this, [this] {
+        if (const auto range = waterfall_->measurementRange(); range && !waterfall_->isMeasuring())
+            startAverage(*range, "Averaging waterfall selection…");
+    });
     connect(exactWave, &QPushButton::clicked, this, &MainWindow::startWaveform);
     for (auto *combo : {fft_, window_, scale_})
         connect(combo, &QComboBox::currentIndexChanged, this, &MainWindow::updateDsp);
@@ -737,6 +750,18 @@ void MainWindow::requestPreview()
 bool MainWindow::measurementActive() const
 {
     return spectrum_->isMeasuring() || averagePlot_->isMeasuring() || waterfall_->isMeasuring();
+}
+
+void MainWindow::updateWaterfallSelection()
+{
+    const auto range = waterfall_->measurementRange();
+    if (range) {
+        start_->setText(QString::number(range->begin));
+        end_->setText(QString::number(range->end));
+    }
+    averageWaterfallSelection_->setEnabled(
+        recording_ && range && !waterfall_->isMeasuring() &&
+        range->size() >= static_cast<std::uint64_t>(preferences_.dsp.fftSize));
 }
 
 void MainWindow::beginMeasurement(QWidget *plot)
@@ -1014,14 +1039,19 @@ void MainWindow::startAverage(bool entireRecording)
 {
     if (!recording_)
         return;
+    startAverage(entireRecording ? FrameRange{0, recording_->frameCount()} : range_,
+                 entireRecording ? "Averaging entire recording…" : "Averaging selected interval…");
+}
+void MainWindow::startAverage(FrameRange range, const QString &message)
+{
+    if (!recording_)
+        return;
     previewTimer_->stop();
     average_.reset();
     averagePlot_->clear();
-    generation_ = controller_.average(
-        recording_, entireRecording ? FrameRange{0, recording_->frameCount()} : range_,
-        preferences_.dsp);
+    generation_ = controller_.average(recording_, range, preferences_.dsp);
     averageDock_->show();
-    setBusy(true, entireRecording ? "Averaging entire recording…" : "Averaging selected interval…");
+    setBusy(true, message);
 }
 void MainWindow::startWaveform()
 {

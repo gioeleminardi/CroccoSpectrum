@@ -55,6 +55,17 @@ subtract 64-bit indices before conversion to seconds. Duration is independent
 of preview row skipping or overview aggregation, although those displays limit
 event-boundary resolution. Plot measurement state is transient.
 
+Waterfall measurement changes publish their ordered row-start frame bounds to
+the time-selection fields without calling `setRange`. The separate average
+button submits a snapshot of those bounds to the existing analysis worker,
+using the same exclusive-end convention as the time panel. Pending gestures
+and intervals shorter than one FFT window keep that button disabled.
+
+Spectrum hover stores the pointer's plot position and paints a crosshair with
+axis-coordinate labels using the current frequency range and power limits.
+The status readout includes these coordinates alongside the existing exact
+FFT-bin values. Pointer exit clears the crosshair; no additional FFT is needed.
+
 Input NaN/Inf or nonrepresentable resulting power invalidates a window. Invalid
 windows and capture-boundary windows are excluded and counted. Finite clipping
 is retained as actual recorded data and reported separately. Integer ADC widths

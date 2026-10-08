@@ -50,6 +50,7 @@ class MainWindow : public QMainWindow
     void schedulePreview();
     void requestPreview();
     void beginMeasurement(QWidget *plot);
+    void updateWaterfallSelection();
     [[nodiscard]] bool measurementActive() const;
     void hoverFrame(quint64 frame);
     void selectFrame(quint64 frame);
@@ -66,6 +67,7 @@ class MainWindow : public QMainWindow
     void zoomTime(bool inward);
     void panTime(bool forward);
     void startAverage(bool entireRecording);
+    void startAverage(FrameRange range, const QString &message);
     void startWaveform();
     void exportCsv(bool average);
     void exportPng();
@@ -110,7 +112,7 @@ class MainWindow : public QMainWindow
     QLineEdit *start_, *end_, *seekTime_;
     QSlider *timeline_;
     QLabel *recordingLabel_, *resolutionLabel_, *coverageLabel_, *cursorLabel_, *averageLabel_;
-    QPushButton *cancel_;
+    QPushButton *cancel_, *averageWaterfallSelection_;
     QProgressBar *progress_;
     QListWidget *bookmarksList_;
     QTimer *previewTimer_, *saveTimer_;
