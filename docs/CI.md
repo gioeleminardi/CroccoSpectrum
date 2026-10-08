@@ -1,12 +1,12 @@
 # CI builds and downloadable artifacts
 
-GitHub runs `.github/workflows/ci.yml`; Gitea runs `.gitea/workflows/ci.yml`.
-Both trigger on pushes, pull requests, and manual dispatch. They use the same
-scripts and Ubuntu 24.04 build container, regardless of the runner's host OS.
+GitHub is the primary host and runs `.github/workflows/ci.yml`.
+The workflow triggers on pushes, pull requests, and manual dispatch. It uses the
+CI scripts and Ubuntu 24.04 build container, regardless of the runner's host OS.
 
 ## Downloads
 
-Open **Actions → a workflow run → Artifacts** on either hosting service.
+Open **Actions → a workflow run → Artifacts** on GitHub.
 Successful builds upload these artifacts with a 30-day requested retention:
 
 | Artifact | Contents |
@@ -14,19 +14,18 @@ Successful builds upload these artifacts with a 30-day requested retention:
 | `CroccoSpectrum-linux-amd64-AppImage` | One runnable `croccospectrum-VERSION-x86_64.AppImage` |
 | `CroccoSpectrum-linux-amd64-portable` | One extract-and-run `croccospectrum-VERSION-x86_64.tar.gz` with GUI, CLI, and bundled dependencies |
 | `CroccoSpectrum-linux-amd64-sources` | Complete application source and dependency source archives |
-| `CroccoSpectrum-linux-amd64-debug` | All Debug executables/static libraries, build identity, and checksum |
-| `CroccoSpectrum-linux-amd64-asan` | All ASAN/UBSAN executables/static libraries, build identity, and checksum |
-| `reports-release`, `reports-debug`, `reports-asan` | Build logs, CTest log/JUnit XML, build identity; Release also has dependency manifest, package/source SHA-256 checksums, and distribution smoke logs |
+| `reports-release` | Build logs, CTest log/JUnit XML, build identity, dependency manifest, package/source SHA-256 checksums, and distribution smoke logs |
 
-Release packaging waits for Debug and ASAN/UBSAN checks to pass. Each build
-compiles the CMake ALL target: GUI, CLI, both static libraries, both test tools,
-and the sustained-use test executable. Long-duration stress testing runs
-separately from routine CI. TSAN with instrumented Qt is a separate testing
+The GitHub workflow builds Release once, runs all tests and package checks, then
+uploads the artifacts. It compiles the CMake ALL target: GUI, CLI, both static
+libraries, both test tools, and the sustained-use test executable. Long-duration
+stress testing runs separately from routine CI. TSAN with instrumented Qt is a separate testing
 procedure documented in [TESTING.md](TESTING.md).
 
-Development archives require matching Qt/FFTW/compiler runtimes. For a portable
-application, use the Release AppImage or folder archive, which includes both the
-GUI and CLI with their dependencies. Release packages are checked in clean,
+Debug and ASAN/UBSAN builds remain available through the local pipeline commands
+below. Development archives require matching Qt/FFTW/compiler runtimes. For a
+portable application, use the Release AppImage or folder archive, which includes
+both the GUI and CLI with their dependencies. Release packages are checked in clean,
 network-disabled Ubuntu 24.04/26.04 and Fedora 44 containers before upload.
 
 Artifacts are ZIP containers around the listed files. Extract that ZIP, then
@@ -61,12 +60,7 @@ pipeline does not create a tagged release or publish to a package registry.
 
 ## Runner setup
 
-GitHub uses its `ubuntu-24.04` hosted runner. Gitea needs an **amd64 runner** with
-the `ubuntu-latest` label, Bash, Git, tar, Node 20 or newer for the pinned actions,
-and a Docker CLI connected to a usable daemon. Enable Actions in the repository.
-Use Gitea 1.22 or later for the compatible v4 artifact action and register the
-runner against the instance's public URL. If the job itself runs in a container,
-make its Docker daemon reachable through the runner's normal configuration.
+GitHub uses its `ubuntu-24.04` hosted runner.
 
 The source and packages are copied through the container API. A job container's
 workspace therefore does not need to exist at the same path on the Docker host.
@@ -84,6 +78,12 @@ asset has an upstream continuous URL; if it changes, CI fails the pinned hash
 check. Review and update the runtime binary hash, commit, source pins, and tool
 compatibility together rather than bypassing verification.
 
+Upstream source downloads enter the cache only after SHA-256 verification.
+Invalid cached sources are downloaded again. Downloads get up to three attempts
+before a persistent mismatch fails with the expected and received
+hashes and source URL. zlib uses its official versioned GitHub release asset
+with the checksum published by upstream.
+
 ## Run the pipeline locally
 
 ```sh
@@ -96,8 +96,7 @@ Release `packages/` contains exactly the AppImage and portable tarball; source
 archives are in `sources/` and their checksums are in `reports/checksums/`.
 Debug/ASAN packages and reports appear under `dist/ci/CONFIGURATION/`. A fresh
 checkout is recommended. `RF_CI_JOBS` controls compile parallelism (default 2).
-For local checks on a Podman workstation, `RF_CI_ENGINE=podman` selects that CLI;
-the Gitea runner instructions above require its supported Docker setup.
+For local checks on a Podman workstation, `RF_CI_ENGINE=podman` selects that CLI.
 
 Every dependency source provision is collected before Release upload. Package
 names read the application version from `packaging/dependencies.json`; CI checks
@@ -105,7 +104,4 @@ that it matches the CMake project version. Actions are pinned to immutable commi
 IDs. Diagnostics are uploaded after a failure; binary packages are uploaded only
 after that job's complete build/test/verification sequence succeeds.
 
-References: [GitHub artifact action](https://github.com/actions/upload-artifact),
-[Gitea artifacts](https://docs.gitea.com/usage/actions/artifacts/),
-[Gitea-compatible artifact action](https://github.com/ChristopherHX/gitea-upload-artifact),
-[Gitea runner setup](https://docs.gitea.com/runner/installation/docker/).
+References: [GitHub artifact action](https://github.com/actions/upload-artifact).

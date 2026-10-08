@@ -66,13 +66,13 @@ supported formats, and verification results.
 
 ### Download a CI build
 
-On GitHub or Gitea, open **Actions → a successful workflow run → Artifacts** and
+On GitHub, open **Actions → a successful workflow run → Artifacts** and
 download **CroccoSpectrum-linux-amd64-AppImage** or
 **CroccoSpectrum-linux-amd64-portable**. Each artifact ZIP contains one file:
 the AppImage or the extract-and-run tarball. Accompanying sources are in
 **CroccoSpectrum-linux-amd64-sources**; checksums are in **reports-release**.
-Debug and ASAN/UBSAN builds are also available for development. See [CI builds](docs/CI.md)
-for artifact contents, retention, and Gitea runner setup.
+Debug and ASAN/UBSAN builds can be run locally for development. See [CI builds](docs/CI.md)
+for artifact contents, retention, and runner setup.
 
 ### Run an AppImage
 
@@ -471,7 +471,7 @@ use separate builds and require matching compiler runtimes; see
 | [Feature status](FEATURE_STATUS.md) | Implemented capabilities, supported formats, and verification results |
 | [Validation](docs/VALIDATION.md) | Test evidence, environments, and coverage limitations |
 | [Testing](docs/TESTING.md) | Numerical verification, sanitizers, benchmarks, and sustained-use checks |
-| [CI builds](docs/CI.md) | GitHub/Gitea automation, artifact downloads, and runner setup |
+| [CI builds](docs/CI.md) | GitHub automation, artifact downloads, and runner setup |
 | [Benchmarks](docs/BENCHMARKS.md) | Measured performance and reference hardware |
 | [Changelog](CHANGELOG.md) | Release history and behavior changes |
 | [Third-party components](docs/THIRD_PARTY.md) | Dependency licenses, notices, and source provisions |

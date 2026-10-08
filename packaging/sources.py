@@ -30,10 +30,24 @@ provisions.mkdir(exist_ok=True)
 
 for entry in pins["upstream_sources"]:
     archive = cache / entry["file"]
-    if not archive.exists():
-        urllib.request.urlretrieve(entry["url"], archive)
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != entry["sha256"]:
-        raise SystemExit(f"Source checksum mismatch: {archive}")
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != entry["sha256"]:
+        temporary = archive.with_name(archive.name + ".download")
+        try:
+            for attempt in range(3):
+                urllib.request.urlretrieve(entry["url"], temporary)
+                actual = hashlib.sha256(temporary.read_bytes()).hexdigest()
+                if actual == entry["sha256"]:
+                    temporary.replace(archive)
+                    break
+                if attempt < 2:
+                    print(f"Source checksum mismatch for {archive.name}; retrying download", flush=True)
+            else:
+                raise SystemExit(
+                    f"Source checksum mismatch: {archive}\nURL: {entry['url']}\n"
+                    f"Expected: {entry['sha256']}\nReceived: {actual}"
+                )
+        finally:
+            temporary.unlink(missing_ok=True)
     shutil.copy2(archive, provisions / archive.name)
     with tarfile.open(archive) as source:
         for member in source:

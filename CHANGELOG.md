@@ -92,7 +92,7 @@ This file records release history and behavior changes. See
 - Embedded application artwork and Linux desktop launcher integration.
 - Portable Linux folder and AppImage packages with bundled dependencies,
   license notices, complete application/dependency sources, and checksums.
-- GitHub and Gitea CI builds for Release, Debug, and ASAN/UBSAN configurations,
+- GitHub CI builds for Release, Debug, and ASAN/UBSAN configurations,
   with downloadable artifacts and test reports.
 - Pinned CI actions and packaging downloads, verified runtime checksums, and
   offline package smoke checks on Ubuntu and Fedora.

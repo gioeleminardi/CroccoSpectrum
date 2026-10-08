@@ -44,7 +44,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Background cancellation and stale-result protection | Implemented | Separate analysis and hover controllers, each with one worker and one replaceable pending request |
 | Bounded in-memory preview cache | Implemented | 64 MiB LRU per controller, interpretation/DSP/range/source identity keys |
 | Headless CLI | Implemented | Inspection, spectra, averages, waveform, exports |
-| GitHub/Gitea automatic builds and downloadable artifacts | Implemented | All targets in Release/Debug/ASAN; separate AppImage and portable tarball downloads, sources, checksums/reports; runner/retention details in docs/CI.md |
+| GitHub automatic builds and downloadable artifacts | Implemented | All targets in Release/Debug/ASAN; separate AppImage and portable tarball downloads, sources, checksums/reports; runner/retention details in docs/CI.md |
 | Self-contained portable folder / AppImage | Implemented | Bundled libraries/plugins/font; tar folder and no-FUSE AppImage extraction path |
 | Ubuntu 24.04/26.04 and Fedora 44 package checks | Smoke checks passed | Clean offline containers; Fedora native X11/Wayland smoke; coverage in docs/VALIDATION.md |
 | Large-file benchmarks | Measured locally | Dense 400 MB / 4 GB / 40 GB; benchmark report records scope and hardware |

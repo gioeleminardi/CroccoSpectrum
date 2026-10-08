@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared runner entry point for GitHub and Gitea. Docker cp/streaming avoids
+# CI runner entry point. Docker cp/streaming avoids
 # assuming that a containerized runner's workspace path exists on its host.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -44,7 +44,7 @@ fi
 
 if [[ $mode == release ]]; then
     # Test final packages without installing libraries in the target containers.
-    # Copy through the Docker API so this also works with nested Gitea runners.
+    # Copy through the Docker API so this also works with containerized runners.
     staging=$(mktemp -d)
     trap 'cleanup; rm -rf "$staging"' EXIT
     tar -xzf "$output/packages/"*-x86_64.tar.gz -C "$staging"

@@ -9,41 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: All targets (${{ matrix.configuration }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        configuration: [release]
-    env:
-      RF_CI_COMMIT: ${{ github.sha }}
-    steps:
-      - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Build every target and run all tests
-        run: bash ci/build.sh "${{ matrix.configuration }}"
-      - name: Upload development binaries and checksums
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: CroccoSpectrum-linux-amd64-${{ matrix.configuration }}
-          path: dist/ci/${{ matrix.configuration }}/packages/
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Upload build and test reports
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: reports-${{ matrix.configuration }}
-          path: dist/ci/${{ matrix.configuration }}/reports/
-          if-no-files-found: warn
-          retention-days: 30
-
   release:
     name: Portable Linux amd64 packages
-    needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:

@@ -12,7 +12,7 @@ The environments and test coverage below define the scope of this evidence.
   dependencies; sources and checksums are stored separately. Both final packages
   launch offline on Ubuntu 24.04, Ubuntu 26.04, and Fedora 44. Debug archives retain
   all build outputs, executable permissions, build identity, and a valid checksum.
-  GitHub and normalized Gitea workflows pass actionlint; shell scripts and embedded
+  The GitHub workflow passes actionlint; shell scripts and embedded
   Python parse successfully. The local builder was refreshed after a cached Ubuntu
   library's exact source version became unavailable from the live mirrors.
 - CroccoSpectrum 0.1.6: Fedora 44 Debug and Release builds and all four CTest
@@ -126,8 +126,7 @@ The environments and test coverage below define the scope of this evidence.
   Release, Debug and ASAN/UBSAN targets build and all four suites pass in each
   configuration. All seven outputs, tar executable permissions and checksums
   were checked. The final CI Release folder/AppImage launch offline on Ubuntu
-  24.04/26.04 and Fedora 44. GitHub workflow passes actionlint; Gitea build steps
-  and artifact inputs match, with its compatible upload action pinned separately.
+  24.04/26.04 and Fedora 44. GitHub workflow passes actionlint.
 
 Performance and original sanitizer evidence above was collected for 0.1.0.
 The local CI runs add fresh 0.1.1 Release/Debug and ASAN/UBSAN evidence. TSAN was
@@ -157,5 +156,5 @@ or a performance matrix for every supported encoding. Sparse offset checks
 verify addressing rather than storage throughput.
 
 CI evidence comes from local pipeline execution. Runner registration, server
-permissions, and server-side artifact uploads on GitHub/Gitea have not been
+permissions, and server-side artifact uploads on GitHub have not been
 verified by those runs.
