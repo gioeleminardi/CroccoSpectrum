@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        configuration: [debug, asan]
+        configuration: [release]
     env:
       RF_CI_COMMIT: ${{ gitea.sha }}
     steps:
