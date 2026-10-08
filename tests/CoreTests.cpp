@@ -1,5 +1,6 @@
 #include "app/Session.h"
 #include "recording/Metadata.h"
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -293,7 +294,12 @@ class CoreTests : public QObject
         descriptor.allowPartial = false;
         rf::Recording completed(descriptor);
         QVERIFY(download.open(QIODevice::ReadWrite));
+        const auto modified = download.fileTime(QFileDevice::FileModificationTime);
         QCOMPARE(download.write(QByteArray(4, char{1})), qint64{4});
+        QVERIFY(download.flush());
+        // Same-size writes can share timestamps on CI filesystems. Advance the
+        // modification time explicitly so this checks detection without a delay.
+        QVERIFY(download.setFileTime(modified.addSecs(2), QFileDevice::FileModificationTime));
         download.close();
         QVERIFY_EXCEPTION_THROWN(completed.verifyUnchanged(), std::runtime_error);
     }
