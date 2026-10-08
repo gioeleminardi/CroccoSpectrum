@@ -276,7 +276,7 @@ void MainWindow::buildMenus()
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
     auto *analysis = menuBar()->addMenu("&Analysis");
-    connect(analysis->addAction("Average selected interval"), &QAction::triggered, this,
+    connect(analysis->addAction("Average time selection"), &QAction::triggered, this,
             [this] { startAverage(false); });
     connect(analysis->addAction("Average entire recording"), &QAction::triggered, this,
             [this] { startAverage(true); });
@@ -466,7 +466,7 @@ void MainWindow::buildControls()
     }
     selectionForm->addRow(zoomButtons);
     layout->addWidget(selection);
-    auto *average = new QPushButton("Average selected interval", this);
+    auto *average = new QPushButton("Average time selection", this);
     average->setObjectName("averageSelection");
     averageWaterfallSelection_ = new QPushButton("Average waterfall selection", this);
     averageWaterfallSelection_->setObjectName("averageWaterfallSelection");
@@ -474,7 +474,7 @@ void MainWindow::buildControls()
     averageWaterfallSelection_->setToolTip(
         "Average between the waterfall markers without applying the time range. "
         "Complete a selection spanning at least one FFT window to enable this button.");
-    auto *exactWave = new QPushButton("Exact waveform for selection", this);
+    auto *exactWave = new QPushButton("Exact waveform for time selection", this);
     layout->addWidget(average);
     layout->addWidget(averageWaterfallSelection_);
     layout->addWidget(exactWave);
