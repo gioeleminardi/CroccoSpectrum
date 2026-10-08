@@ -182,7 +182,7 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
         painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         painter.setPen(foreground);
         painter.drawText(QRectF(0, y - 9, 68, 18), Qt::AlignRight | Qt::AlignVCenter,
-                         number(minimum + fraction * (maximum - minimum)));
+                         QString::number(minimum + fraction * (maximum - minimum), 'f', 1));
         const double labelX = std::clamp(x - 65, 0.0, static_cast<double>(width() - 130));
         painter.drawText(
             QRectF(labelX, plot.bottom() + 5, 130, 18), Qt::AlignCenter,
