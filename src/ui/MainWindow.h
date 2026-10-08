@@ -49,6 +49,8 @@ class MainWindow : public QMainWindow
     void applyPreferences();
     void schedulePreview();
     void requestPreview();
+    void beginMeasurement(QWidget *plot);
+    [[nodiscard]] bool measurementActive() const;
     void hoverFrame(quint64 frame);
     void selectFrame(quint64 frame);
     void toggleFrameFreeze(quint64 frame);

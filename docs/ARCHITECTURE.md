@@ -42,6 +42,19 @@ are fftshifted. Averages use the arithmetic mean of linear powers, accumulated
 online to avoid unbounded arrays or overflowing sums. Log conversion happens
 only when presenting/exporting dB. Zero power exports as negative infinity.
 
+Spectrum Shift-click measurements snap to bin centers and average the exact
+linear bins between both endpoints, inclusive. This is mean spectral power,
+not integrated band power; the result retains the current spectrum/PSD unit.
+The mean is recomputed on completion, a new trace, or changed endpoints during
+a Shift-drag edit, not on every paint. Band drags preserve the bin/row span and
+clamp both endpoints together; marker drags may cross the other endpoint. A
+marker hit takes priority over a band hit within six logical pixels. The normal
+drag threshold distinguishes edits from replacement Shift-clicks. Waterfall
+measurements use row-start frame timestamps and
+subtract 64-bit indices before conversion to seconds. Duration is independent
+of preview row skipping or overview aggregation, although those displays limit
+event-boundary resolution. Plot measurement state is transient.
+
 Input NaN/Inf or nonrepresentable resulting power invalidates a window. Invalid
 windows and capture-boundary windows are excluded and counted. Finite clipping
 is retained as actual recorded data and reported separately. Integer ADC widths
@@ -62,6 +75,10 @@ The main window owns the shared frame cursor and freeze state for both time
 plots. Waveform sample buckets select the corresponding waterfall row start.
 An out-of-range waveform preview follows the selected frame using the hover
 job's bounded waveform snapshot; exact full-selection waveforms are retained.
+Endpoint placement and editing temporarily suppress shared hover and freeze commands,
+and invalidates queued hover results without changing the user's freeze state.
+Completed frequency selections follow the displayed frame and recalculate
+their mean; new analysis contexts clear plot measurements.
 There is no file-sized queue. The GUI debounces navigation edits and invalidates
 its current generation immediately. Worker signals are queued to GUI objects;
 slots compare their generation before applying any result.

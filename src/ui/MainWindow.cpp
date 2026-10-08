@@ -166,7 +166,15 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         connect(plot, &SpectrumPlot::cursorChanged, cursorLabel_, &QLabel::setText);
         connect(plot, &SpectrumPlot::frequencyRangeChanged, waterfall_,
                 &WaterfallPlot::setFrequencyRange);
+        connect(plot, &SpectrumPlot::measurementActiveChanged, this, [this, plot](bool active) {
+            if (active)
+                beginMeasurement(plot);
+        });
     }
+    connect(waterfall_, &WaterfallPlot::measurementActiveChanged, this, [this](bool active) {
+        if (active)
+            beginMeasurement(waterfall_);
+    });
     connect(spectrum_, &SpectrumPlot::frequencyRangeChanged, averagePlot_,
             &SpectrumPlot::setFrequencyRange);
     connect(averagePlot_, &SpectrumPlot::frequencyRangeChanged, spectrum_,
@@ -726,15 +734,38 @@ void MainWindow::requestPreview()
     setBusy(true, "Computing preview…");
 }
 
+bool MainWindow::measurementActive() const
+{
+    return spectrum_->isMeasuring() || averagePlot_->isMeasuring() || waterfall_->isMeasuring();
+}
+
+void MainWindow::beginMeasurement(QWidget *plot)
+{
+    if (plot != spectrum_ && spectrum_->isMeasuring())
+        spectrum_->clearMeasurement();
+    if (plot != averagePlot_ && averagePlot_->isMeasuring())
+        averagePlot_->clearMeasurement();
+    if (plot != waterfall_ && waterfall_->isMeasuring())
+        waterfall_->clearMeasurement();
+    // A queued hover result must not replace the trace while measuring or editing.
+    spectrumController_.cancel();
+    ++spectrumGeneration_;
+    if (spectrumPreview_)
+        spectrumFrame_ = spectrumPreview_->spectrumStart;
+    updateFrameCursors();
+}
+
 void MainWindow::hoverFrame(quint64 frame)
 {
-    if (!frameFrozen_)
+    if (measurementActive())
+        updateFrameCursors();
+    else if (!frameFrozen_)
         selectFrame(frame);
 }
 
 void MainWindow::toggleFrameFreeze(quint64 frame)
 {
-    if (!recording_ || !preview_)
+    if (!recording_ || !preview_ || measurementActive())
         return;
     frameFrozen_ = !frameFrozen_;
     selectFrame(frame);
@@ -744,7 +775,9 @@ void MainWindow::toggleFrameFreeze(quint64 frame)
 
 void MainWindow::clearFrameCursor()
 {
-    if (!frameFrozen_) {
+    if (measurementActive())
+        updateFrameCursors();
+    else if (!frameFrozen_) {
         frameCursorVisible_ = false;
         updateFrameCursors();
     }

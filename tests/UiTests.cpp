@@ -58,11 +58,19 @@ QPoint waveformRowPosition(const rf::WaveformPlot &plot, std::size_t row, std::s
     return {76 + qRound((row + 0.5) * (plot.width() - 100) / rows), 60};
 }
 
-void moveMouse(QWidget *plot, const QPoint &position)
+void moveMouse(QWidget *plot, const QPoint &position, Qt::MouseButtons buttons = Qt::NoButton,
+               Qt::KeyboardModifiers modifiers = Qt::NoModifier)
 {
     QMouseEvent event(QEvent::MouseMove, position, plot->mapToGlobal(position), Qt::NoButton,
-                      Qt::NoButton, Qt::NoModifier);
+                      buttons, modifiers);
     QApplication::sendEvent(plot, &event);
+}
+
+void shiftDrag(QWidget *plot, const QPoint &from, const QPoint &to)
+{
+    QTest::mousePress(plot, Qt::LeftButton, Qt::ShiftModifier, from);
+    moveMouse(plot, to, Qt::LeftButton, Qt::ShiftModifier);
+    QTest::mouseRelease(plot, Qt::LeftButton, Qt::ShiftModifier, to);
 }
 
 QAction *findAction(const QWidget &widget, const QString &text)
@@ -108,6 +116,404 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void spectrumMeasurement()
+    {
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->frequencies = {-2000, -1000, 0, 1000, 2000};
+        result->spectrum.power = {0, 0.25, 1, 0.25, 0};
+        result->spectrumStart = 256;
+        plot.setPreview(result);
+        plot.show();
+        QSignalSpy ranges(&plot, &rf::SpectrumPlot::frequencyRangeChanged);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(176, 180));
+        QVERIFY(plot.isMeasuring());
+        moveMouse(&plot, QPoint(276, 180));
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
+        QVERIFY(!plot.isMeasuring());
+        // Mean(0.25, 1) = 0.625; averaging dB would incorrectly give -3.0103.
+        QVERIFY(plot.measurementText().contains("-2.041199827 dBFS"));
+        QVERIFY(plot.measurementText().contains("frame 256"));
+        QCOMPARE(ranges.count(), 0);
+        const auto text = plot.measurementText();
+        plot.resize(420, 230);
+        plot.setFrequencyRange(-1500, 1500);
+        rf::ViewSettings view;
+        view.palette = "Inferno";
+        view.colorMin = -120;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        QCOMPARE(plot.measurementText(), text);
+        plot.resize(600, 310);
+        plot.resetFrequency();
+        auto next = std::make_shared<rf::PreviewResult>(*result);
+        next->spectrumStart = 512;
+        next->spectrum.power = {0, 0.5, 0.5, 0.25, 0};
+        plot.setPreview(next, false);
+        QVERIFY(plot.measurementText().contains("-3.010299957 dBFS"));
+        QVERIFY(plot.measurementText().contains("frame 512"));
+        view.absoluteFrequency = true;
+        plot.setView(view, rf::PowerScale::Spectrum, 1'000'000'000);
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(plot.grab().save(screenshots + "/spectrum-measurement.png"));
+            plot.resize(360, 180);
+            QVERIFY(plot.grab().save(screenshots + "/spectrum-measurement-small.png"));
+        }
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QVERIFY(plot.measurementText().isEmpty());
+        plot.resize(600, 310);
+        plot.setView({}, rf::PowerScale::Spectrum, 0);
+        // Reverse direction, then replace with a same-bin zero-power selection.
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(176, 180));
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QVERIFY(plot.isMeasuring());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
+        QVERIFY(plot.measurementText().contains("−∞ dBFS"));
+        plot.setPreview(result);
+        QVERIFY(plot.measurementText().isEmpty());
+    }
+    void spectrumMeasurementEditing_data()
+    {
+        QTest::addColumn<bool>("reversed");
+        QTest::newRow("forward") << false;
+        QTest::newRow("reverse") << true;
+    }
+    void spectrumMeasurementEditing()
+    {
+        QFETCH(bool, reversed);
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->frequencies = {0, 1000, 2000, 3000, 4000, 5000, 6000};
+        result->spectrum.power = {1, 1, 1, 1, 4, 4, 4};
+        plot.setPreview(result);
+        plot.show();
+        const QPoint first(159, 200), last(326, 200);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, reversed ? last : first);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, reversed ? first : last);
+        QVERIFY(plot.measurementText().contains("0 dBFS"));
+        QSignalSpy ranges(&plot, &rf::SpectrumPlot::frequencyRangeChanged);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(243, 200));
+        QVERIFY(plot.isMeasuring());
+        moveMouse(&plot, QPoint(326, 200), Qt::LeftButton, Qt::ShiftModifier);
+        // Move one bin: mean(1, 1, 4) = 2, while width stays 2 kHz.
+        QVERIFY(plot.measurementText().contains("3.010299957 dBFS"));
+        QVERIFY(plot.measurementText().contains("Δf: 2 kHz"));
+        QVERIFY(plot.measurementText().contains(reversed ? "Start: 4 kHz · End: 2 kHz"
+                                                        : "Start: 2 kHz · End: 4 kHz"));
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 200));
+        QVERIFY(!plot.isMeasuring());
+        shiftDrag(&plot, QPoint(243, 200), QPoint(159, 200));
+        QVERIFY(plot.measurementText().contains("Δf: 3 kHz"));
+        shiftDrag(&plot, QPoint(409, 200), QPoint(493, 200));
+        QVERIFY(plot.measurementText().contains("Δf: 4 kHz"));
+        // Cross the other marker, then move the band beyond both plot edges.
+        shiftDrag(&plot, QPoint(159, 200), QPoint(576, 200));
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        QVERIFY(plot.measurementText().contains("6.020599913 dBFS"));
+        shiftDrag(&plot, QPoint(534, 200), QPoint(-100, 200));
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        QVERIFY(plot.measurementText().contains("0 dBFS"));
+        shiftDrag(&plot, QPoint(118, 200), QPoint(800, 200));
+        QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
+        QVERIFY(plot.measurementText().contains("6.020599913 dBFS"));
+        QCOMPARE(ranges.count(), 0);
+        // A click without a drag still begins a replacement measurement.
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(534, 200));
+        QVERIFY(plot.isMeasuring());
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QVERIFY(!plot.isMeasuring());
+        QVERIFY(plot.measurementText().isEmpty());
+    }
+    void spectrumMeasurementDensityAndInvalid()
+    {
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        // Real-input axis includes Nyquist. Select all bins, including zero.
+        result->frequencies = {0, 1000, 2000};
+        result->spectrum.power = {0, 1, 2};
+        plot.setPreview(result);
+        plot.setView({}, rf::PowerScale::Density, 0);
+        plot.show();
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
+        QVERIFY(plot.measurementText().contains("Δf: 2 kHz"));
+        QVERIFY(plot.measurementText().contains("0 dBFS/Hz"));
+        auto invalid = std::make_shared<rf::PreviewResult>(*result);
+        invalid->spectrum.valid = false;
+        invalid->spectrum.power.clear();
+        plot.setPreview(invalid, false);
+        QVERIFY(plot.measurementText().contains("unavailable"));
+        QVERIFY(plot.measurementText().contains("Δf: 2 kHz"));
+        QVERIFY(!plot.grab().isNull());
+        plot.clear();
+        QVERIFY(plot.measurementText().isEmpty());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QVERIFY(!plot.isMeasuring());
+        auto average = std::make_shared<rf::AverageResult>();
+        average->frequencies = result->frequencies;
+        average->averagePower = {0, 1, 2};
+        average->maxPower = {0, 4, 8};
+        average->validWindows = 1;
+        plot.setAverage(average, false);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
+        QVERIFY(plot.measurementText().contains("Average trace"));
+        plot.setAverage(average, true);
+        QVERIFY(plot.measurementText().contains("6.020599913 dBFS/Hz"));
+        QVERIFY(plot.measurementText().contains("Max-hold trace"));
+    }
+    void spectrumMeasurementUsesEveryBin()
+    {
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        constexpr std::size_t bins = 1'048'576;
+        result->frequencies.resize(bins);
+        result->spectrum.power.resize(bins);
+        for (std::size_t bin = 0; bin < bins; ++bin)
+            result->frequencies[bin] = static_cast<double>(bin) - 524288;
+        result->spectrum.power[500000] = 1;
+        plot.setPreview(result);
+        plot.show();
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
+        // A screen-pixel mean would give a much higher value for this single tone.
+        QVERIFY(plot.measurementText().contains("-60.20599913 dBFS"));
+        QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
+    }
+    void waterfallMeasurement()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        constexpr std::uint64_t begin = 9'007'199'254'740'993;
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {begin, begin + 2000};
+        result->frequencies = {-1, 0, 1};
+        result->columns = 3;
+        result->rowStarts = {begin, begin + 1, begin + 1000};
+        result->waterfall.assign(9, 0.01);
+        result->sampled = true;
+        plot.setPreview(result, 2.5);
+        plot.show();
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy selected(&plot, &rf::WaterfallPlot::frameSelected);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
+        QVERIFY(plot.isMeasuring());
+        hovered.clear();
+        moveMouse(&plot, rowPosition(plot, 0, 3));
+        QCOMPARE(hovered.count(), 0);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
+        QVERIFY(!plot.isMeasuring());
+        QVERIFY(plot.measurementText().contains("Duration: 400 ms"));
+        QVERIFY(plot.measurementText().contains("1 frames"));
+        QVERIFY(plot.measurementText().contains(QString::number(begin + 1)));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(selected.count(), 0);
+        const auto text = plot.measurementText();
+        rf::ViewSettings view;
+        view.palette = "Inferno";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.setFrequencyRange(-0.5, 0.5);
+        plot.resize(420, 230);
+        QCOMPARE(plot.measurementText(), text);
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(&plot, &leave);
+        QCOMPARE(plot.measurementText(), text);
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QVERIFY(plot.measurementText().isEmpty());
+        plot.resize(600, 310);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
+        QTest::mouseDClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 2, 3));
+        QVERIFY(!plot.isMeasuring());
+        QVERIFY(plot.measurementText().contains("Duration: 400 s"));
+        QCOMPARE(selected.count(), 0);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(plot.grab().save(screenshots + "/waterfall-measurement.png"));
+            plot.resize(360, 210);
+            QVERIFY(plot.grab().save(screenshots + "/waterfall-measurement-small.png"));
+        }
+        plot.setPreview(result, 2.5);
+        QVERIFY(plot.measurementText().isEmpty());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(10, 10));
+        QVERIFY(!plot.isMeasuring());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
+        QVERIFY(plot.measurementText().contains("Duration: 0 s"));
+        plot.clear();
+        QVERIFY(plot.measurementText().isEmpty());
+    }
+    void waterfallMeasurementEditing_data()
+    {
+        spectrumMeasurementEditing_data();
+    }
+    void waterfallMeasurementEditing()
+    {
+        QFETCH(bool, reversed);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        constexpr std::uint64_t begin = 9'007'199'254'740'993;
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {begin, begin + 200};
+        result->frequencies = {-1, 0, 1};
+        result->columns = 3;
+        result->rowStarts = {begin, begin + 1, begin + 10, begin + 20, begin + 40, begin + 100};
+        result->waterfall.assign(18, 0.01);
+        result->sampled = true;
+        plot.setPreview(result, 2.5);
+        plot.show();
+        const auto first = rowPosition(plot, reversed ? 3 : 1, 6);
+        const auto last = rowPosition(plot, reversed ? 1 : 3, 6);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, first);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, last);
+        QVERIFY(plot.measurementText().contains("Duration: 7.6 s"));
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy selected(&plot, &rf::WaterfallPlot::frameSelected);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 2, 6));
+        QVERIFY(plot.isMeasuring());
+        hovered.clear();
+        moveMouse(&plot, rowPosition(plot, 3, 6), Qt::LeftButton, Qt::ShiftModifier);
+        // Equal row span, different duration because timestamps are irregular.
+        QVERIFY(plot.measurementText().contains("Duration: 12 s"));
+        QCOMPARE(hovered.count(), 0);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 3, 6));
+        QVERIFY(!plot.isMeasuring());
+        shiftDrag(&plot, rowPosition(plot, 2, 6), rowPosition(plot, 0, 6));
+        QVERIFY(plot.measurementText().contains("Duration: 16 s"));
+        shiftDrag(&plot, rowPosition(plot, 4, 6), rowPosition(plot, 5, 6));
+        QVERIFY(plot.measurementText().contains("Duration: 40 s"));
+        shiftDrag(&plot, rowPosition(plot, 0, 6), rowPosition(plot, 5, 6));
+        QVERIFY(plot.measurementText().contains("Duration: 0 s"));
+        shiftDrag(&plot, rowPosition(plot, 5, 6), rowPosition(plot, 3, 6));
+        QVERIFY(plot.measurementText().contains("Duration: 32 s"));
+        shiftDrag(&plot, rowPosition(plot, 4, 6), QPoint(100, -100));
+        QVERIFY(plot.measurementText().contains("Duration: 4 s"));
+        shiftDrag(&plot, rowPosition(plot, 1, 6), QPoint(100, 500));
+        QVERIFY(plot.measurementText().contains("Duration: 32 s"));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(selected.count(), 0);
+        // Clearing during a marker drag must also release the interaction lock.
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 5, 6));
+        moveMouse(&plot, rowPosition(plot, 4, 6), Qt::LeftButton, Qt::ShiftModifier);
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 4, 6));
+        QVERIFY(!plot.isMeasuring());
+        QVERIFY(plot.measurementText().isEmpty());
+    }
+    void measurementsPreserveFrameFreeze_data()
+    {
+        QTest::addColumn<bool>("frozen");
+        QTest::newRow("following") << false;
+        QTest::newRow("frozen") << true;
+    }
+    void measurementsPreserveFrameFreeze()
+    {
+        QFETCH(bool, frozen);
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        QTest::mouseMove(&window, QPoint(5, 5));
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {32, 64, 96}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.spectrumResult(), 10000);
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *waveform = window.findChild<rf::WaveformPlot *>("waveformPlot");
+        const auto range = window.selectedRange();
+        if (frozen)
+            QTest::mouseClick(waterfall, Qt::LeftButton, Qt::NoModifier,
+                              rowPosition(*waterfall, 0, 3));
+        // Submit a hover before starting: its queued result must be invalidated.
+        moveMouse(waterfall, rowPosition(*waterfall, 1, 3));
+        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(100, 100));
+        const auto held = window.spectrumResult();
+        moveMouse(waterfall, rowPosition(*waterfall, 2, 3));
+        moveMouse(waveform, waveformRowPosition(*waveform, 2, 3));
+        QTest::qWait(100);
+        QCOMPARE(window.spectrumResult(), held);
+        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(200, 100));
+        QVERIFY(!spectrum->measurementText().isEmpty());
+        moveMouse(waterfall, rowPosition(*waterfall, 2, 3));
+        if (frozen) {
+            QTest::qWait(100);
+            QCOMPARE(window.spectrumResult(), held);
+        } else
+            QTRY_COMPARE_WITH_TIMEOUT(window.spectrumResult()->spectrumStart,
+                                      std::uint64_t{512}, 10000);
+        QVERIFY(!spectrum->measurementText().isEmpty());
+        // Moving the completed band holds the source frame throughout the drag.
+        QTest::mousePress(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(150, 100));
+        QVERIFY(spectrum->isMeasuring());
+        const auto editingHeld = window.spectrumResult();
+        moveMouse(waveform, waveformRowPosition(*waveform, 1, 3));
+        moveMouse(spectrum, QPoint(175, 100), Qt::LeftButton, Qt::ShiftModifier);
+        QTest::qWait(100);
+        QCOMPARE(window.spectrumResult(), editingHeld);
+        QTest::mouseRelease(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(175, 100));
+        QVERIFY(!spectrum->isMeasuring());
+        // Duration selection also suspends waveform-driven updates and never seeks.
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+                          rowPosition(*waterfall, 0, 3));
+        const auto durationHeld = window.spectrumResult();
+        moveMouse(waveform, waveformRowPosition(*waveform, 1, 3));
+        QTest::qWait(100);
+        QCOMPARE(window.spectrumResult(), durationHeld);
+        QTest::mouseDClick(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+                           rowPosition(*waterfall, 2, 3));
+        QVERIFY(waterfall->measurementText().contains("Duration: 2 s"));
+        QCOMPARE(window.selectedRange(), range);
+        QTest::mousePress(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+                          rowPosition(*waterfall, 2, 3));
+        QVERIFY(waterfall->isMeasuring());
+        moveMouse(waveform, waveformRowPosition(*waveform, 0, 3));
+        moveMouse(waterfall, rowPosition(*waterfall, 1, 3), Qt::LeftButton, Qt::ShiftModifier);
+        QTest::qWait(100);
+        QCOMPARE(window.spectrumResult(), durationHeld);
+        QVERIFY(waterfall->measurementText().contains("Duration: 1 s"));
+        QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+                            rowPosition(*waterfall, 1, 3));
+        QVERIFY(!waterfall->isMeasuring());
+        moveMouse(waterfall, rowPosition(*waterfall, 1, 3));
+        if (frozen) {
+            QTest::qWait(100);
+            QCOMPARE(window.spectrumResult(), durationHeld);
+        } else
+            QTRY_COMPARE_WITH_TIMEOUT(window.spectrumResult()->spectrumStart,
+                                      std::uint64_t{256}, 10000);
+        // A new gesture in the other plot cancels an unfinished selection.
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+                          rowPosition(*waterfall, 0, 3));
+        QVERIFY(waterfall->isMeasuring());
+        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(100, 100));
+        QVERIFY(!waterfall->isMeasuring());
+        QVERIFY(waterfall->measurementText().isEmpty());
+        QTest::keyClick(spectrum, Qt::Key_Escape);
+        moveMouse(waterfall, rowPosition(*waterfall, 2, 3));
+        if (!frozen)
+            QTRY_COMPARE_WITH_TIMEOUT(window.spectrumResult()->spectrumStart,
+                                      std::uint64_t{512}, 10000);
+        window.findChild<QLineEdit *>("selectionEnd")->setText("512");
+        QTest::mouseClick(window.findChild<QPushButton *>("applySelection"), Qt::LeftButton);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.spectrumResult(), 10000);
+        QVERIFY(spectrum->measurementText().isEmpty());
+        QVERIFY(waterfall->measurementText().isEmpty());
+    }
     void waveformFrameCursor()
     {
         rf::WaveformPlot plot;

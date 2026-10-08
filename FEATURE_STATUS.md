@@ -1,6 +1,6 @@
 # Feature status
 
-Updated: 2026-10-07. Target: C++20 + Qt 6 Widgets on amd64 Linux.
+Updated: 2026-10-08. Target: C++20 + Qt 6 Widgets on amd64 Linux.
 Application: CroccoSpectrum 0.1.2.
 
 This table describes the current implementation. Test environments, evidence,
@@ -20,6 +20,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Default spectrum and waterfall | Implemented | Large waterfall views are explicitly sampled previews |
 | Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
 | Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; local previews follow out-of-range frames |
+| Shift-click spectrum and waterfall measurements | Implemented (unreleased) | Two endpoints; FFT-bin frequency difference and linear-power mean; row-start duration with exact frame differences; Shift-drag band/markers to move/resize with live updates; Escape clears |
 | User-selected power-of-two FFT | Implemented | 256 through 1,048,576 |
 | Window, overlap, DC removal, conjugation | Implemented | Hann, rectangular, Hamming, Blackman-Harris |
 | dBFS / PSD and real one-sided scaling | Implemented | Explicit full-scale convention; no calibrated dBm |

@@ -179,6 +179,10 @@ average is discarded, and an older request cannot replace the latest result.
 | --- | --- |
 | Zoom frequency | Mouse wheel over the spectrum |
 | Pan frequency | Drag the spectrum |
+| Measure spectrum width and mean power | `Shift` + left-click the start, then the end |
+| Measure waterfall duration | `Shift` + left-click the start row, then the end row |
+| Move / resize a measurement | `Shift` + drag its shaded band / boundary marker |
+| Clear a plot measurement | `Escape` in that plot |
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
 | Freeze / resume following the pointer | Click inside the waterfall or waveform |
 | Seek to a sample | Double-click the waterfall or waveform |
@@ -214,6 +218,38 @@ CroccoSpectrum displays **dBFS** spectrum power or **dBFS/Hz** power spectral
 density. Its reference is one normalized mean-square unit: a unit complex tone
 is 0 dBFS, and a real sine with peak amplitude 1 is −3.0103 dBFS. These values are
 not calibrated dBm measurements.
+
+**Shift + left-click twice** inside the spectrum to measure a frequency interval.
+The first click sets the start; moving the pointer previews the end, and the
+second Shift-click completes the measurement. Endpoints snap to the nearest FFT
+bins. The readout shows both frequencies, their absolute difference, and the
+mean spectral power across all bins between the endpoints, including both ends.
+Power is averaged in linear units before conversion to dB; this is the mean of
+the selected spectral values, rather than integrated signal power. The same
+gesture works on the average and max-hold traces, with the source identified.
+Zero mean power is shown as −∞; invalid data is unavailable.
+
+In the waterfall, **Shift + left-click two rows** to measure elapsed time between
+their window-start sample frames. The readout shows exact frame indices, start
+and end times, and duration calculated from the frame difference and sample
+rate. Sampled previews and aggregated overviews limit how precisely event
+boundaries can be located; zoom into the event for finer row spacing. Selecting
+the same row gives zero duration.
+
+Measurements use yellow boundary markers and shaded bands. **Shift + drag the
+shaded band** to move both endpoints, or **Shift + drag a boundary marker** to
+increase or decrease the selection. Values update during the drag, and endpoints
+stop at the data boundaries. Moving a spectrum band preserves its frequency
+width; moving a waterfall band preserves its displayed row span and recalculates
+duration from the new row timestamps. Markers can cross, and overlapping markers
+allow the end marker to be dragged. A Shift-click without dragging starts a
+replacement measurement; **Escape** clears it. Either endpoint order works.
+Shared frame following pauses while placing or dragging endpoints, preserving
+the current freeze state, then resumes its previous behavior. A completed spectrum
+selection follows the displayed FFT frame and recalculates its mean power.
+Zoom, pan, resize, and palette changes preserve completed measurements; changing
+the recording, analysis interval, or DSP settings clears them. Measurements are
+temporary and are not saved in sessions.
 
 <details>
 <summary><strong>Sample normalization and spectral conventions</strong></summary>

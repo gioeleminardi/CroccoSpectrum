@@ -1,11 +1,27 @@
 # Validation evidence
 
-Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2 as of 2026-10-07.
+Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, the changes included in
+0.1.2, and unreleased Shift-click measurements as of 2026-10-08.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Shift-drag editing: all four Fedora 44 Debug CTest suites pass. Four added GUI
+  cases cover moving and resizing forward/reverse selections, live power and
+  duration updates, marker crossing/overlap, both data boundaries, replacement
+  clicks, and Escape during a drag. Shared-frame checks also cover source-frame
+  stability while moving a band or resizing a marker, preserving follow/freeze
+  state on release. These edit and shared-frame cases pass at QT_SCALE_FACTOR=2.
+- Unreleased Shift-click measurements: all four Fedora 44 Debug CTest suites
+  pass with Qt 6.11.2, including all 167 independent NumPy/SciPy comparisons.
+  New GUI cases cover linear-bin means versus dB/pixel means, one million FFT
+  bins, spectrum/PSD and average/max-hold units, zero/invalid power, reverse and
+  zero-width selections, irregular row timestamps, fractional sample rates,
+  duration above frame 2^53, replacement/Escape, view-only preservation, range
+  reset, and shared hover/freeze/queued-result behavior. The six new GUI cases
+  also pass at QT_SCALE_FACTOR=2. Normal and double-scale measurement renders,
+  including minimum-size panels, were visually inspected. These checks are
+  offscreen; older sanitizer and package evidence does not cover this change.
 - Waterfall hover included in 0.1.2: all four CTest suites pass on Fedora 44 in the
   Debug build with Qt 6.11.2. GUI checks cover frame 0, first/middle/last-row
   highlight geometry, rapid hover and selection/DSP changes, zoom preservation,
@@ -85,7 +101,7 @@ Recording checks use synthetic fixtures. Raw-file interpretation must match the
 recording writer's format, component order, byte order, and sample rate.
 
 Native desktop evidence is limited to Fedora X11/Wayland smoke checks. Ubuntu
-launch checks use containers. High-DPI and multiple-monitor interaction and
+launch checks use containers. Native high-DPI and multiple-monitor interaction and
 long-duration stability have not been validated by the recorded runs.
 
 The recorded checks do not cover comprehensive disk-full/permission failures,

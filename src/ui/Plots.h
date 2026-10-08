@@ -2,9 +2,19 @@
 #include "app/Session.h"
 #include <QImage>
 #include <QWidget>
+#include <utility>
 
 namespace rf
 {
+struct MeasurementDrag {
+    enum class Target { None, Band, Start, End };
+    Target target = Target::None;
+    std::pair<std::size_t, std::size_t> original;
+    QPointF pressPosition;
+    std::size_t pressIndex = 0;
+    bool moved = false;
+};
+
 // Plot widgets only consume immutable snapshots. They never read a recording,
 // run an FFT, or change the source arrays when reducing data for screen pixels.
 class SpectrumPlot : public QWidget
@@ -18,9 +28,16 @@ class SpectrumPlot : public QWidget
     void clear();
     void resetFrequency();
     void setFrequencyRange(double left, double right);
+    void clearMeasurement();
+    [[nodiscard]] bool isMeasuring() const
+    {
+        return measuring_ || measurementDrag_.target != MeasurementDrag::Target::None;
+    }
+    [[nodiscard]] QString measurementText() const;
   signals:
     void cursorChanged(QString text);
     void frequencyRangeChanged(double left, double right);
+    void measurementActiveChanged(bool active);
 
   protected:
     void paintEvent(QPaintEvent *) override;
@@ -28,10 +45,15 @@ class SpectrumPlot : public QWidget
     void wheelEvent(QWheelEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
+    void mouseDoubleClickEvent(QMouseEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
 
   private:
     std::span<const double> frequencies() const;
     std::span<const double> powers() const;
+    std::optional<std::size_t> binAt(const QPointF &position) const;
+    void updateMeasurementPower();
+    void paintMeasurement(QPainter &painter);
     std::shared_ptr<const PreviewResult> preview_;
     std::shared_ptr<const AverageResult> average_;
     ViewSettings view_;
@@ -41,6 +63,10 @@ class SpectrumPlot : public QWidget
     double left_ = 0, right_ = 1;
     double dragLeft_ = 0, dragRight_ = 1;
     int dragX_ = -1;
+    std::optional<std::pair<std::size_t, std::size_t>> measurementBins_;
+    std::optional<double> measurementMean_;
+    bool measuring_ = false;
+    MeasurementDrag measurementDrag_;
 };
 
 class WaterfallPlot : public QWidget
@@ -53,19 +79,28 @@ class WaterfallPlot : public QWidget
     void setFrequencyRange(double left, double right);
     void setFrameCursor(std::optional<std::uint64_t> frame, bool frozen);
     void clear();
+    void clearMeasurement();
+    [[nodiscard]] bool isMeasuring() const
+    {
+        return measuring_ || measurementDrag_.target != MeasurementDrag::Target::None;
+    }
+    [[nodiscard]] QString measurementText() const;
   signals:
     void cursorChanged(QString text);
     void frameHovered(quint64 frame);
     void frameClicked(quint64 frame);
     void cursorLeft();
     void frameSelected(quint64 frame);
+    void measurementActiveChanged(bool active);
 
   protected:
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
+    void keyPressEvent(QKeyEvent *) override;
 
   private:
     void rebuildImage();
@@ -76,6 +111,9 @@ class WaterfallPlot : public QWidget
     PowerScale scale_ = PowerScale::Spectrum;
     int hoveredRow_ = -1;
     bool frameFrozen_ = false;
+    std::optional<std::pair<std::size_t, std::size_t>> measurementRows_;
+    bool measuring_ = false;
+    MeasurementDrag measurementDrag_;
     double sampleRate_ = 1, center_ = 0, left_ = 0, right_ = 1;
 };
 

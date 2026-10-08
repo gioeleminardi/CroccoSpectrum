@@ -4,6 +4,18 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Shift-drag a completed measurement's shaded band to move it or either marker
+  to resize it, with live power/duration updates and clamping at the data bounds.
+- Shift + left-click two endpoints in the spectrum to measure frequency width
+  and mean spectral power from exact linear bins, or two waterfall rows to
+  measure duration from their sample-frame timestamps. Persistent markers and
+  readouts support reverse selections, replacement, and Escape to clear.
+- Frame following pauses during endpoint placement without changing the freeze
+  state. Completed spectrum measurements follow the displayed frame; view-only
+  changes preserve measurements, while new recordings/ranges/DSP clear them.
+
 ## 0.1.2 — 2026-10-07 — Synchronized frame inspection
 
 - Hovering the waterfall highlights one row and displays its exact FFT window
