@@ -129,6 +129,8 @@ QRgb paletteColor(const QString &palette, double position)
                                              QColor("#f9ba38"), QColor("#7a0403")};
     const auto &colors = palette == "Inferno" ? inferno : palette == "Turbo" ? turbo : viridis;
     position = std::clamp(position, 0.0, 1.0);
+    if (palette == "Baudline")
+        return qRgb(0, qRound(position * 249), qRound(position * 171));
     if (palette == "Grayscale") {
         const int gray = qRound(position * 255);
         return qRgb(gray, gray, gray);

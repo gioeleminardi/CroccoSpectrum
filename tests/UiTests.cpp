@@ -24,6 +24,7 @@
 #include <QWheelEvent>
 #include <QtTest>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -118,6 +119,42 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void baudlinePalette()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 20};
+        result->frequencies = {0, 1, 2, 3, 4, 5, 6};
+        result->columns = 7;
+        result->rowStarts = {0, 10};
+        result->waterfall = {0, 1e-20, 1e-10, 1e-5, 1, 10, qQNaN(),
+                             0, 1e-20, 1e-10, 1e-5, 1, 10, qQNaN()};
+        plot.setPreview(result, 10);
+        rf::ViewSettings view;
+        view.palette = "Baudline";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.show();
+        moveMouse(&plot, QPoint(10, 10));
+        const auto rendered = plot.grab().toImage();
+        const auto pixel = [&](int x, int y) {
+            return rendered.pixelColor(qRound(x * rendered.devicePixelRatio()),
+                                       qRound(y * rendered.devicePixelRatio()));
+        };
+        const std::array<QColor, 7> expected{QColor("#000000"), QColor("#000000"),
+                                             QColor("#000000"), QColor(0, 125, 86),
+                                             QColor("#00F9AB"), QColor("#00F9AB"),
+                                             QColor(160, 30, 130)};
+        for (int column = 0; column < 7; ++column)
+            QCOMPARE(pixel(76 + qRound((column + 0.5) * 500 / 7), 212), expected[column]);
+        QCOMPARE(pixel(587, 32), QColor("#00F9AB"));
+        QCOMPARE(pixel(587, 152), QColor(0, 125, 86));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(plot.grab().save(screenshots + "/baudline-palette.png"));
+        }
+    }
     void spectrumCrosshair()
     {
         rf::SpectrumPlot plot;
@@ -1064,7 +1101,7 @@ class UiTests : public QObject
         QCOMPARE(window.spectrumResult()->spectrumStart, std::uint64_t{512});
         QCOMPARE(peakFrequency(), 64.0);
         move(0);
-        auto *average = findAction(window, "Average selected interval");
+        auto *average = findAction(window, "Average time selection");
         QVERIFY(average);
         average->trigger();
         QVERIFY(window.isBusy());
@@ -1334,6 +1371,11 @@ class UiTests : public QObject
         QCOMPARE(errors.count(), 0);
         QVERIFY(window.previewResult());
         const auto before = window.previewResult();
+        auto *palette = window.findChild<QComboBox *>("waterfallPalette");
+        QVERIFY(palette);
+        QVERIFY(palette->findText("Baudline") >= 0);
+        palette->setCurrentText("Viridis");
+        palette->setCurrentText("Baudline");
         window.findChild<QDoubleSpinBox *>("colorMinimum")->setValue(-80);
         QTest::qWait(250);
         QCOMPARE(window.previewResult(), before); // Palette-only editing must not run DSP.
@@ -1354,6 +1396,10 @@ class UiTests : public QObject
         const auto preferences = rf::readPreferences(directory.filePath("preferences.json"));
         QCOMPARE(preferences.dsp.fftSize, 2048);
         QCOMPARE(preferences.view.colorMin, -80.0);
+        QCOMPARE(preferences.view.palette, QString("Baudline"));
+        rf::MainWindow restored(nullptr, directory.filePath("preferences.json"));
+        QCOMPARE(restored.findChild<QComboBox *>("waterfallPalette")->currentText(),
+                 QString("Baudline"));
     }
     void controllerCancellation()
     {

@@ -1,7 +1,7 @@
 # Feature status
 
 Updated: 2026-10-08. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.3.
+Application: CroccoSpectrum 0.1.4.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -30,7 +30,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Interval max hold | Implemented | Separate result from average |
 | Full exact waterfall overview | Implemented | Explicit full pass; bounded temporal/frequency maxima plus average |
 | Waveform and exact min/max envelopes | Implemented | Full-selection scan is an explicit command |
-| Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work |
+| Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work; Baudline spans black to #00F9AB |
 | Docked/floating analysis panels | Implemented | Qt docking, persisted workspace |
 | Sample/time seek, time and frequency zoom/pan | Implemented | 64-bit sample text fields; linked frequency views |
 | Cursor readouts and shared time selection | Implemented | Exact indices, sample-count time, optional UTC at millisecond resolution |

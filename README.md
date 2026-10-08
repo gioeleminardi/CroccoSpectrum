@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.3-3B82F6?style=for-the-badge" alt="Version 0.1.3"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.4-3B82F6?style=for-the-badge" alt="Version 0.1.4"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -53,7 +53,7 @@ an acquisition driver.
 | 🔬 | **Configurable DSP** | Choose power-of-two FFTs, four window functions, overlap, DC removal, and spectral inversion |
 | 📊 | **Exact analysis** | Calculate interval or whole-recording averages, max hold, and a waterfall overview that scans every required window |
 | 🌊 | **Waveform inspection** | View I/Q, magnitude, or I-only samples; scan exact min/max envelopes to preserve isolated peaks |
-| 🎨 | **Display controls** | Adjust color limits and switch between Viridis, Inferno, Grayscale, and Turbo without recomputing FFTs |
+| 🎨 | **Display controls** | Adjust color limits and switch between Viridis, Inferno, Grayscale, Turbo, and Baudline (black to `#00F9AB`) without recomputing FFTs |
 | 🧭 | **Flexible workspace** | Dock or float panels, seek by sample or time, and navigate with linked views and cursor readouts |
 | 💾 | **Sessions & exports** | Save interpretation, settings, selections, and bookmarks; export numeric CSV, plot PNG, or original sample bytes |
 | 📦 | **Portable Linux packages** | Run an AppImage or extractable folder with bundled application libraries, Qt plugins, and fonts |
@@ -77,21 +77,21 @@ for artifact contents, retention, and Gitea runner setup.
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.1.3-x86_64.AppImage
-./croccospectrum-0.1.3-x86_64.AppImage
+chmod +x croccospectrum-0.1.4-x86_64.AppImage
+./croccospectrum-0.1.4-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.1.3-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-0.1.4-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.1.3-x86_64.tar.gz
-./croccospectrum-0.1.3-x86_64/AppRun
+tar -xzf croccospectrum-0.1.4-x86_64.tar.gz
+./croccospectrum-0.1.4-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -410,12 +410,12 @@ The bundler records dependency versions, notices, and SHA-256 hashes, and refuse
 to replace an existing generated bundle. Before distribution:
 
 1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-0.1.3-x86_64` there to collect
+   `packaging/sources.py --bundle dist/croccospectrum-0.1.4-x86_64` there to collect
    the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.3-x86_64` to refresh
+2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.4-x86_64` to refresh
    documentation, manifests, and binary/source archives.
 3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.3-x86_64 OUTPUT.AppImage`.
+   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.4-x86_64 OUTPUT.AppImage`.
    Supply the pinned tool and the verified runtime at
    `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
    it explicitly.
@@ -427,7 +427,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.1.3 is an early release.** The recorded checks include 167
+**CroccoSpectrum 0.1.4 is an early release.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 

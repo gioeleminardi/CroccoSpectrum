@@ -37,7 +37,7 @@ void ViewSettings::validate() const
         !std::isfinite(colorMax - colorMin) || colorMin >= colorMax)
         throw std::runtime_error("Color minimum must be finite and lower than maximum");
     if (palette != "Viridis" && palette != "Inferno" && palette != "Grayscale" &&
-        palette != "Turbo")
+        palette != "Turbo" && palette != "Baudline")
         throw std::runtime_error("Unknown palette");
     if (waveformMode < 0 || waveformMode > 2)
         throw std::runtime_error("Invalid waveform mode");
@@ -90,7 +90,7 @@ ViewSettings viewFromJson(const QJsonObject &object)
     ViewSettings settings;
     settings.colorMin = object["color_min"].toDouble(-100);
     settings.colorMax = object["color_max"].toDouble(0);
-    settings.palette = object["palette"].toString("Viridis");
+    settings.palette = object["palette"].toString(settings.palette);
     settings.autoRange = object["auto_range"].toBool();
     settings.absoluteFrequency = object["absolute_frequency"].toBool();
     settings.waveformMode = object["waveform_mode"].toInt(0);

@@ -1,6 +1,6 @@
 {
   "application_name": "CroccoSpectrum",
-  "application": "0.1.3",
+  "application": "0.1.4",
   "standard": "C++20",
   "architecture": "x86_64",
   "minimum_host_glibc": "2.39",

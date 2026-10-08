@@ -419,7 +419,8 @@ void MainWindow::buildControls()
     colorMin_->setObjectName("colorMinimum");
     colorMax_->setObjectName("colorMaximum");
     palette_ = new QComboBox(this);
-    palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo"});
+    palette_->setObjectName("waterfallPalette");
+    palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo", "Baudline"});
     autoRange_ = new QCheckBox("Automatic range (80 dB span)", this);
     absoluteFrequency_ = new QCheckBox("Absolute frequency, when known", this);
     waveformMode_ = new QComboBox(this);

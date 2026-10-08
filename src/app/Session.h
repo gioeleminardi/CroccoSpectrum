@@ -8,7 +8,7 @@ namespace rf
 struct ViewSettings {
     double colorMin = -100;
     double colorMax = 0;
-    QString palette = "Viridis";
+    QString palette = "Baudline";
     bool autoRange = false;
     bool absoluteFrequency = false;
     int waveformMode = 0; // 0: I/Q, 1: magnitude, 2: I only.

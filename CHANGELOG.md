@@ -4,6 +4,13 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.1.4 — 2026-10-08 — Baudline waterfall palette
+
+- Add the Baudline waterfall palette, a linear gradient from black to `#00F9AB`.
+  It recolors the waterfall and its legend without recomputing FFTs and is
+  retained in preferences and sessions. Baudline is the default for new settings;
+  existing saved palette choices are preserved.
+
 ## 0.1.3 — 2026-10-08 — Plot measurements and selection averaging
 
 - Waterfall Shift selections populate the time-selection frame fields without

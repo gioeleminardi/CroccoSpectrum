@@ -278,12 +278,14 @@ class CoreTests : public QObject
         QTemporaryDir directory;
         rf::Session session;
         session.recording.path = "source.iq";
+        session.view.palette = "Baudline";
         session.range = {9007199254740993ULL, 9007199254745093ULL};
         session.bookmarks = {{session.range.begin, 4096, "Burst"}};
         const auto path = directory.filePath("session.json");
         rf::saveSession(path, session);
         const auto restored = rf::readSession(path);
         QCOMPARE(restored.range.begin, session.range.begin);
+        QCOMPARE(restored.view.palette, QString("Baudline"));
         QCOMPARE(restored.bookmarks[0].start, session.range.begin);
         const auto data = writeFile(directory.filePath("signal.sigmf-data"),
                                     QByteArray::fromHex("00400000").repeated(2048));
