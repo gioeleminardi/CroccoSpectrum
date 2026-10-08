@@ -1,8 +1,10 @@
 # CI builds and downloadable artifacts
 
 GitHub is the primary host and runs `.github/workflows/ci.yml`.
-The workflow triggers on pushes, pull requests, and manual dispatch. It uses the
-CI scripts and Ubuntu 24.04 build container, regardless of the runner's host OS.
+The workflow runs on pushes to `devel` and `main`, pull requests targeting either
+branch, manual dispatch, and publication of a release or pre-release. Tag pushes
+do not trigger a build. It uses the CI scripts and Ubuntu 24.04 build container,
+regardless of the runner's host OS.
 
 ## Downloads
 
@@ -55,8 +57,38 @@ requires installing Qt or FFTW. The AppImage also supports
 `--appimage-extract-and-run` on hosts without FUSE.
 
 Downloads use the hosting service's normal sign-in/access policy. Server retention
-limits can override the requested 30 days. These are workflow artifacts; the
-pipeline does not create a tagged release or publish to a package registry.
+limits can override the requested 30 days for workflow artifacts. Published
+releases and pre-releases also receive the AppImage, portable tarball, application
+and dependency source archives, and their SHA-256 checksums as release assets.
+The upload job waits for the build job to succeed and uses artifacts from that
+same run. Reports remain available under Actions. The pipeline does not create
+releases or publish to a package registry.
+
+## Publish a release or pre-release
+
+Use `devel` for development and `main` for release-ready code.
+
+1. Update the application version in `CMakeLists.txt` and
+   `packaging/dependencies.json` together when preparing a new version. The tag
+   name does not change the version embedded in the application or package names.
+2. Merge the release-ready changes from `devel` into `main`. The tagged commit
+   must contain the updated workflow.
+3. On GitHub, open **Releases → Draft a new release**, choose a new tag, and select
+   `main` as the target. Add the title and release notes; select **Set as a
+   pre-release** when appropriate.
+4. Publish the release and wait for **Build, test and package** to finish. The
+   build tests the tagged commit, then the upload job attaches the files to the
+   release's **Assets** section automatically.
+
+Only release events run the upload job. Pushes, pull requests, and manual runs
+produce Actions artifacts without attaching files to a release. Existing
+releases are not updated automatically. Uploads do not overwrite existing assets
+with the same filename; remove those assets before rerunning a failed upload.
+
+This workflow requires releases that allow asset uploads after publication.
+If [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+are enabled, assets must be attached to a draft before publishing, which requires
+a different publishing workflow.
 
 ## Runner setup
 
@@ -64,9 +96,10 @@ GitHub uses its `ubuntu-24.04` hosted runner.
 
 The source and packages are copied through the container API. A job container's
 workspace therefore does not need to exist at the same path on the Docker host.
-No publishing token or release secret is required. Use isolated runners for
-untrusted pull requests, as with other jobs that compile and execute repository
-code.
+The release upload uses the built-in `GITHUB_TOKEN`; no custom release secret is
+required. Only the upload job receives `contents: write`; the build job keeps
+`contents: read`. Use isolated runners for untrusted pull requests, as with other
+jobs that compile and execute repository code.
 
 CI rebuilds the Ubuntu builder without the container layer cache on every run.
 Persistent runners can otherwise retain older binary dependencies after Ubuntu

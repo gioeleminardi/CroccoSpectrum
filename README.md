@@ -64,6 +64,13 @@ supported formats, and verification results.
 
 ## Quick start
 
+### Download a release
+
+Open [Releases](https://github.com/gioeleminardi/CroccoSpectrum/releases) and
+download the AppImage or portable tarball from **Assets**. New releases and
+pre-releases receive packages, accompanying sources, and checksums automatically
+after their build and verification workflow succeeds.
+
 ### Download a CI build
 
 On GitHub, open **Actions → a successful workflow run → Artifacts** and
