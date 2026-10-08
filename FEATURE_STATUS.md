@@ -1,7 +1,7 @@
 # Feature status
 
 Updated: 2026-10-08. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.4.
+Application: CroccoSpectrum 0.1.5.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -33,6 +33,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work; Baudline spans black to #00F9AB |
 | Docked/floating analysis panels | Implemented | Qt docking, persisted workspace |
 | Sample/time seek, time and frequency zoom/pan | Implemented | 64-bit sample text fields; linked frequency views |
+| Keyboard shortcuts cheatsheet | Implemented | Help → Keyboard shortcuts / F1; live menu bindings, plot gestures and keyboard navigation; stays open while working |
 | Cursor readouts and shared time selection | Implemented | Exact indices, sample-count time, optional UTC at millisecond resolution |
 | Optional capture UTC and retune-aware frequency axes | Implemented | Unknown/gapped UTC is not inferred; mixed-frequency aggregates remain baseband |
 | Preferences and reproducible sessions | Implemented | Versioned, atomic JSON; indices stored as decimal strings |

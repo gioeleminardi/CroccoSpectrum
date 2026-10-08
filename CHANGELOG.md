@@ -4,6 +4,12 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.1.5 — 2026-10-08 — Keyboard shortcuts cheatsheet
+
+- Add Help → Keyboard shortcuts, opened with F1, listing assigned shortcuts,
+  plot gestures, and keyboard navigation. The cheatsheet reads the live menu
+  bindings and stays open while working in the main window.
+
 ## 0.1.4 — 2026-10-08 — Baudline waterfall palette
 
 - Add the Baudline waterfall palette, a linear gradient from black to `#00F9AB`.

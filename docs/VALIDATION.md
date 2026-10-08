@@ -1,11 +1,14 @@
 # Validation evidence
 
 Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2, 0.1.3, and 0.1.4 as of 2026-10-08.
+0.1.2, 0.1.3, 0.1.4, and 0.1.5 as of 2026-10-08.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- CroccoSpectrum 0.1.5 version bump: Debug and Release builds pass, along with
+  all four Debug CTest suites. Both GUI and CLI `--version` report 0.1.5 in both
+  configurations; packaging metadata matches the CMake project version.
 - CroccoSpectrum 0.1.4: Fedora 44 Debug build and all four CTest suites pass.
   Baudline rendering checks exact black/#00F9AB endpoints, midpoint, clipping,
   invalid cells, and legend colors at normal and double display scale. Session

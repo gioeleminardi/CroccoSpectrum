@@ -35,7 +35,7 @@ an unexplained race report into a claimed passing gate.
 Explicit dense-file benchmark (up to 40 GB temporary disk space, cleaned on exit):
 
 ```sh
-python3 tests/benchmark.py --cli dist/croccospectrum-0.1.4-x86_64/croccospectrum-cli --gui dist/croccospectrum-0.1.4-x86_64/AppRun --output build/benchmarks.json
+python3 tests/benchmark.py --cli dist/croccospectrum-0.1.5-x86_64/croccospectrum-cli --gui dist/croccospectrum-0.1.5-x86_64/AppRun --output build/benchmarks.json
 ```
 
 Extended GUI stress test (eight hours in this example), built when

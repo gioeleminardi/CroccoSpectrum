@@ -23,7 +23,7 @@ must accompany a distributed release through the applicable source provisions.
 Do not treat a list of license names or copying notices alone as a substitute
 for the required source. The generated `dist/` artifacts include:
 
-- `croccospectrum-0.1.4-source.tar.gz`: complete application, tests, docs and build scripts.
+- `croccospectrum-0.1.5-source.tar.gz`: complete application, tests, docs and build scripts.
 - `dependency-sources.tar.gz`: pinned Qt/ICU source, exact Ubuntu source packages
   including their patches/.dsc descriptors, and AppImage runtime sources.
 - `dependency-sources/sources.json`: versions, upstream URLs and SHA-256 hashes.

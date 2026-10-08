@@ -319,6 +319,10 @@ void MainWindow::buildMenus()
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
     auto *help = menuBar()->addMenu("&Help");
+    auto *shortcuts = help->addAction("Keyboard shortcuts…");
+    shortcuts->setObjectName("keyboardShortcuts");
+    shortcuts->setShortcut(QKeySequence(Qt::Key_F1));
+    connect(shortcuts, &QAction::triggered, this, &MainWindow::showKeyboardShortcuts);
     connect(help->addAction("Measurement conventions"), &QAction::triggered, this, [this] {
         QMessageBox::information(
             this, "CroccoSpectrum conventions",
@@ -337,6 +341,94 @@ void MainWindow::buildMenus()
     auto *about = help->addAction("About CroccoSpectrum");
     about->setObjectName("aboutCroccoSpectrum");
     connect(about, &QAction::triggered, this, &MainWindow::showAbout);
+}
+
+void MainWindow::showKeyboardShortcuts()
+{
+    if (auto *existing = findChild<QDialog *>("keyboardShortcutsDialog")) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName("keyboardShortcutsDialog");
+    dialog->setWindowTitle("Keyboard shortcuts");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *scroll = new QScrollArea(dialog);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto *content = new QWidget(scroll);
+    auto *columns = new QHBoxLayout(content);
+    auto *commands = new QVBoxLayout;
+    auto *controls = new QVBoxLayout;
+    columns->addLayout(commands, 1);
+    columns->addLayout(controls, 1);
+    const auto addRow = [](QFormLayout *form, const QString &keys, const QString &command) {
+        auto *keyLabel = new QLabel(keys);
+        auto font = keyLabel->font();
+        font.setBold(true);
+        keyLabel->setFont(font);
+        keyLabel->setTextFormat(Qt::PlainText);
+        auto *description = new QLabel(command);
+        description->setTextFormat(Qt::PlainText);
+        description->setWordWrap(true);
+        form->addRow(keyLabel, description);
+    };
+    // Read the live menu bindings so the cheatsheet follows platform defaults
+    // and future changes to application shortcuts.
+    for (auto *menuAction : menuBar()->actions()) {
+        QFormLayout *form = nullptr;
+        for (auto *action : menuAction->menu()->actions()) {
+            if (action->shortcuts().isEmpty())
+                continue;
+            if (!form) {
+                auto *group = new QGroupBox(QString(menuAction->text()).remove('&'), content);
+                form = new QFormLayout(group);
+                commands->addWidget(group);
+            }
+            QStringList keys;
+            for (const auto &sequence : action->shortcuts())
+                keys.append(sequence.toString(QKeySequence::NativeText));
+            addRow(form, keys.join(" / "), QString(action->text()).remove('&'));
+        }
+    }
+    commands->addStretch();
+    auto *plots = new QGroupBox("Plot controls", content);
+    auto *plotForm = new QFormLayout(plots);
+    addRow(plotForm, "Shift + left-click twice",
+           "Measure width / mean power in a spectrum, or duration in the waterfall");
+    addRow(plotForm, "Shift + drag band", "Move a spectrum / waterfall measurement");
+    addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");
+    addRow(plotForm, QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
+           "Clear a measurement in the focused plot");
+    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum");
+    addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum");
+    addRow(plotForm, "Hover", "Inspect coordinates; follow the frame in waterfall / waveform");
+    addRow(plotForm, "Left-click", "Freeze / unfreeze the frame in waterfall / waveform");
+    addRow(plotForm, "Double-click", "Seek to a frame in waterfall / waveform");
+    controls->addWidget(plots);
+    auto *navigation = new QGroupBox("Keyboard navigation", content);
+    auto *navigationForm = new QFormLayout(navigation);
+    addRow(navigationForm, "Tab / Shift+Tab", "Move between controls");
+    addRow(navigationForm, "Space", "Activate a focused button or checkbox");
+    addRow(navigationForm, "Arrow keys",
+           "Navigate menus; adjust a focused slider or numeric value");
+    addRow(navigationForm, "Enter", "Run the selected menu command");
+    addRow(navigationForm, "Alt + menu letter",
+           "F: File · A: Analysis · V: View · H: Help (Linux / Windows)");
+    addRow(navigationForm, "Esc", "Close this cheatsheet or dismiss a menu / dialog");
+    controls->addWidget(navigation);
+    controls->addStretch();
+    scroll->setWidget(content);
+    layout->addWidget(scroll);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    const auto available = dialog->screen()->availableGeometry();
+    dialog->resize(std::min(960, available.width() - 60), std::min(620, available.height() - 80));
+    dialog->show();
 }
 
 void MainWindow::showAbout()

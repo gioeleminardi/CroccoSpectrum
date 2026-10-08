@@ -44,6 +44,7 @@ class MainWindow : public QMainWindow
   private:
     void buildMenus();
     void showAbout();
+    void showKeyboardShortcuts();
     void buildControls();
     void connectWorker();
     void applyPreferences();
