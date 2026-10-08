@@ -49,6 +49,7 @@ struct RecordingDescriptor {
     QString startUtc; // Optional ISO-8601 timestamp with an explicit UTC offset.
     std::uint64_t dataOffset = 0;
     std::optional<std::uint64_t> dataBytes;
+    bool allowPartial = false; // Analyze complete frames present at open; allow appends.
     QString metadataSource = "User import";
     std::vector<Capture> captures;
     std::vector<Annotation> annotations;
@@ -85,6 +86,7 @@ class Recording
     [[nodiscard]] const RecordingDescriptor &descriptor() const { return descriptor_; }
     [[nodiscard]] std::uint64_t frameCount() const { return frames_; }
     [[nodiscard]] std::uint64_t fileSize() const { return fileSize_; }
+    [[nodiscard]] std::uint64_t ignoredTrailingBytes() const { return ignoredTrailingBytes_; }
     [[nodiscard]] QString identity() const;
     void verifyUnchanged() const;
     [[nodiscard]] std::vector<std::byte> readBytes(FrameRange range) const;
@@ -96,6 +98,7 @@ class Recording
     int fd_ = -1;
     std::uint64_t frames_ = 0;
     std::uint64_t fileSize_ = 0;
+    std::uint64_t ignoredTrailingBytes_ = 0;
     std::uint64_t device_ = 0;
     std::uint64_t inode_ = 0;
     std::int64_t modifiedSeconds_ = 0;

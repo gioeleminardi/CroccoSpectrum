@@ -122,6 +122,17 @@ replacement. This is ordinary mutation detection, not a cryptographic guarantee
 against arbitrary same-size edits with manipulated timestamps. Do not claim it
 is a verified source hash.
 
+Partial imports are explicit (`allow_partial` in recording JSON, default false).
+They freeze the sample count and data length at the complete frames available
+when opened, discard future captures, and clip annotations to that range.
+Their identity remains the opening identity as the file grows. Size checks
+reject shrinkage below the opening file length and path checks reject
+replacement; timestamp changes are allowed. This assumes a stable downloaded
+prefix and does not detect in-place edits or preallocated missing regions.
+Sessions retain the snapshot descriptor; reimporting the original file obtains
+new samples and metadata. Sample exports reset partial mode because their
+output is a completed recording. Import presets also reset it to false.
+
 Full passes traverse every complete hop-aligned window and never use previews
 as measurement input. Exact waterfall overviews and averages share one pass;
 temporal/frequency maxima preserve events in covered windows but are not a

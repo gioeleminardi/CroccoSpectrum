@@ -69,6 +69,7 @@ int main(int argc, char **argv)
          {"full-scale", "Floating-point full scale", "value", "1"},
          {"offset", "Data start byte offset", "bytes", "0"},
          {"length", "Data length in bytes", "bytes"},
+         {"partial", "Open complete frames available now; allow append-only downloads"},
          {"start", "First frame (inclusive)", "frame", "0"},
          {"end", "Last frame (exclusive); default EOF", "frame"},
          {"fft", "Power-of-two FFT length", "length", "4096"},
@@ -119,7 +120,10 @@ int main(int argc, char **argv)
             if (parser.isSet("center-frequency"))
                 descriptor.centerFrequency = numeric(parser, "center-frequency");
         }
+        if (parser.isSet("partial"))
+            descriptor.allowPartial = true;
         rf::Recording recording(descriptor);
+        descriptor = recording.descriptor();
         rf::FrameRange range{rf::jsonUnsigned(parser.value("start"), "start"),
                              parser.isSet("end") ? rf::jsonUnsigned(parser.value("end"), "end")
                                                  : recording.frameCount()};
@@ -145,6 +149,8 @@ int main(int argc, char **argv)
                            {"source_identity", recording.identity()},
                            {"range_start", QString::number(range.begin)},
                            {"range_end", QString::number(range.end)}};
+        if (descriptor.allowPartial)
+            output["ignored_trailing_bytes"] = QString::number(recording.ignoredTrailingBytes());
         const auto started = std::chrono::steady_clock::now();
         if (command == "inspect") {
             const auto samples = recording.read(

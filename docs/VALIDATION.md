@@ -1,11 +1,22 @@
 # Validation evidence
 
 Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2, 0.1.3, 0.1.4, and 0.1.5 as of 2026-10-08.
+0.1.2, 0.1.3, 0.1.4, 0.1.5, and 0.1.6 as of 2026-10-08.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- CroccoSpectrum 0.1.6: Fedora 44 Debug and Release builds and all four CTest
+  suites pass, including the independent numerical reference checks. Both GUI
+  and CLI report 0.1.6; packaging metadata matches the CMake project version.
+  Partial-import regressions cover incomplete real/IQ frames, byte offsets and
+  declared lengths, fixed bounds during appends, replacement/truncation,
+  clipped SigMF captures/annotations, session snapshots, strict-mode checks,
+  completed byte exports, and import-preset compatibility. GUI tests cover
+  toggling partial mode, decoded import previews, cached previews and averaging
+  after appends; the import dialog was visually inspected offscreen. All five
+  CLI commands were checked with partial raw data in both configurations,
+  along with SigMF/descriptor imports, exported sidecars, and invalid bounds.
 - CroccoSpectrum 0.1.5 version bump: Debug and Release builds pass, along with
   all four Debug CTest suites. Both GUI and CLI `--version` report 0.1.5 in both
   configurations; packaging metadata matches the CMake project version.

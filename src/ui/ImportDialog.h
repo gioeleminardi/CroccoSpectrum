@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <thread>
 class QComboBox;
+class QCheckBox;
 class QLineEdit;
 class QLabel;
 class QPlainTextEdit;
@@ -26,6 +27,7 @@ class ImportDialog : public QDialog
     void requestPreview();
     RecordingDescriptor base_;
     QComboBox *kind_, *encoding_, *byteOrder_, *componentOrder_;
+    QCheckBox *partial_;
     QLineEdit *sampleRate_, *centerFrequency_, *startUtc_, *offset_, *length_, *fullScale_;
     QLabel *summary_;
     QPlainTextEdit *preview_;

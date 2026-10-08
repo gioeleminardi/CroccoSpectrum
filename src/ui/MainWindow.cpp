@@ -650,6 +650,9 @@ void MainWindow::connectWorker()
                         .arg(descriptor.format.bits)
                         .arg(descriptor.format.kind == SampleKind::Complex ? "I/Q" : "real")
                         .arg(descriptor.metadataSource));
+                if (descriptor.allowPartial)
+                    recordingLabel_->setText(recordingLabel_->text() +
+                                             "\nPartial snapshot · reopen to load more samples");
                 recordingLabel_->setToolTip(QString::fromUtf8(
                     QJsonDocument(recordingToJson(descriptor)).toJson(QJsonDocument::Indented)));
                 setWindowTitle(QFileInfo(descriptor.path).fileName() + " — CroccoSpectrum");
@@ -776,6 +779,7 @@ void MainWindow::openPath(const QString &path)
     auto defaults = preferences_.importDefaults;
     defaults.dataOffset = 0;
     defaults.dataBytes.reset();
+    defaults.allowPartial = false;
     defaults.captures.clear();
     defaults.annotations.clear();
     defaults.centerFrequency.reset();

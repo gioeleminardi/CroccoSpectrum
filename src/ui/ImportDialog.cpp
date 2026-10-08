@@ -1,5 +1,6 @@
 #include "ImportDialog.h"
 #include "recording/Metadata.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -74,7 +75,13 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
     startUtc_->setPlaceholderText("Optional: 2026-10-06T12:00:00.000Z");
     offset_ = new QLineEdit(this);
     length_ = new QLineEdit(this);
-    length_->setPlaceholderText("To EOF; incomplete frames are rejected");
+    length_->setPlaceholderText("To EOF");
+    partial_ = new QCheckBox("Open partial / growing file", this);
+    partial_->setObjectName("allowPartial");
+    partial_->setToolTip(
+        "Use complete frames currently available and ignore an incomplete final frame. "
+        "The downloaded prefix must stay unchanged; only appends are supported. "
+        "Reopen the file to load more samples.");
     fullScale_ = new QLineEdit(this);
     form->addRow("Samples", kind_);
     form->addRow("Scalar encoding", encoding_);
@@ -85,9 +92,11 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
     form->addRow("Capture start (UTC)", startUtc_);
     form->addRow("Data start (bytes)", offset_);
     form->addRow("Data length (bytes)", length_);
+    form->addRow(partial_);
     form->addRow("Float full-scale reference", fullScale_);
     layout->addLayout(form);
     summary_ = new QLabel(this);
+    summary_->setObjectName("importSummary");
     summary_->setWordWrap(true);
     layout->addWidget(summary_);
     preview_ = new QPlainTextEdit(this);
@@ -114,17 +123,24 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
         connect(field, &QLineEdit::textChanged, this, changed);
     for (auto *combo : {kind_, encoding_, byteOrder_, componentOrder_})
         connect(combo, &QComboBox::currentIndexChanged, this, changed);
+    connect(partial_, &QCheckBox::toggled, this, changed);
     connect(&controller_, &AnalysisController::recordingOpened, this,
             [this](quint64 generation, const std::shared_ptr<Recording> &recording, FrameRange) {
                 if (generation != generation_)
                     return;
-                summary_->setText(QString("%1 frames · %2 seconds · %3 bytes/frame\nSource: %4")
+                QString summary = QString("%1 frames · %2 seconds · %3 bytes/frame\nSource: %4")
                                       .arg(recording->frameCount())
                                       .arg(static_cast<double>(recording->frameCount()) /
                                                recording->descriptor().sampleRate,
                                            0, 'g', 10)
                                       .arg(recording->descriptor().format.frameBytes())
-                                      .arg(base_.metadataSource));
+                                      .arg(base_.metadataSource);
+                if (recording->descriptor().allowPartial) {
+                    summary += QString("\nPartial snapshot · %1 trailing byte(s) ignored.\n"
+                                       "Reopen to load newly downloaded samples.")
+                                   .arg(recording->ignoredTrailingBytes());
+                }
+                summary_->setText(summary);
                 buttons_->button(QDialogButtonBox::Ok)->setEnabled(true);
             });
     connect(&controller_, &AnalysisController::waveformReady, this,
@@ -198,11 +214,13 @@ void ImportDialog::setDescriptor(const RecordingDescriptor &descriptor)
     startUtc_->setText(descriptor.startUtc);
     offset_->setText(QString::number(descriptor.dataOffset));
     length_->setText(descriptor.dataBytes ? QString::number(*descriptor.dataBytes) : QString());
+    partial_->setChecked(descriptor.allowPartial);
     fullScale_->setText(QString::number(descriptor.format.floatFullScale, 'g', 17));
 }
 RecordingDescriptor ImportDialog::descriptor() const
 {
     auto descriptor = base_;
+    descriptor.allowPartial = partial_->isChecked();
     descriptor.format.kind = kind_->currentIndex() == 0 ? SampleKind::Real : SampleKind::Complex;
     const int format = encoding_->currentData().toInt();
     descriptor.format.encoding = static_cast<Encoding>(format / 100);

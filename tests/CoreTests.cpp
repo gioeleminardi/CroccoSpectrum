@@ -180,6 +180,143 @@ class CoreTests : public QObject
         QVERIFY_EXCEPTION_THROWN(rf::jsonUnsigned("18446744073709551616", "n"), std::runtime_error);
         QVERIFY_EXCEPTION_THROWN(rf::jsonUnsigned(1.5, "n"), std::runtime_error);
     }
+    void partialRecordingSnapshot()
+    {
+        QTemporaryDir directory;
+        const auto frame = QByteArray::fromHex("004000e0");
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("downloading.iq"),
+                                    QByteArray("hdr") + frame.repeated(3) + frame.left(3));
+        descriptor.dataOffset = 3;
+        descriptor.dataBytes = 100;
+        descriptor.captures = {{0, 915000000, {}}, {2, 930000000, {}}, {3, 940000000, {}}};
+        descriptor.annotations = {{1, 8, "crosses EOF"}, {3, 2, "not downloaded"}};
+        QVERIFY_EXCEPTION_THROWN(rf::Recording strict(descriptor), std::runtime_error);
+        descriptor.allowPartial = true;
+        rf::Recording recording(descriptor);
+        QCOMPARE(recording.frameCount(), std::uint64_t{3});
+        QCOMPARE(recording.ignoredTrailingBytes(), std::uint64_t{3});
+        QCOMPARE(recording.descriptor().dataBytes.value(), std::uint64_t{12});
+        QCOMPARE(recording.read({0, 3}), (std::vector<std::complex<double>>(3, {0.5, -0.25})));
+        QCOMPARE(recording.descriptor().captures.size(), std::size_t{2});
+        QCOMPARE(recording.descriptor().annotations.size(), std::size_t{1});
+        QCOMPARE(recording.descriptor().annotations[0].count, std::uint64_t{2});
+        const auto identity = recording.identity();
+        QFile download(descriptor.path);
+        QVERIFY(download.open(QIODevice::Append));
+        QCOMPARE(download.write(frame.right(1) + frame), qint64{5});
+        download.close();
+        recording.verifyUnchanged();
+        QCOMPARE(recording.identity(), identity);
+        QCOMPARE(recording.frameCount(), std::uint64_t{3});
+        QCOMPARE(recording.read({2, 3})[0], (std::complex<double>{0.5, -0.25}));
+        QVERIFY_EXCEPTION_THROWN((void)recording.read({0, 4}), std::runtime_error);
+        rf::Recording reopened(descriptor);
+        QCOMPARE(reopened.frameCount(), std::uint64_t{5});
+        rf::Session session;
+        session.recording = recording.descriptor();
+        session.range = {0, recording.frameCount()};
+        const auto sessionPath = directory.filePath("partial.rfsession.json");
+        rf::saveSession(sessionPath, session);
+        const auto restored = rf::readSession(sessionPath);
+        QVERIFY(restored.recording.allowPartial);
+        rf::Recording restoredSnapshot(restored.recording);
+        QCOMPARE(restoredSnapshot.frameCount(), std::uint64_t{3});
+        QCOMPARE(restoredSnapshot.descriptor().captures.size(), std::size_t{2});
+        const auto output = directory.filePath("excerpt.iq");
+        rf::exportSamples(recording, {0, 3}, output, {});
+        QFile excerpt(output);
+        QVERIFY(excerpt.open(QIODevice::ReadOnly));
+        QCOMPARE(excerpt.readAll(), frame.repeated(3));
+        const auto exported = rf::recordingFromJson(
+            rf::readJsonObject(output + ".rfmeta.json")["recording"].toObject());
+        QVERIFY(!exported.allowPartial);
+        rf::Recording completed(exported);
+        QCOMPARE(completed.frameCount(), std::uint64_t{3});
+        QVERIFY(download.open(QIODevice::ReadWrite));
+        QVERIFY(download.resize(7));
+        download.close();
+        QVERIFY_EXCEPTION_THROWN((void)recording.read({0, 1}), std::runtime_error);
+    }
+    void partialFramesAcrossFormats_data()
+    {
+        QTest::addColumn<bool>("complex");
+        QTest::addColumn<int>("bits");
+        QTest::newRow("real-int16") << false << 16;
+        QTest::newRow("complex-int16") << true << 16;
+        QTest::newRow("real-int24") << false << 24;
+        QTest::newRow("complex-int24") << true << 24;
+        QTest::newRow("complex-int64") << true << 64;
+    }
+    void partialFramesAcrossFormats()
+    {
+        QFETCH(bool, complex);
+        QFETCH(int, bits);
+        QTemporaryDir directory;
+        rf::RecordingDescriptor descriptor;
+        descriptor.format.kind = complex ? rf::SampleKind::Complex : rf::SampleKind::Real;
+        descriptor.format.bits = bits;
+        const auto frameBytes = descriptor.format.frameBytes();
+        descriptor.path = writeFile(directory.filePath("partial.raw"),
+                                    QByteArray(static_cast<qsizetype>(3 * frameBytes - 1), char{0}));
+        QVERIFY_EXCEPTION_THROWN(rf::Recording strict(descriptor), std::runtime_error);
+        descriptor.allowPartial = true;
+        rf::Recording recording(descriptor);
+        QCOMPARE(recording.frameCount(), std::uint64_t{2});
+        QCOMPARE(recording.read({0, 2}), (std::vector<std::complex<double>>(2, {0, 0})));
+        descriptor.dataBytes = frameBytes + 1;
+        rf::Recording limited(descriptor);
+        QCOMPARE(limited.frameCount(), std::uint64_t{1});
+        descriptor.dataBytes = frameBytes - 1;
+        QVERIFY_EXCEPTION_THROWN(rf::Recording empty(descriptor), std::runtime_error);
+        descriptor.dataBytes.reset();
+        descriptor.dataOffset = 3 * frameBytes;
+        QVERIFY_EXCEPTION_THROWN(rf::Recording offsetPastEof(descriptor), std::runtime_error);
+    }
+    void partialReplacementAndStrictChanges()
+    {
+        QTemporaryDir directory;
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("source.iq"), QByteArray(16, char{0}));
+        rf::Recording strict(descriptor);
+        descriptor.allowPartial = true;
+        rf::Recording partial(descriptor);
+        QFile download(descriptor.path);
+        QVERIFY(download.open(QIODevice::Append));
+        QCOMPARE(download.write(QByteArray(4, char{0})), qint64{4});
+        download.close();
+        QVERIFY_EXCEPTION_THROWN(strict.verifyUnchanged(), std::runtime_error);
+        partial.verifyUnchanged();
+        QVERIFY(QFile::rename(descriptor.path, descriptor.path + ".old"));
+        writeFile(descriptor.path, QByteArray(20, char{0}));
+        QVERIFY_EXCEPTION_THROWN(partial.verifyUnchanged(), std::runtime_error);
+        descriptor.allowPartial = false;
+        rf::Recording completed(descriptor);
+        QVERIFY(download.open(QIODevice::ReadWrite));
+        QCOMPARE(download.write(QByteArray(4, char{1})), qint64{4});
+        download.close();
+        QVERIFY_EXCEPTION_THROWN(completed.verifyUnchanged(), std::runtime_error);
+    }
+    void partialSigMf()
+    {
+        QTemporaryDir directory;
+        writeFile(directory.filePath("partial.sigmf-data"), QByteArray(1025, char{0}));
+        const auto path = directory.filePath("partial.sigmf-meta");
+        rf::writeJsonAtomic(path,
+                            {{"global", QJsonObject{{"core:datatype", "ci16_le"},
+                                                    {"core:sample_rate", 100000000}}},
+                             {"captures", QJsonArray{QJsonObject{{"core:sample_start", 0}},
+                                                     QJsonObject{{"core:sample_start", 512}}}},
+                             {"annotations", QJsonArray{QJsonObject{{"core:sample_start", 200},
+                                                                    {"core:sample_count", 100}}}}});
+        auto descriptor = rf::readSigMf(path);
+        QVERIFY_EXCEPTION_THROWN(rf::Recording strict(descriptor), std::runtime_error);
+        descriptor.allowPartial = true;
+        rf::Recording recording(descriptor);
+        QCOMPARE(recording.frameCount(), std::uint64_t{256});
+        QCOMPARE(recording.descriptor().captures.size(), std::size_t{1});
+        QCOMPARE(recording.descriptor().annotations[0].count, std::uint64_t{56});
+    }
     void spectralScalingAndSign()
     {
         constexpr int length = 1024;
@@ -386,6 +523,16 @@ class CoreTests : public QObject
         metadata = rf::recordingToJson(descriptor);
         metadata["captures"] = QJsonObject{};
         QVERIFY_EXCEPTION_THROWN(rf::recordingFromJson(metadata), std::runtime_error);
+        metadata = rf::recordingToJson(descriptor);
+        metadata["allow_partial"] = "false";
+        QVERIFY_EXCEPTION_THROWN(rf::recordingFromJson(metadata), std::runtime_error);
+        metadata.remove("allow_partial");
+        QVERIFY(!rf::recordingFromJson(metadata).allowPartial);
+        rf::Preferences preferences;
+        preferences.importDefaults = descriptor;
+        preferences.importDefaults.allowPartial = true;
+        rf::savePreferences(settingsPath, preferences);
+        QVERIFY(!rf::readPreferences(settingsPath).importDefaults.allowPartial);
         QTemporaryDir directory;
         descriptor.path = writeFile(directory.filePath("short.iq"), QByteArray(16, char{0}));
         descriptor.annotations = {{3, 2, "past EOF"}};

@@ -99,6 +99,7 @@ QJsonObject recordingToJson(const RecordingDescriptor &descriptor)
         {"sample_rate", descriptor.sampleRate},
         {"start_utc", descriptor.startUtc},
         {"data_offset", decimal(descriptor.dataOffset)},
+        {"allow_partial", descriptor.allowPartial},
         {"metadata_source", descriptor.metadataSource}};
     if (descriptor.dataBytes)
         object["data_bytes"] = decimal(*descriptor.dataBytes);
@@ -122,6 +123,8 @@ QJsonObject recordingToJson(const RecordingDescriptor &descriptor)
 
 RecordingDescriptor recordingFromJson(const QJsonObject &object)
 {
+    if (object.contains("allow_partial") && !object["allow_partial"].isBool())
+        fail("Invalid boolean field: allow_partial");
     for (const auto *field : {"float_full_scale", "sample_rate", "center_frequency"})
         if (object.contains(field) && !object[field].isDouble())
             fail(QString("Invalid numeric field: ") + field);
@@ -154,6 +157,7 @@ RecordingDescriptor recordingFromJson(const QJsonObject &object)
     descriptor.sampleRate = object.value("sample_rate").toDouble(0);
     descriptor.startUtc = object.value("start_utc").toString();
     descriptor.dataOffset = jsonUnsigned(object.value("data_offset"), "data_offset");
+    descriptor.allowPartial = object.value("allow_partial").toBool(false);
     if (object.contains("data_bytes"))
         descriptor.dataBytes = jsonUnsigned(object.value("data_bytes"), "data_bytes");
     if (object.contains("center_frequency"))

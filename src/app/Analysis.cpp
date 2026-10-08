@@ -352,6 +352,7 @@ void exportSamples(const Recording &recording, FrameRange range, const QString &
         descriptor.path = QFileInfo(output).absoluteFilePath();
         descriptor.dataOffset = 0;
         descriptor.dataBytes = range.size() * descriptor.format.frameBytes();
+        descriptor.allowPartial = false;
         descriptor.startUtc = recording.descriptor().timestampAt(range.begin);
         descriptor.captures.clear();
         descriptor.annotations.clear();

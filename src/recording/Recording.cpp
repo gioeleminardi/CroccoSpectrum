@@ -260,10 +260,13 @@ Recording::Recording(RecordingDescriptor descriptor) : descriptor_(std::move(des
         changedNanos_ = information.st_ctim.tv_nsec;
         if (descriptor_.dataOffset > fileSize_)
             fail("Data offset exceeds file length");
-        const auto bytes = descriptor_.dataBytes.value_or(fileSize_ - descriptor_.dataOffset);
-        if (bytes > fileSize_ - descriptor_.dataOffset)
+        const auto available = fileSize_ - descriptor_.dataOffset;
+        auto bytes = descriptor_.dataBytes.value_or(available);
+        if (descriptor_.allowPartial)
+            bytes = std::min(bytes, available);
+        else if (bytes > available)
             fail("Data length exceeds file length");
-        if (bytes % descriptor_.format.frameBytes() != 0)
+        if (!descriptor_.allowPartial && bytes % descriptor_.format.frameBytes() != 0)
             fail(
                 "Incomplete frame at EOF: correct the format or explicitly exclude trailing bytes");
         frames_ = bytes / descriptor_.format.frameBytes();
@@ -271,6 +274,18 @@ Recording::Recording(RecordingDescriptor descriptor) : descriptor_(std::move(des
             fail("Recording has no complete samples");
         if (!std::isfinite(static_cast<double>(frames_) / descriptor_.sampleRate))
             fail("Recording duration overflows");
+        if (descriptor_.allowPartial) {
+            ignoredTrailingBytes_ = bytes % descriptor_.format.frameBytes();
+            // Saved sessions describe this snapshot, including its clipped
+            // metadata. Reimport the original file to include later samples.
+            descriptor_.dataBytes = frames_ * descriptor_.format.frameBytes();
+            std::erase_if(descriptor_.captures,
+                          [this](const auto &capture) { return capture.start >= frames_; });
+            std::erase_if(descriptor_.annotations,
+                          [this](const auto &note) { return note.start >= frames_; });
+            for (auto &note : descriptor_.annotations)
+                note.count = std::min(note.count, frames_ - note.start);
+        }
         for (const auto &capture : descriptor_.captures)
             if (capture.start >= frames_)
                 fail("Capture start is outside recording");
@@ -309,11 +324,19 @@ void Recording::verifyUnchanged() const
     if (::fstat(fd_, &current) != 0 ||
         ::stat(QFile::encodeName(descriptor_.path).constData(), &pathInformation) != 0)
         fail("Recording is no longer accessible");
-    if (static_cast<std::uint64_t>(current.st_size) != fileSize_ ||
-        current.st_mtim.tv_sec != modifiedSeconds_ || current.st_mtim.tv_nsec != modifiedNanos_ ||
-        current.st_ctim.tv_sec != changedSeconds_ || current.st_ctim.tv_nsec != changedNanos_ ||
-        static_cast<std::uint64_t>(pathInformation.st_dev) != device_ ||
+    if (static_cast<std::uint64_t>(pathInformation.st_dev) != device_ ||
         static_cast<std::uint64_t>(pathInformation.st_ino) != inode_)
+        fail("Recording changed or was replaced; reopen it before analysis");
+    if (descriptor_.allowPartial) {
+        // The downloaded prefix must remain stable. Appends and the transfer's
+        // final timestamp updates are allowed; ranges stay fixed at open time.
+        if (static_cast<std::uint64_t>(current.st_size) < fileSize_)
+            fail("Partial recording was truncated; reopen it before analysis");
+    } else if (static_cast<std::uint64_t>(current.st_size) != fileSize_ ||
+               current.st_mtim.tv_sec != modifiedSeconds_ ||
+               current.st_mtim.tv_nsec != modifiedNanos_ ||
+               current.st_ctim.tv_sec != changedSeconds_ ||
+               current.st_ctim.tv_nsec != changedNanos_)
         fail("Recording changed or was replaced; reopen it before analysis");
 }
 

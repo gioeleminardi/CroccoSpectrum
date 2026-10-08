@@ -4,6 +4,18 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.1.6 — 2026-10-08 — Partial recording import
+
+- Add Open partial / growing file in the import dialog and `--partial` in the
+  CLI for recordings still downloading. Analyze the complete frames available
+  at open time, ignoring an incomplete final frame and limiting declared data
+  lengths and metadata to the downloaded portion.
+- Continue analysis while the file is appended to; replacement and truncation
+  below the opening file size still stop reads. The downloaded prefix must
+  remain unchanged. Reopen the original recording to include more samples;
+  saved sessions retain their partial snapshot and sample exports reopen as
+  completed recordings.
+
 ## 0.1.5 — 2026-10-08 — Keyboard shortcuts cheatsheet
 
 - Add Help → Keyboard shortcuts, opened with F1, listing assigned shortcuts,

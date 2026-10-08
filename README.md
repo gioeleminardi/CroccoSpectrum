@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.5-3B82F6?style=for-the-badge" alt="Version 0.1.5"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.6-3B82F6?style=for-the-badge" alt="Version 0.1.6"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -34,8 +34,8 @@ move from a quick overview to an exact analysis of the interval that matters.
 
 Recordings are read in bounded blocks, so a larger file does not require loading
 it into RAM. FFTs, scans, and data exports run in the background with cancellation.
-The application analyzes completed recordings without requiring RF hardware or
-an acquisition driver.
+The application analyzes completed recordings or the downloaded portion of a
+growing file without requiring RF hardware or an acquisition driver.
 
 ## In action
 
@@ -77,21 +77,21 @@ for artifact contents, retention, and Gitea runner setup.
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.1.5-x86_64.AppImage
-./croccospectrum-0.1.5-x86_64.AppImage
+chmod +x croccospectrum-0.1.6-x86_64.AppImage
+./croccospectrum-0.1.6-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.1.5-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-0.1.6-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.1.5-x86_64.tar.gz
-./croccospectrum-0.1.5-x86_64/AppRun
+tar -xzf croccospectrum-0.1.6-x86_64.tar.gz
+./croccospectrum-0.1.6-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -130,6 +130,21 @@ of double-precision analysis.
 Open a `.sigmf-meta` file to use its recording metadata, or a `.rfmeta.json` file
 to reopen an exported sample range. Required unsupported SigMF extensions,
 multiple streams, and later embedded capture headers are rejected explicitly.
+
+For a recording still downloading through scp or rsync, enable **Open partial /
+growing file** in the import dialog, or pass `--partial` to the CLI. This opens a
+fixed snapshot of the complete sample frames currently available, ignores an
+incomplete final frame, and limits declared data lengths, captures, and
+annotations to that snapshot. At least one complete frame must be present;
+metadata JSON must already be complete.
+
+The transfer may append bytes and update timestamps while analysis continues.
+The downloaded prefix must remain unchanged: this mode does not detect edits
+within that prefix and cannot identify undownloaded regions in preallocated
+files. Truncation below the opening file size or path replacement stops reads.
+Reopen the original file to include newly downloaded samples; saved sessions
+retain their snapshot length and metadata. Ordinary imports retain strict
+file-change and frame validation.
 
 Optional capture timestamps and center frequencies add UTC and absolute-frequency
 readouts. Exact sample indices remain the reference for time selection; UTC aids
@@ -304,6 +319,9 @@ The portable folder includes `croccospectrum-cli`. Source builds place it under
 # Inspect the file and decoded sample preview.
 ./build/release/croccospectrum-cli inspect --file capture.iq
 
+# Inspect complete samples while a recording is still downloading.
+./build/release/croccospectrum-cli inspect --file capture.iq --partial
+
 # Calculate a 65,536-point power spectral density.
 ./build/release/croccospectrum-cli spectrum --file capture.iq --fft 65536 --scale density
 
@@ -414,12 +432,12 @@ The bundler records dependency versions, notices, and SHA-256 hashes, and refuse
 to replace an existing generated bundle. Before distribution:
 
 1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-0.1.5-x86_64` there to collect
+   `packaging/sources.py --bundle dist/croccospectrum-0.1.6-x86_64` there to collect
    the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.5-x86_64` to refresh
+2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.6-x86_64` to refresh
    documentation, manifests, and binary/source archives.
 3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.5-x86_64 OUTPUT.AppImage`.
+   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.6-x86_64 OUTPUT.AppImage`.
    Supply the pinned tool and the verified runtime at
    `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
    it explicitly.
@@ -431,7 +449,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.1.5 is an early release.** The recorded checks include 167
+**CroccoSpectrum 0.1.6 is an early release.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 

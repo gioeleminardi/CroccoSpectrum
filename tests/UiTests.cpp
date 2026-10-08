@@ -1,8 +1,11 @@
 #include "ui/MainWindow.h"
+#include "ui/ImportDialog.h"
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDataStream>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -13,6 +16,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QScrollArea>
@@ -119,6 +123,67 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void partialImportDialog()
+    {
+        QTemporaryDir directory;
+        QFile file(directory.filePath("downloading.iq"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(QByteArray::fromHex("004000e0").repeated(256) + "x"), qint64{1025});
+        file.close();
+        rf::ImportDialog dialog(file.fileName(), {});
+        dialog.show();
+        auto *partial = dialog.findChild<QCheckBox *>("allowPartial");
+        auto *buttons = dialog.findChild<QDialogButtonBox *>();
+        auto *preview = dialog.findChild<QPlainTextEdit *>();
+        auto *summary = dialog.findChild<QLabel *>("importSummary");
+        QVERIFY(partial && buttons && preview && summary);
+        auto *open = buttons->button(QDialogButtonBox::Ok);
+        QTRY_VERIFY_WITH_TIMEOUT(preview->toPlainText().contains("Incomplete frame"), 5000);
+        QVERIFY(!open->isEnabled());
+        QVERIFY(!dialog.descriptor().allowPartial);
+        partial->setChecked(true);
+        QTRY_VERIFY_WITH_TIMEOUT(open->isEnabled(), 5000);
+        QVERIFY(dialog.descriptor().allowPartial);
+        QVERIFY(summary->text().contains("256 frames"));
+        QVERIFY(summary->text().contains("1 trailing byte(s) ignored"));
+        QVERIFY(preview->toPlainText().contains("I=0.5  Q=-0.25"));
+        partial->setChecked(false);
+        QTRY_VERIFY_WITH_TIMEOUT(preview->toPlainText().contains("Incomplete frame"), 5000);
+        QVERIFY(!open->isEnabled());
+        auto descriptor = dialog.descriptor();
+        descriptor.allowPartial = true;
+        dialog.setDescriptor(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(open->isEnabled(), 5000);
+        const auto imagePath = qEnvironmentVariable("RF_PARTIAL_IMPORT_SCREENSHOT");
+        if (!imagePath.isEmpty())
+            QVERIFY(dialog.grab().save(imagePath));
+    }
+    void partialPreviewAfterAppend()
+    {
+        QTemporaryDir directory;
+        auto descriptor = toneRecording(directory.filePath("downloading.iq"), {4, 4});
+        descriptor.allowPartial = true;
+        auto recording = std::make_shared<rf::Recording>(descriptor);
+        rf::AnalysisController controller;
+        WorkerSignals observed(controller);
+        QSignalSpy previews(&observed, &WorkerSignals::previewReady);
+        QSignalSpy averages(&observed, &WorkerSignals::averageReady);
+        QSignalSpy failed(&observed, &WorkerSignals::failed);
+        rf::DspSettings settings;
+        settings.fftSize = 256;
+        controller.preview(recording, {0, 512}, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(previews.count(), 1, 5000);
+        QFile file(descriptor.path);
+        QVERIFY(file.open(QIODevice::Append));
+        QCOMPARE(file.write(QByteArray(1025, char{0})), qint64{1025});
+        file.close();
+        controller.preview(recording, {0, 512}, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(previews.count(), 2, 5000);
+        QCOMPARE(recording->frameCount(), std::uint64_t{512});
+        controller.average(recording, {0, 512}, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(averages.count(), 1, 5000);
+        QCOMPARE(failed.count(), 0);
+    }
     void baudlinePalette()
     {
         rf::WaterfallPlot plot;

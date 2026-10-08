@@ -1,7 +1,7 @@
 # Feature status
 
 Updated: 2026-10-08. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.5.
+Application: CroccoSpectrum 0.1.6.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -16,6 +16,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Signed/unsigned 8/16/24/32/64-bit | Implemented | Packed 24-bit; double analysis precision for 64-bit inputs |
 | IEEE FP16/FP32/FP64 | Implemented | FP16 conversion needs no hardware FP16 support |
 | Large recordings, bounded positional reads | Implemented | No whole-file allocation; 32 MiB maximum read call |
+| Partial / growing recording import | Implemented | Opt-in import checkbox / CLI --partial; complete frames at open; append-only prefix; reopen for more data; sessions retain snapshot bounds |
 | Positive/fractional sample rates | Implemented | Derived floating arithmetic must remain representable |
 | Default spectrum and waterfall | Implemented | Large waterfall views are explicitly sampled previews |
 | Spectrum hover crosshair | Implemented | Pointer frequency/power axis labels; zoom, absolute frequency and dBFS/Hz supported; exact FFT-bin readout retained |

@@ -125,6 +125,7 @@ void savePreferences(const QString &path, const Preferences &preferences)
     defaults.annotations.clear();
     defaults.dataOffset = 0;
     defaults.dataBytes.reset();
+    defaults.allowPartial = false;
     defaults.centerFrequency.reset();
     defaults.startUtc.clear();
     writeJsonAtomic(path, {{"schema", 1},
