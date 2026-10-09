@@ -10,6 +10,7 @@
 #include <QDockWidget>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QDrag>
 #include <QFile>
 #include <QFileDialog>
 #include <QInputDialog>
@@ -21,6 +22,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -576,6 +578,129 @@ class UiTests : public QObject
         QCOMPARE(waterfall->grab().toImage(), original);
         QCOMPARE(window.previewResult(), preview);
         QVERIFY(!window.isBusy());
+    }
+    void averageDockLayout_data()
+    {
+        QTest::addColumn<QSize>("size");
+        QTest::addColumn<bool>("restoreWorkspace");
+        QTest::newRow("default") << QSize(1440, 980) << false;
+        QTest::newRow("compact") << QSize(1200, 800) << false;
+        QTest::newRow("large") << QSize(1920, 1080) << false;
+        QTest::newRow("restored") << QSize(1440, 980) << true;
+    }
+    void averageDockLayout()
+    {
+        QFETCH(QSize, size);
+        QFETCH(bool, restoreWorkspace);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        if (restoreWorkspace) {
+            rf::MainWindow previous(nullptr, preferences);
+            previous.show();
+            previous.findChild<QDockWidget *>("averageDock")->show();
+            QCoreApplication::processEvents();
+            saved.workspace = previous.saveState(1);
+        }
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.resize(size);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *averageAction = findAction(window, "Average entire recording");
+        QVERIFY(averageAction);
+        averageAction->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+        auto *averageDock = window.findChild<QDockWidget *>("averageDock");
+        auto *waveformDock = window.findChild<QDockWidget *>("waveformDock");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QVERIFY(averageDock && waveformDock && waterfall);
+        QVERIFY(averageDock->isVisible());
+        auto *plot = averageDock->findChild<rf::SpectrumPlot *>();
+        auto *label = averageDock->findChild<QLabel *>();
+        auto *maxHold = averageDock->findChild<QCheckBox *>();
+        QVERIFY(plot && label && maxHold);
+        QTRY_COMPARE(label->height(), label->heightForWidth(label->width()));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/average-dock-" +
+                                      QTest::currentDataTag() + ".png"));
+        }
+        QCOMPARE(maxHold->height(), maxHold->sizeHint().height());
+        const auto bottom = [&window](QWidget *widget) {
+            return widget->mapTo(&window, QPoint(0, widget->height())).y();
+        };
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        QCOMPARE(bottom(averageDock), bottom(waterfall));
+        waveformDock->hide();
+        QCoreApplication::processEvents();
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        waveformDock->show();
+        QCoreApplication::processEvents();
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        window.resize(size + QSize(120, 80));
+        QCoreApplication::processEvents();
+        QCOMPARE(label->height(), label->heightForWidth(label->width()));
+        QCOMPARE(bottom(plot), bottom(waterfall));
+    }
+    void maximizedFloatingDock_data()
+    {
+        QTest::addColumn<QString>("dockName");
+        QTest::newRow("average") << QString("averageDock");
+        QTest::newRow("waveform") << QString("waveformDock");
+    }
+    void maximizedFloatingDock()
+    {
+        QFETCH(QString, dockName);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *averageAction = findAction(window, "Average entire recording");
+        QVERIFY(averageAction);
+        averageAction->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+        auto *panel = window.findChild<QDockWidget *>(dockName);
+        QVERIFY(panel);
+        panel->setFloating(true);
+        panel->show();
+        int ticks = 0;
+        QTimer heartbeat;
+        connect(&heartbeat, &QTimer::timeout, this, [&ticks] { ++ticks; });
+        heartbeat.start(20);
+        for (auto *screen : QGuiApplication::screens()) {
+            panel->showNormal();
+            panel->setScreen(screen);
+            panel->move(screen->availableGeometry().topLeft() + QPoint(40, 40));
+            QTest::qWait(100);
+            QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, QPoint(100, 10));
+            QTimer::singleShot(50, &window, [] { QDrag::cancel(); });
+            moveMouse(panel, QPoint(150, 10), Qt::LeftButton);
+            panel->showMaximized();
+            QTest::mouseRelease(panel, Qt::LeftButton, Qt::NoModifier, QPoint(150, 10));
+            QTest::qWait(300);
+            QTRY_VERIFY_WITH_TIMEOUT(panel->isMaximized(), 2000);
+            const int before = ticks;
+            QTRY_VERIFY_WITH_TIMEOUT(ticks >= before + 3, 2000);
+            auto *absolute = window.findChild<QCheckBox *>("absoluteFrequency");
+            QVERIFY(absolute);
+            const bool checked = absolute->isChecked();
+            QTest::mouseClick(window.windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                              absolute->mapTo(&window, QPoint(8, absolute->height() / 2)));
+            QCOMPARE(absolute->isChecked(), !checked);
+            QCOMPARE(QWidget::mouseGrabber(), nullptr);
+        }
+        panel->showNormal();
+        panel->setFloating(false);
+        QVERIFY(!panel->isFloating());
     }
     void spectrumCrosshairDuringMeasurements()
     {

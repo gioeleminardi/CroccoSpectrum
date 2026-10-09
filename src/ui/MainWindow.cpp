@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -54,10 +55,29 @@ namespace rf
 {
 namespace
 {
+class DockWidget : public QDockWidget
+{
+  public:
+    using QDockWidget::QDockWidget;
+
+  protected:
+    bool event(QEvent *event) override
+    {
+        const bool handled = QDockWidget::event(event);
+        // Qt can reacquire the dock's mouse grab after a native drag has ended.
+        // Maximized docks skip Qt's resize handler that normally releases it.
+        if (isFloating() && isMaximized() && mouseGrabber() == this &&
+            (event->type() == QEvent::WindowStateChange || event->type() == QEvent::MouseMove ||
+             event->type() == QEvent::MouseButtonRelease))
+            releaseMouse();
+        return handled;
+    }
+};
+
 QDockWidget *dock(QMainWindow *window, const QString &name, const QString &id, QWidget *content,
                   Qt::DockWidgetArea side)
 {
-    auto *panel = new QDockWidget(name, window);
+    auto *panel = new DockWidget(name, window);
     panel->setObjectName(id);
     panel->setWidget(content);
     window->addDockWidget(side, panel);
@@ -130,12 +150,16 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     waveform_->setObjectName("waveformPlot");
     auto *averageContainer = new QWidget(this);
     auto *averageLayout = new QVBoxLayout(averageContainer);
+    averageLayout->setContentsMargins(0, 0, 0, 0);
     averageLabel_ = new QLabel("Run an interval or whole-recording average", this);
     averageLabel_->setWordWrap(true);
     maxHold_ = new QCheckBox("Show max hold instead of average", this);
-    averageLayout->addWidget(averageLabel_);
-    averageLayout->addWidget(maxHold_);
-    averageLayout->addWidget(averagePlot_);
+    auto *averageTextLayout = new QVBoxLayout;
+    averageTextLayout->setContentsMargins(10, 0, 0, 0);
+    averageTextLayout->addWidget(averageLabel_);
+    averageTextLayout->addWidget(maxHold_);
+    averageLayout->addLayout(averageTextLayout);
+    averageLayout->addWidget(averagePlot_, 1);
     averageDock_ =
         dock(this, "Average spectrum", "averageDock", averageContainer, Qt::RightDockWidgetArea);
     averageDock_->hide();
