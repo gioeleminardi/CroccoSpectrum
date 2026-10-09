@@ -22,6 +22,10 @@ This file records release history and behavior changes. See
 - Extend the spectrum's vertical frequency cursor through the waterfall to
   correlate signals across both plots. Keep it aligned during zooming and
   resizing, and clear it when the spectrum cursor disappears.
+- Add mouse-wheel zoom around the pointer and left-drag pan for both frequency
+  and time in the waterfall. Keep frequency navigation linked to the spectra
+  and time navigation within the current preview, preserving measurements,
+  click-to-freeze, and double-click seeking.
 
 ## 0.1.6 — 2026-10-08 — Partial recording import
 

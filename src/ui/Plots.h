@@ -100,6 +100,7 @@ class WaterfallPlot : public QWidget
     void frameClicked(quint64 frame);
     void cursorLeft();
     void frameSelected(quint64 frame);
+    void frequencyRangeChanged(double left, double right);
     void measurementActiveChanged(bool active);
     void measurementChanged();
 
@@ -107,6 +108,7 @@ class WaterfallPlot : public QWidget
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
+    void wheelEvent(QWheelEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
@@ -114,6 +116,9 @@ class WaterfallPlot : public QWidget
 
   private:
     void rebuildImage();
+    void updateHover(const QPointF &position);
+    double fullFrequencyRight() const;
+    double rowY(std::size_t row) const;
     std::optional<std::size_t> rowAt(const QPointF &position) const;
     std::shared_ptr<const PreviewResult> result_;
     QImage image_;
@@ -125,6 +130,10 @@ class WaterfallPlot : public QWidget
     std::optional<std::pair<std::size_t, std::size_t>> measurementRows_;
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;
+    std::optional<QPointF> dragPosition_;
+    bool dragMoved_ = false;
+    double dragLeft_ = 0, dragRight_ = 1, dragTop_ = 0, dragBottom_ = 1;
+    double top_ = 0, bottom_ = 1;
     double sampleRate_ = 1, center_ = 0, left_ = 0, right_ = 1;
 };
 

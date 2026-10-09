@@ -785,6 +785,171 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().contains("-60.20599913 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
     }
+    void waterfallNavigation_data()
+    {
+        QTest::addColumn<bool>("complex");
+        QTest::newRow("complex") << true;
+        QTest::newRow("real") << false;
+    }
+    void waterfallNavigation()
+    {
+        QFETCH(bool, complex);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {100, 2800};
+        result->frequencies = complex ? std::vector<double>{-20, -10, 0, 10, 20}
+                                     : std::vector<double>{0, 10, 20, 30, 40};
+        result->columns = 5;
+        result->rowStarts = {100, 200, 400, 800, 1200, 1600, 2000, 2400};
+        for (int row = 0; row < 8; ++row)
+            for (int column = 0; column < 5; ++column)
+                result->waterfall.push_back(std::pow(10.0, (-40 + row * 4 + column) / 10.0));
+        plot.setPreview(result, 100);
+        rf::ViewSettings view;
+        view.autoRange = false;
+        view.colorMin = -40;
+        view.colorMax = 0;
+        view.palette = "Grayscale";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.setFrameCursor(std::nullopt, true);
+        plot.show();
+        QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        const auto wheel = [&plot](const QPoint &position, int delta) {
+            QWheelEvent event(position, plot.mapToGlobal(position), {}, QPoint(0, delta),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &event);
+        };
+        wheel(QPoint(10, 10), 120);
+        wheel(QPoint(326, 152), 0);
+        QCOMPARE(ranges.count(), 0);
+        wheel(QPoint(326, 152), 120);
+        wheel(QPoint(326, 152), 120);
+        const double fullLeft = complex ? -20 : 0;
+        const double fullSpan = complex ? 50 : 40;
+        QCOMPARE(ranges.count(), 2);
+        QVERIFY(std::abs(ranges.last().at(0).toDouble() - (fullLeft + fullSpan * 0.18)) < 1e-9);
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - (fullLeft + fullSpan * 0.82)) < 1e-9);
+        // The pointer stays on the middle row; the visible top now starts at row 1.
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1200});
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{200});
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor(38, 38, 38));
+
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        hovered.clear();
+        moveMouse(&plot, QPoint(426, 212), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(426, 212));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(hovered.count(), 0);
+        QVERIFY(std::abs(ranges.last().at(0).toDouble() - (fullLeft + fullSpan * 0.052)) < 1e-9);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{100});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1600});
+
+        // Pan beyond both ends: the viewport stays within available bins and rows.
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(-1000, -1000), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(-1000, -1000));
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - (fullLeft + fullSpan)) < 1e-9);
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{2400});
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        QCOMPARE(clicked.count(), 1);
+        // Small pointer jitter is still a click, not a pan.
+        const auto rangeCount = ranges.count();
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(327, 153), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(327, 153));
+        QCOMPARE(clicked.count(), 2);
+        QCOMPARE(ranges.count(), rangeCount);
+
+        for (int step = 0; step < 30; ++step)
+            wheel(QPoint(326, 152), 120);
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - ranges.last().at(0).toDouble() - 10) < 1e-9);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1200});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1600});
+        for (int step = 0; step < 30; ++step)
+            wheel(QPoint(326, 152), -120);
+        QCOMPARE(ranges.last().at(0).toDouble(), fullLeft);
+        QCOMPARE(ranges.last().at(1).toDouble(), fullLeft + fullSpan);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{100});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{2400});
+        plot.clear();
+        ranges.clear();
+        wheel(QPoint(326, 152), 120);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        QCOMPARE(ranges.count(), 0);
+        QCOMPARE(clicked.count(), 2);
+    }
+    void waterfallNavigationMeasurements()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 800};
+        result->frequencies = {-20, -10, 0, 10, 20};
+        result->columns = 5;
+        result->rowStarts = {0, 100, 200, 300, 400, 500, 600, 700};
+        result->waterfall.assign(40, 0.01);
+        plot.setPreview(result, 100);
+        plot.show();
+        const auto wheel = [&plot] {
+            const QPoint position(326, 152);
+            QWheelEvent event(position, plot.mapToGlobal(position), {}, QPoint(0, 120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &event);
+        };
+        wheel();
+        wheel();
+        const auto position = [](int row, double top = 1.44) {
+            return QPoint(326, qRound(32 + (row + 0.5 - top) / 5.12 * 240));
+        };
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, position(2));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, position(5));
+        QVERIFY(plot.measurementText().contains("Duration: 3 s"));
+        const auto text = plot.measurementText();
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy selected(&plot, &rf::WaterfallPlot::frameSelected);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(376, 172), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(376, 172));
+        QCOMPARE(plot.measurementText(), text);
+        QCOMPARE(clicked.count(), 0);
+        const double top = 1.44 - 20.0 / 240 * 5.12;
+        const auto image = plot.grab().toImage();
+        for (const auto row : {2, 5}) {
+            const int y = position(row, top).y();
+            QVERIFY(image.pixelColor(550, y - 1) == QColor("#ffd166") ||
+                    image.pixelColor(550, y) == QColor("#ffd166"));
+        }
+        shiftDrag(&plot, position(3, top), position(4, top));
+        QVERIFY(plot.measurementRange());
+        QCOMPARE(plot.measurementRange()->begin, std::uint64_t{300});
+        QCOMPARE(plot.measurementRange()->end, std::uint64_t{600});
+        QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, position(3, top));
+        wheel();
+        QCOMPARE(ranges.count(), 0); // A wheel cannot move the viewport while editing a marker.
+        moveMouse(&plot, position(2, top), Qt::LeftButton, Qt::ShiftModifier);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, position(2, top));
+        QCOMPARE(plot.measurementRange()->begin, std::uint64_t{200});
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QTest::mouseDClick(&plot, Qt::LeftButton, Qt::NoModifier, position(4, top));
+        QCOMPARE(selected.count(), 1);
+        QCOMPARE(selected.last().at(0).toULongLong(), std::uint64_t{400});
+        plot.setPreview(result, 100);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        moveMouse(&plot, rowPosition(plot, 0, 8));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{0});
+    }
     void waterfallMeasurement()
     {
         rf::WaterfallPlot plot;
@@ -1375,6 +1540,57 @@ class UiTests : public QObject
         QCOMPARE(hovered.last().at(0).toULongLong(), result->rowStarts[row]);
         plot.setPreview(result, 256);
         QCOMPARE(plot.grab().toImage(), original);
+    }
+    void waterfallNavigationSynchronization()
+    {
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 16, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        auto *averageDock = window.findChild<QDockWidget *>("averageDock");
+        QVERIFY(averageDock);
+        findAction(window, "Average time selection")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && averageDock->isVisible(), 10000);
+        QCOMPARE(errors.count(), 0);
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *average = averageDock->findChild<rf::SpectrumPlot *>();
+        QVERIFY(waterfall && spectrum && average);
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::NoModifier, rowPosition(*waterfall, 0, 4));
+        const auto preview = window.previewResult();
+        const auto frame = window.spectrumResult()->spectrumStart;
+        QSignalSpy ranges(waterfall, &rf::WaterfallPlot::frequencyRangeChanged);
+        const QPoint center(76 + (waterfall->width() - 100) / 2,
+                            32 + (waterfall->height() - 70) / 2);
+        QWheelEvent event(center, waterfall->mapToGlobal(center), {}, QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(waterfall, &event);
+        QTest::mousePress(waterfall, Qt::LeftButton, Qt::NoModifier, center);
+        moveMouse(waterfall, center + QPoint(40, 20), Qt::LeftButton);
+        QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::NoModifier, center + QPoint(40, 20));
+        const auto left = ranges.last().at(0).toDouble();
+        for (auto *plot : {spectrum, average}) {
+            QSignalSpy cursor(plot, &rf::SpectrumPlot::cursorChanged);
+            moveMouse(plot, QPoint(76, 60));
+            QVERIFY(!cursor.isEmpty());
+            QVERIFY(cursor.last().at(0).toString().contains(
+                "Cursor: " + QString::number(std::round(left), 'f', 0) + " Hz"));
+        }
+        QCOMPARE(window.spectrumResult()->spectrumStart, frame); // Drag preserves frame freeze.
+        QCOMPARE(window.previewResult(), preview);
+        QCOMPARE(window.selectedRange(), preview->range);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/waterfall-navigation.png"));
+        }
     }
     void waterfallSpectrumSynchronization()
     {

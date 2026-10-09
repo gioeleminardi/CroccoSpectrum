@@ -194,6 +194,8 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         connect(plot, &SpectrumPlot::cursorChanged, cursorLabel_, &QLabel::setText);
         connect(plot, &SpectrumPlot::frequencyRangeChanged, waterfall_,
                 &WaterfallPlot::setFrequencyRange);
+        connect(waterfall_, &WaterfallPlot::frequencyRangeChanged, plot,
+                &SpectrumPlot::setFrequencyRange);
         connect(plot, &SpectrumPlot::measurementActiveChanged, this, [this, plot](bool active) {
             if (active)
                 beginMeasurement(plot);
@@ -388,7 +390,8 @@ void MainWindow::buildMenus()
             "are excluded and counted.\n\n"
             "A sampled waterfall can miss short events. Full averages and Exact waveform process "
             "every required sample/window.\n\n"
-            "Wheel: frequency zoom. Drag spectrum: frequency pan. Hover waterfall/waveform: "
+            "Wheel: frequency zoom in spectra; frequency/time zoom in waterfall. "
+            "Drag: frequency pan in spectra; frequency/time pan in waterfall. Hover waterfall/waveform: "
             "inspect the shared frame. Click either plot to freeze/unfreeze it. Double-click: "
             "seek. CSV records analysis settings; sessions preserve interpretation and bookmarks.");
     });
@@ -486,8 +489,8 @@ void MainWindow::showKeyboardShortcuts()
     addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");
     addRow(plotForm, QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
            "Clear a measurement in the focused plot");
-    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum");
-    addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum");
+    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; frequency and time in waterfall");
+    addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum; frequency and time in waterfall");
     addRow(plotForm, "Hover", "Inspect coordinates; follow the frame in waterfall / waveform");
     addRow(plotForm, "Left-click", "Freeze / unfreeze the frame in waterfall / waveform");
     addRow(plotForm, "Double-click", "Seek to a frame in waterfall / waveform");

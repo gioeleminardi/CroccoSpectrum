@@ -222,8 +222,9 @@ open while you work in the main window.
 
 | Action | Control |
 | --- | --- |
-| Zoom frequency | Mouse wheel over the spectrum |
-| Pan frequency | Drag the spectrum |
+| Zoom frequency | Mouse wheel over the spectrum or waterfall |
+| Pan frequency | Drag the spectrum or waterfall |
+| Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then the end |
 | Measure waterfall duration | `Shift` + left-click the start row, then the end row |
@@ -238,6 +239,11 @@ open while you work in the main window.
 | Zoom time | `Ctrl++` / `Ctrl+-` |
 | Pan time | `Alt+Left` / `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
+
+Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
+Frequency navigation stays linked to the spectra. Waterfall time navigation
+stays within the current preview and preserves measurements. Zoom out to restore
+all its rows, or use the time shortcuts to change the analyzed interval.
 
 The frequency spectrum initially shows the FFT window starting at sample frame
 0. Hovering either time plot selects the corresponding waterfall row, highlights
