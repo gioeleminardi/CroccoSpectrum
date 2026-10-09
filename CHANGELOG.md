@@ -6,6 +6,11 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add automatic stable-release checks and update notifications with a release
+  page link for manual installation. Help actions check on demand or disable
+  automatic checks; incomplete release uploads, offline failures, and rate
+  limits are handled without interrupting analysis. Bundle Qt Network's TLS
+  backend and OpenSSL runtime libraries in Linux packages.
 - Add File → Open recent for the ten most recently opened recordings and
   sessions, with history saved across launches and a Clear recent files action.
   Metadata recordings reopen through their original metadata file.

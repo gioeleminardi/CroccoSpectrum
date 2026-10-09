@@ -2,6 +2,7 @@
 #include "Plots.h"
 #include "app/AnalysisController.h"
 #include <QMainWindow>
+#include <QUrl>
 class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
@@ -18,6 +19,7 @@ class QMenu;
 
 namespace rf
 {
+class UpdateChecker;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -27,6 +29,8 @@ class MainWindow : public QMainWindow
     // explicit --accept-defaults CLI option; normal File/Open reviews import.
     void openRecording(RecordingDescriptor descriptor, FrameRange range = {});
     void openPath(const QString &path);
+    // Explicitly started by normal GUI launches; tests/automation stay offline.
+    void startUpdateChecks();
     [[nodiscard]] std::shared_ptr<const PreviewResult> previewResult() const { return preview_; }
     [[nodiscard]] std::shared_ptr<const PreviewResult> spectrumResult() const
     {
@@ -48,6 +52,7 @@ class MainWindow : public QMainWindow
     void openRecording(RecordingDescriptor descriptor, FrameRange range, const QString &sourcePath);
     void showAbout();
     void showKeyboardShortcuts();
+    void showUpdateMessage(const QString &message, const QUrl &releaseUrl = {});
     void buildControls();
     void connectWorker();
     void applyPreferences();
@@ -106,6 +111,7 @@ class MainWindow : public QMainWindow
     bool applying_ = false;
     AnalysisController controller_;
     AnalysisController spectrumController_;
+    UpdateChecker *updateChecker_;
     SpectrumPlot *spectrum_, *averagePlot_;
     WaterfallPlot *waterfall_;
     WaveformPlot *waveform_;

@@ -1,6 +1,7 @@
 #pragma once
 #include "Analysis.h"
 #include <QByteArray>
+#include <QDateTime>
 #include <QJsonObject>
 #include <QStringList>
 
@@ -16,6 +17,13 @@ struct ViewSettings {
     void validate() const;
 };
 
+struct UpdateSettings {
+    bool automatic = true;
+    QDateTime lastAttempt;
+    QDateTime retryAfter;
+    QString lastNotifiedVersion;
+};
+
 struct Preferences {
     DspSettings dsp;
     ViewSettings view;
@@ -24,6 +32,7 @@ struct Preferences {
     QByteArray workspace;
     QString lastSession;
     QStringList recentFiles;
+    UpdateSettings updates;
 };
 
 struct Session {

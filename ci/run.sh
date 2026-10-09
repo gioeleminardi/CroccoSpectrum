@@ -48,7 +48,7 @@ info={'application':'CroccoSpectrum','version':pins['application'],'configuratio
 (output/'reports/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 if mode != 'release':
     stage=build/'artifact'; stage.mkdir(exist_ok=True)
-    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-soak-test','librf_core.a','librf_ui.a']:
+    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-update-tests','rf-soak-test','librf_core.a','librf_ui.a']:
         shutil.copy2(build/name,stage/name)
     shutil.copy2(output/'reports/BUILD-INFO.json',stage/'BUILD-INFO.json')
     archive=output/'packages'/f"croccospectrum-{pins['application']}-linux-x86_64-{mode}.tar.gz"

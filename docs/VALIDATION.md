@@ -1,11 +1,24 @@
 # Validation evidence
 
 Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2, 0.1.3, 0.1.4, 0.1.5, and 0.1.6 as of 2026-10-08.
+0.1.2, 0.1.3, 0.1.4, 0.1.5, and 0.1.6, plus unreleased updates as of 2026-10-09.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Update notifications (unreleased): all five CTest suites pass on Fedora 44
+  Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK, and on
+  Ubuntu 24.04 Debug / system Qt 6.4.2. Simulated replies cover numeric version
+  ordering, draft/prerelease/malformed tags, incomplete or empty assets,
+  preference compatibility, daily throttling, disabled/manual checks, concurrent
+  requests, HTTP/network/TLS failures, invalid/oversized JSON, rate-limit reset
+  and Retry-After headers, timeout, cancellation, nonmodal notifications, browser
+  URLs, and duplicate suppression across launches. The notification was visually
+  inspected offscreen. Opt-in live GitHub HTTPS checks pass with host and bundled
+  Qt Network/TLS/OpenSSL libraries; routine tests stay offline. Both final
+  AppImage and portable-folder GUI/CLI launches and TLS availability pass in
+  clean network-disabled Ubuntu 24.04/26.04 and Fedora 44 containers. Package
+  manifests, archive checksums, and matching OpenSSL source provisions verify.
 - CI artifact layout (unreleased): Ubuntu 24.04 container Release and Debug
   builds pass all four CTest suites. Release produces exactly one executable
   AppImage and one portable tarball with GUI/CLI launchers and bundled runtime

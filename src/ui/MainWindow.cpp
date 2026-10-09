@@ -1,11 +1,13 @@
 #include "MainWindow.h"
 #include "ImportDialog.h"
+#include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -144,6 +146,31 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                           Qt::RightDockWidgetArea);
     bookmarksDock_->hide();
     buildControls();
+    updateChecker_ = new UpdateChecker(preferences_.updates, this);
+    connect(updateChecker_, &UpdateChecker::settingsChanged, this, &MainWindow::persistPreferences);
+    connect(updateChecker_, &UpdateChecker::finished, this,
+            [this](const QString &version, const QUrl &url, bool manual) {
+                if (version.isEmpty()) {
+                    if (manual)
+                        showUpdateMessage(
+                            "No newer stable release with complete Linux packages is available.");
+                    return;
+                }
+                if (!manual && preferences_.updates.lastNotifiedVersion == version)
+                    return;
+                showUpdateMessage(
+                    QString("CroccoSpectrum %1 is available. You're running %2.\n\n"
+                            "Open the release page to download and install the update.")
+                        .arg(version, RF_VERSION),
+                    url);
+                preferences_.updates.lastNotifiedVersion = version;
+                persistPreferences();
+            });
+    connect(updateChecker_, &UpdateChecker::failed, this,
+            [this](const QString &message, bool manual) {
+                if (manual)
+                    showUpdateMessage("Couldn't check for updates.\n\n" + message);
+            });
     buildMenus();
     connectWorker();
     cursorLabel_ = new QLabel("Cursor: move over a plot", this);
@@ -227,6 +254,11 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         restoreState(preferences_.workspace, 1);
     if (!settingsError.isEmpty())
         QTimer::singleShot(0, this, [this, settingsError] { reportError(settingsError); });
+}
+
+void MainWindow::startUpdateChecks()
+{
+    updateChecker_->startAutomaticChecks();
 }
 
 void MainWindow::buildMenus()
@@ -327,6 +359,20 @@ void MainWindow::buildMenus()
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
     auto *help = menuBar()->addMenu("&Help");
+    auto *updates = help->addAction("Check for updates…");
+    updates->setObjectName("checkForUpdates");
+    connect(updates, &QAction::triggered, this, [this] { updateChecker_->check(); });
+    connect(updateChecker_, &UpdateChecker::checkingChanged, updates, [updates](bool checking) {
+        updates->setEnabled(!checking);
+        updates->setText(checking ? "Checking for updates…" : "Check for updates…");
+    });
+    auto *automaticUpdates = help->addAction("Automatically check for updates");
+    automaticUpdates->setObjectName("automaticUpdateChecks");
+    automaticUpdates->setCheckable(true);
+    automaticUpdates->setChecked(preferences_.updates.automatic);
+    connect(automaticUpdates, &QAction::toggled, updateChecker_,
+            &UpdateChecker::setAutomaticChecking);
+    help->addSeparator();
     auto *shortcuts = help->addAction("Keyboard shortcuts…");
     shortcuts->setObjectName("keyboardShortcuts");
     shortcuts->setShortcut(QKeySequence(Qt::Key_F1));
@@ -349,6 +395,35 @@ void MainWindow::buildMenus()
     auto *about = help->addAction("About CroccoSpectrum");
     about->setObjectName("aboutCroccoSpectrum");
     connect(about, &QAction::triggered, this, &MainWindow::showAbout);
+}
+
+void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUrl)
+{
+    if (auto *existing = findChild<QDialog *>("updateDialog"))
+        delete existing;
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName("updateDialog");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle("CroccoSpectrum updates");
+    auto *layout = new QVBoxLayout(dialog);
+    auto *label = new QLabel(message, dialog);
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+    layout->addWidget(label);
+    auto *buttons = new QDialogButtonBox(dialog);
+    auto *dismiss = buttons->addButton("Dismiss", QDialogButtonBox::RejectRole);
+    connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    if (!releaseUrl.isEmpty()) {
+        auto *open = buttons->addButton("Open release page", QDialogButtonBox::AcceptRole);
+        open->setObjectName("openUpdateRelease");
+        connect(open, &QPushButton::clicked, dialog, [dialog, releaseUrl] {
+            QDesktopServices::openUrl(releaseUrl);
+            dialog->accept();
+        });
+    }
+    layout->addWidget(buttons);
+    dialog->resize(420, 160);
+    dialog->show();
 }
 
 void MainWindow::showKeyboardShortcuts()
@@ -1413,6 +1488,7 @@ void MainWindow::reportError(const QString &text)
 }
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    updateChecker_->stop();
     previewTimer_->stop();
     controller_.cancel();
     spectrumController_.cancel();

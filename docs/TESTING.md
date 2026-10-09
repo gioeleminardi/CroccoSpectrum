@@ -14,7 +14,19 @@ The metadata stress test uses only Python's standard library.
 
 ASAN/UBSAN require the runtime matching the compiler. Use the Ubuntu container
 from README when the host compiler installation lacks matching sanitizer libs.
-Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run all four suites.
+Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run all five suites.
+
+The `updates` suite uses simulated network replies for release selection,
+timeouts, rate limits, cancellation, preferences, and notification behavior.
+Normal tests never contact GitHub. To explicitly check real HTTPS connectivity:
+
+```sh
+QT_QPA_PLATFORM=offscreen RF_TEST_LIVE_UPDATE_CHECK=1 build/debug/rf-update-tests liveHttpsCheck
+```
+
+GUI `--smoke-test` also verifies that a usable TLS backend is available without
+making a network request. Packaged HTTPS checks use the host's certificate trust
+store; Linux systems used for online checks need current CA certificates.
 
 For useful TSAN GUI evidence, instrument Qt too. With the accompanying Qt base
 source archive extracted into `.cache/qt-source`, run in the Ubuntu builder:

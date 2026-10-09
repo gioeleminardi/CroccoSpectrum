@@ -20,6 +20,13 @@
 There is no dynamic plugin framework or backend registry. The GUI library
 depends on the core, and the headless CLI/tests link only to Qt Core/FFTW.
 
+`app/UpdateChecker.h/.cpp` belongs to the GUI library and uses asynchronous
+Qt Network requests, independently of analysis workers. Normal GUI launches
+explicitly start daily checks; automation launches and tests do not. Update
+settings live in application preferences, outside recording sessions. Release
+selection requires stable numeric version tags and uploaded Linux packages and
+checksums. Downloads and installation are handled through the user's browser.
+
 ## Units and numerical contract
 
 Every range is in sample **frames**, `[begin,end)`. Complex int16 has four bytes

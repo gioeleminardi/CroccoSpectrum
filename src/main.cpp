@@ -3,6 +3,7 @@
 #include <QCommandLineParser>
 #include <QFileInfo>
 #include <QFont>
+#include <QSslSocket>
 #include <QTimer>
 #include <iostream>
 
@@ -32,11 +33,17 @@ int main(int argc, char **argv)
     parser.addOption(
         {"smoke-test", "Exit after successful initialization/preview; failures return nonzero"});
     parser.process(app);
+    const bool smoke = parser.isSet("smoke-test");
+    const QString screenshot = parser.value("screenshot");
+    if (smoke && !QSslSocket::supportsSsl()) {
+        std::cerr << "No usable TLS backend for update checks\n";
+        return 1;
+    }
     rf::MainWindow window;
     app.setWindowIcon(window.windowIcon());
     window.show();
-    const bool smoke = parser.isSet("smoke-test");
-    const QString screenshot = parser.value("screenshot");
+    if (!smoke && screenshot.isEmpty())
+        window.startUpdateChecks();
     const auto complete = [&app, &window, screenshot] {
         // Let docking/layout and queued paint events settle before capture.
         QTimer::singleShot(100, &window, [&app, &window, screenshot] {

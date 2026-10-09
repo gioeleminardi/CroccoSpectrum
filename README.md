@@ -81,6 +81,19 @@ the AppImage or the extract-and-run tarball. Accompanying sources are in
 Debug and ASAN/UBSAN builds can be run locally for development. See [CI builds](docs/CI.md)
 for artifact contents, retention, and runner setup.
 
+### Update notifications
+
+The GUI checks GitHub for stable releases shortly after startup and at most once
+every 24 hours. A newer version is announced only after both Linux packages and
+their checksums are uploaded. The notification opens the release page; download
+and install the package yourself.
+
+Use **Help → Automatically check for updates** to disable background checks, or
+**Help → Check for updates…** to check manually. Automatic failures stay quiet;
+manual checks report connection errors and rate limits. Each version is announced
+automatically once. Checking sends a request to GitHub; recordings and sessions
+are not included. The CLI, tests, screenshots, and smoke tests stay offline.
+
 ### Run an AppImage
 
 With a packaged AppImage in the current directory:

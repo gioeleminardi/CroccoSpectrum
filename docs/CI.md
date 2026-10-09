@@ -20,7 +20,7 @@ Successful builds upload these artifacts with a 30-day requested retention:
 
 The GitHub workflow builds Release once, runs all tests and package checks, then
 uploads the artifacts. It compiles the CMake ALL target: GUI, CLI, both static
-libraries, both test tools, and the sustained-use test executable. Long-duration
+libraries, three test tools, and the sustained-use test executable. Long-duration
 stress testing runs separately from routine CI. TSAN with instrumented Qt is a separate testing
 procedure documented in [TESTING.md](TESTING.md).
 
@@ -29,6 +29,10 @@ below. Development archives require matching Qt/FFTW/compiler runtimes. For a
 portable application, use the Release AppImage or folder archive, which includes
 both the GUI and CLI with their dependencies. Release packages are checked in clean,
 network-disabled Ubuntu 24.04/26.04 and Fedora 44 containers before upload.
+GUI smoke tests also require a usable TLS backend without contacting GitHub.
+The update suite uses simulated replies, so routine CI remains offline during
+tests. Packages include Qt's TLS backend and OpenSSL runtime libraries; online
+checks use the host's CA certificate store.
 
 Artifacts are ZIP containers around the listed files. Extract that ZIP, then
 extract a tarball to preserve executable permissions; for a standalone AppImage,
