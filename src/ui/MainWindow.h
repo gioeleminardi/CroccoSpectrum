@@ -14,6 +14,7 @@ class QProgressBar;
 class QDockWidget;
 class QListWidget;
 class QTimer;
+class QMenu;
 
 namespace rf
 {
@@ -43,6 +44,8 @@ class MainWindow : public QMainWindow
 
   private:
     void buildMenus();
+    void updateRecentFilesMenu();
+    void openRecording(RecordingDescriptor descriptor, FrameRange range, const QString &sourcePath);
     void showAbout();
     void showKeyboardShortcuts();
     void buildControls();
@@ -85,6 +88,7 @@ class MainWindow : public QMainWindow
     Preferences preferences_;
     QString preferencesPath_;
     QString sessionPath_;
+    QString openingPath_;
     std::optional<Session> restoringSession_;
     std::vector<Annotation> bookmarks_;
     std::shared_ptr<Recording> recording_;
@@ -117,5 +121,6 @@ class MainWindow : public QMainWindow
     QProgressBar *progress_;
     QListWidget *bookmarksList_;
     QTimer *previewTimer_, *saveTimer_;
+    QMenu *recentFilesMenu_;
 };
 } // namespace rf

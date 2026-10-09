@@ -38,6 +38,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Cursor readouts and shared time selection | Implemented | Exact indices, sample-count time, optional UTC at millisecond resolution |
 | Optional capture UTC and retune-aware frequency axes | Implemented | Unknown/gapped UTC is not inferred; mixed-frequency aggregates remain baseband |
 | Preferences and reproducible sessions | Implemented | Versioned, atomic JSON; indices stored as decimal strings |
+| Recent files | Implemented | File → Open recent; ten recordings/sessions; persistent history; metadata source paths retained; clear history |
 | SigMF core recording import | Implemented subset | Single stream; required extensions and embedded later headers rejected |
 | Bookmarks/notes | Implemented | Persist in sessions |
 | Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw + sidecar; cancellable worker writes; refuses overwrite |

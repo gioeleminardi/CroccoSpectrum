@@ -119,6 +119,10 @@ The initial raw-file preset is **signed int16 · complex I/Q · little-endian ·
 100 MS/s**. Raw files do not describe their own layout: use the recording
 writer's format and rate. At this preset, 400 MB of samples represents one second.
 
+Use **File → Open recent** to reopen the ten most recent recordings and sessions
+across launches. Recording entries open the interpretation dialog; session
+entries restore their saved settings. Use **Clear recent files** to reset the list.
+
 ## Recording formats
 
 | Property | Supported values |

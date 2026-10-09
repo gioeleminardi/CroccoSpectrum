@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "ui/ImportDialog.h"
+#include "recording/Metadata.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
@@ -15,6 +16,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -86,6 +88,15 @@ QAction *findAction(const QWidget &widget, const QString &text)
         if (action->text() == text)
             return action;
     return nullptr;
+}
+
+QStringList recentPaths(const QMenu &menu)
+{
+    QStringList paths;
+    for (auto *action : menu.actions())
+        if (action->data().isValid())
+            paths.append(action->data().toString());
+    return paths;
 }
 } // namespace
 
@@ -174,6 +185,150 @@ class UiTests : public QObject
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
         QCOMPARE(errors.count(), 0);
         QVERIFY(!absolute->isChecked());
+    }
+    void recentFiles()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *menu = window.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(menu);
+        QVERIFY(!menu->isEnabled());
+        QStringList paths;
+        for (int index = 0; index < 11; ++index) {
+            const auto path = directory.filePath(QString("signal-%1.iq").arg(index));
+            paths.append(path);
+            window.openRecording(toneRecording(path, {4, 4}));
+            QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        }
+        QStringList expected;
+        for (int index = 10; index > 0; --index)
+            expected.append(paths[index]);
+        QVERIFY(menu->isEnabled());
+        QCOMPARE(recentPaths(*menu), expected);
+        window.openRecording(toneRecording(paths[3], {4, 4}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu).first(), paths[3]);
+        QCOMPARE(recentPaths(*menu).size(), 10);
+        QCOMPARE(recentPaths(*menu).count(paths[3]), 1);
+        expected = recentPaths(*menu);
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>())
+                dialog->reject();
+        });
+        menu->actions()[2]->trigger();
+        QCOMPARE(recentPaths(*menu), expected);
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        rf::RecordingDescriptor missing;
+        missing.path = directory.filePath("missing.iq");
+        window.openRecording(missing);
+        QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 1, 5000);
+        QVERIFY(!window.isBusy());
+        QCOMPARE(recentPaths(*menu), expected);
+        const auto reopenedPath = menu->actions()[2]->data().toString();
+        QString reviewedPath;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>()) {
+                reviewedPath = dialog->descriptor().path;
+                dialog->accept();
+            }
+        });
+        menu->actions()[2]->trigger();
+        QCOMPARE(reviewedPath, reopenedPath);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu).first(), reopenedPath);
+        QCOMPARE(recentPaths(*menu).size(), 10);
+        expected = recentPaths(*menu);
+        window.close();
+        QCOMPARE(rf::readPreferences(preferences).recentFiles, expected);
+        rf::MainWindow restored(nullptr, preferences);
+        restored.show();
+        auto *restoredMenu = restored.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(restoredMenu && restoredMenu->isEnabled());
+        QCOMPARE(recentPaths(*restoredMenu), expected);
+        auto *clear = findAction(restored, "Clear recent files");
+        QVERIFY(clear);
+        clear->trigger();
+        QVERIFY(!restoredMenu->isEnabled());
+        QVERIFY(recentPaths(*restoredMenu).isEmpty());
+        restored.close();
+        QVERIFY(rf::readPreferences(preferences).recentFiles.isEmpty());
+    }
+    void recentMetadataAndSessions()
+    {
+        QTemporaryDir directory;
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 4});
+        descriptor.centerFrequency = 1'000'000'000;
+        const auto metadataPath = directory.filePath("signal.rfmeta.json");
+        rf::writeJsonAtomic(metadataPath, {{"recording", rf::recordingToJson(descriptor)}});
+        rf::Session session;
+        session.recording = descriptor;
+        session.dsp.fftSize = 512;
+        session.range = {0, 512};
+        const auto sessionPath = directory.filePath("session.rfsession.json");
+        rf::saveSession(sessionPath, session);
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.lastSession = sessionPath;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *menu = window.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(menu);
+        rf::RecordingDescriptor reviewed;
+        QTimer confirm, timeout;
+        confirm.setInterval(10);
+        timeout.setSingleShot(true);
+        connect(&confirm, &QTimer::timeout, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>()) {
+                auto *buttons = dialog->findChild<QDialogButtonBox *>();
+                if (buttons->button(QDialogButtonBox::Ok)->isEnabled()) {
+                    reviewed = dialog->descriptor();
+                    dialog->accept();
+                }
+            }
+        });
+        connect(&timeout, &QTimer::timeout, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>())
+                dialog->reject();
+        });
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        confirm.start();
+        timeout.start(5000);
+        window.openPath(metadataPath);
+        confirm.stop();
+        timeout.stop();
+        QCOMPARE(reviewed.path, descriptor.path);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), QStringList{metadataPath});
+        auto *reopen = findAction(window, "Reopen last saved session");
+        QVERIFY(reopen);
+        reopen->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{sessionPath, metadataPath}));
+        QCOMPARE(window.dspSettings().fftSize, 512);
+        descriptor.centerFrequency = 2'000'000'000;
+        rf::writeJsonAtomic(metadataPath, {{"recording", rf::recordingToJson(descriptor)}});
+        confirm.start();
+        timeout.start(5000);
+        menu->actions()[1]->trigger();
+        confirm.stop();
+        timeout.stop();
+        QCOMPARE(reviewed.centerFrequency.value_or(0), 2'000'000'000.0);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{metadataPath, sessionPath}));
+        timeout.start(5000);
+        menu->actions()[1]->trigger();
+        timeout.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{sessionPath, metadataPath}));
+        QVERIFY(!window.findChild<QCheckBox *>("absoluteFrequency")->isChecked());
+        QCOMPARE(errors.count(), 0);
     }
     void partialImportDialog()
     {

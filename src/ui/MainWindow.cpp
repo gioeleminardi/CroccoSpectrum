@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPixmap>
@@ -240,13 +241,16 @@ void MainWindow::buildMenus()
         if (!path.isEmpty())
             openPath(path);
     });
+    recentFilesMenu_ = file->addMenu("Open recent");
+    recentFilesMenu_->setObjectName("recentFilesMenu");
+    updateRecentFilesMenu();
     auto *reinterpret = file->addAction("Review / change interpretation…");
     connect(reinterpret, &QAction::triggered, this, [this] {
         if (!recording_)
             return;
         ImportDialog dialog(recording_->descriptor().path, recording_->descriptor(), this);
         if (dialog.exec() == QDialog::Accepted)
-            openRecording(dialog.descriptor());
+            openRecording(dialog.descriptor(), {}, openingPath_);
     });
     file->addSeparator();
     auto *sessionOpen = file->addAction("Open session…");
@@ -433,6 +437,29 @@ void MainWindow::showKeyboardShortcuts()
     const auto available = dialog->screen()->availableGeometry();
     dialog->resize(std::min(960, available.width() - 60), std::min(620, available.height() - 80));
     dialog->show();
+}
+
+void MainWindow::updateRecentFilesMenu()
+{
+    recentFilesMenu_->clear();
+    recentFilesMenu_->setEnabled(!preferences_.recentFiles.isEmpty());
+    for (const auto &path : preferences_.recentFiles) {
+        auto *action = recentFilesMenu_->addAction(QDir::toNativeSeparators(path).replace("&", "&&"));
+        action->setData(path);
+        connect(action, &QAction::triggered, this, [this, path] {
+            if (path.endsWith(".rfsession.json"))
+                openSessionPath(path);
+            else
+                openPath(path);
+        });
+    }
+    recentFilesMenu_->addSeparator();
+    auto *clear = recentFilesMenu_->addAction("Clear recent files");
+    connect(clear, &QAction::triggered, this, [this] {
+        preferences_.recentFiles.clear();
+        updateRecentFilesMenu();
+        saveTimer_->start();
+    });
 }
 
 void MainWindow::showAbout()
@@ -662,6 +689,11 @@ void MainWindow::connectWorker()
                     QJsonDocument(recordingToJson(descriptor)).toJson(QJsonDocument::Indented)));
                 setWindowTitle(QFileInfo(descriptor.path).fileName() + " — CroccoSpectrum");
                 preferences_.importDefaults = descriptor;
+                preferences_.recentFiles.removeAll(openingPath_);
+                preferences_.recentFiles.prepend(openingPath_);
+                while (preferences_.recentFiles.size() > 10)
+                    preferences_.recentFiles.removeLast();
+                updateRecentFilesMenu();
                 if (restoringSession_) {
                     if (!restoringSession_->sourceIdentity.isEmpty() &&
                         restoringSession_->sourceIdentity != recording_->identity())
@@ -795,10 +827,17 @@ void MainWindow::openPath(const QString &path)
     defaults.metadataSource = "User import";
     ImportDialog dialog(path, defaults, this);
     if (dialog.exec() == QDialog::Accepted)
-        openRecording(dialog.descriptor());
+        openRecording(dialog.descriptor(), {}, path);
 }
 
 void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
+{
+    const auto sourcePath = descriptor.path;
+    openRecording(std::move(descriptor), range, sourcePath);
+}
+
+void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
+                               const QString &sourcePath)
 {
     try {
         descriptor.validate();
@@ -806,6 +845,7 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
         previewTimer_->stop();
         clearMeasurements();
         recording_.reset();
+        openingPath_ = QFileInfo(sourcePath).absoluteFilePath();
         generation_ = controller_.open(std::move(descriptor), preferences_.dsp, range);
         setBusy(true, "Opening recording…");
     } catch (const std::exception &error) {
@@ -1293,7 +1333,7 @@ void MainWindow::openSessionPath(const QString &path)
         restoringSession_ = session;
         sessionPath_ = path;
         preferences_.lastSession = path;
-        openRecording(session.recording, session.range);
+        openRecording(session.recording, session.range, path);
     } catch (const std::exception &error) {
         reportError(QString::fromUtf8(error.what()));
     }

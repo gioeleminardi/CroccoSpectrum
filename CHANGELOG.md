@@ -4,6 +4,20 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Add File → Open recent for the ten most recently opened recordings and
+  sessions, with history saved across launches and a Clear recent files action.
+  Metadata recordings reopen through their original metadata file.
+- Automatically enable absolute-frequency display when opening or changing a
+  recording interpretation with a known center frequency. Rename the display
+  checkbox to `Absolute frequency`.
+- Round spectrum crosshair frequency labels and cursor status readouts to the
+  nearest whole Hz.
+- Extend the spectrum's vertical frequency cursor through the waterfall to
+  correlate signals across both plots. Keep it aligned during zooming and
+  resizing, and clear it when the spectrum cursor disappears.
+
 ## 0.1.6 — 2026-10-08 — Partial recording import
 
 - Add Open partial / growing file in the import dialog and `--partial` in the

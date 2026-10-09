@@ -2,6 +2,7 @@
 #include "Analysis.h"
 #include <QByteArray>
 #include <QJsonObject>
+#include <QStringList>
 
 namespace rf
 {
@@ -22,6 +23,7 @@ struct Preferences {
     QByteArray geometry;
     QByteArray workspace;
     QString lastSession;
+    QStringList recentFiles;
 };
 
 struct Session {
