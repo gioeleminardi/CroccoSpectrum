@@ -36,6 +36,8 @@ class SpectrumPlot : public QWidget
     [[nodiscard]] QString measurementText() const;
   signals:
     void cursorChanged(QString text);
+    void frequencyHovered(double frequency); // Baseband Hz, matching the linked plot ranges.
+    void cursorLeft();
     void frequencyRangeChanged(double left, double right);
     void measurementActiveChanged(bool active);
 
@@ -43,6 +45,7 @@ class SpectrumPlot : public QWidget
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
     void wheelEvent(QWheelEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
@@ -81,6 +84,7 @@ class WaterfallPlot : public QWidget
     void setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate);
     void setView(ViewSettings view, PowerScale scale, double centerFrequency);
     void setFrequencyRange(double left, double right);
+    void setFrequencyCursor(std::optional<double> frequency);
     void setFrameCursor(std::optional<std::uint64_t> frame, bool frozen);
     void clear();
     void clearMeasurement();
@@ -117,6 +121,7 @@ class WaterfallPlot : public QWidget
     PowerScale scale_ = PowerScale::Spectrum;
     int hoveredRow_ = -1;
     bool frameFrozen_ = false;
+    std::optional<double> frequencyCursor_;
     std::optional<std::pair<std::size_t, std::size_t>> measurementRows_;
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;

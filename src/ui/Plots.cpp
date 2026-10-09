@@ -164,6 +164,8 @@ void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool 
     updateMeasurementPower();
     if (resetZoom)
         resetFrequency();
+    else if (hoverPosition_)
+        updateHover(*hoverPosition_);
     update();
 }
 void SpectrumPlot::setAverage(std::shared_ptr<const AverageResult> result, bool maxHold)
@@ -189,7 +191,7 @@ void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFre
 void SpectrumPlot::clear()
 {
     clearMeasurement();
-    hoverPosition_.reset();
+    leaveEvent(nullptr);
     dragX_ = -1;
     preview_.reset();
     average_.reset();
@@ -326,6 +328,8 @@ void SpectrumPlot::resetFrequency()
         right_ = frequency.back() + (left_ < 0 ? frequency[1] - frequency[0] : 0);
         emit frequencyRangeChanged(left_, right_);
     }
+    if (hoverPosition_)
+        updateHover(*hoverPosition_);
     update();
 }
 void SpectrumPlot::setFrequencyRange(double left, double right)
@@ -333,6 +337,8 @@ void SpectrumPlot::setFrequencyRange(double left, double right)
     if (std::isfinite(left) && std::isfinite(right) && left < right) {
         left_ = left;
         right_ = right;
+        if (hoverPosition_)
+            updateHover(*hoverPosition_);
         update();
     }
 }
@@ -479,15 +485,13 @@ void SpectrumPlot::updateHover(const QPointF &position)
     const auto frequency = frequencies();
     const auto power = powers();
     if (frequency.empty() || power.empty() || !plot.contains(position)) {
-        if (hoverPosition_) {
-            hoverPosition_.reset();
-            update();
-        }
+        leaveEvent(nullptr);
         return;
     }
     hoverPosition_ = position;
     const double target =
         left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_);
+    emit frequencyHovered(target);
     auto found = std::lower_bound(frequency.begin(), frequency.end(), target);
     const auto index =
         std::min(static_cast<std::size_t>(found - frequency.begin()), power.size() - 1);
@@ -510,8 +514,18 @@ void SpectrumPlot::updateHover(const QPointF &position)
 
 void SpectrumPlot::leaveEvent(QEvent *)
 {
-    hoverPosition_.reset();
+    if (hoverPosition_) {
+        hoverPosition_.reset();
+        emit cursorLeft();
+    }
     update();
+}
+
+void SpectrumPlot::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (hoverPosition_)
+        updateHover(*hoverPosition_);
 }
 
 void SpectrumPlot::wheelEvent(QWheelEvent *event)
@@ -533,6 +547,7 @@ void SpectrumPlot::wheelEvent(QWheelEvent *event)
     left_ = std::clamp(anchor - fraction * span, frequency.front(), frequency.back() - span);
     right_ = left_ + span;
     emit frequencyRangeChanged(left_, right_);
+    updateHover(event->position());
     update();
     event->accept();
 }
@@ -648,6 +663,11 @@ void WaterfallPlot::setFrequencyRange(double left, double right)
     right_ = right;
     update();
 }
+void WaterfallPlot::setFrequencyCursor(std::optional<double> frequency)
+{
+    frequencyCursor_ = frequency;
+    update();
+}
 void WaterfallPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool frozen)
 {
     frameFrozen_ = frozen;
@@ -667,6 +687,7 @@ void WaterfallPlot::clear()
     hoveredRow_ = -1;
     frameFrozen_ = false;
     image_ = {};
+    frequencyCursor_.reset();
     update();
 }
 void WaterfallPlot::clearMeasurement()
@@ -746,6 +767,14 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
         painter.fillRect(QRectF(plot.left(), plot.top() + hoveredRow_ * rowHeight, plot.width(),
                                 rowHeight),
                          QColor(255, 255, 255, frameFrozen_ ? 180 : 90));
+    }
+    if (frequencyCursor_ && *frequencyCursor_ >= left_ && *frequencyCursor_ <= right_) {
+        const double x = plot.left() + (*frequencyCursor_ - left_) / (right_ - left_) * plot.width();
+        painter.save();
+        painter.setClipRect(plot);
+        painter.setPen(QPen(crosshairColor, 1, Qt::DashLine));
+        painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        painter.restore();
     }
     painter.setPen(foreground);
     const double timeScale = static_cast<double>(result_->range.end) / sampleRate_ < 0.1 ? 1000 : 1;

@@ -347,6 +347,81 @@ class UiTests : public QObject
         moveMouse(&plot, QPoint(276, 152));
         QCOMPARE(plot.grab().toImage(), empty);
     }
+    void spectrumCrosshairOnWaterfall()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 8, 12});
+        descriptor.centerFrequency = 1'000'000'000;
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QVERIFY(spectrum && waterfall);
+        QCOMPARE(spectrum->width(), waterfall->width());
+        moveMouse(waterfall, QPoint(10, 10));
+        moveMouse(spectrum, QPoint(10, 10));
+        const auto preview = window.previewResult();
+        const auto original = waterfall->grab().toImage();
+        const auto cursorPixels = [waterfall](const QImage &image, int x) {
+            int count = 0;
+            for (int y = 33; y < waterfall->height() - 38; ++y)
+                count += image.pixelColor(qRound(x * image.devicePixelRatio()),
+                                          qRound(y * image.devicePixelRatio())) ==
+                         QColor("#8ecae6");
+            return count;
+        };
+        const int x = 76 + (spectrum->width() - 100) / 3;
+        moveMouse(spectrum, QPoint(x, 60));
+        QVERIFY(cursorPixels(waterfall->grab().toImage(), x) > (waterfall->height() - 70) / 2);
+        const QPointF zoomPosition(x, 60);
+        QWheelEvent zoom(zoomPosition, spectrum->mapToGlobal(zoomPosition.toPoint()), {},
+                         QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(spectrum, &zoom);
+        moveMouse(spectrum, QPoint(x + 40, 60));
+        auto *reset = findAction(window, "Reset frequency zoom");
+        QVERIFY(reset);
+        reset->trigger();
+        const auto moved = waterfall->grab().toImage();
+        QCOMPARE(cursorPixels(moved, x), 0);
+        QVERIFY(cursorPixels(moved, x + 40) > (waterfall->height() - 70) / 2);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/spectrum-waterfall-crosshair.png"));
+        }
+        const auto size = window.size();
+        window.resize(size.width() - 120, size.height());
+        QCoreApplication::processEvents();
+        QCOMPARE(spectrum->width(), waterfall->width());
+        QVERIFY(cursorPixels(waterfall->grab().toImage(), x + 40) >
+                (waterfall->height() - 70) / 2);
+        window.resize(size);
+        QCoreApplication::processEvents();
+        moveMouse(spectrum, QPoint(10, 10));
+        QCOMPARE(waterfall->grab().toImage(), original);
+        moveMouse(spectrum, QPoint(x, 60));
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(spectrum, &leave);
+        QCOMPARE(waterfall->grab().toImage(), original);
+        moveMouse(spectrum, QPoint(x, 60));
+        auto invalid = std::make_shared<rf::PreviewResult>(*window.spectrumResult());
+        invalid->spectrum.power.clear();
+        invalid->spectrum.valid = false;
+        spectrum->setPreview(invalid, false);
+        QCOMPARE(waterfall->grab().toImage(), original);
+        spectrum->setPreview(preview, false);
+        moveMouse(spectrum, QPoint(x, 60));
+        spectrum->clear();
+        QCOMPARE(waterfall->grab().toImage(), original);
+        QCOMPARE(window.previewResult(), preview);
+        QVERIFY(!window.isBusy());
+    }
     void spectrumCrosshairDuringMeasurements()
     {
         rf::SpectrumPlot plot;

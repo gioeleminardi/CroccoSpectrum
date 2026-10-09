@@ -171,6 +171,10 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                 beginMeasurement(plot);
         });
     }
+    connect(spectrum_, &SpectrumPlot::frequencyHovered, this,
+            [this](double frequency) { waterfall_->setFrequencyCursor(frequency); });
+    connect(spectrum_, &SpectrumPlot::cursorLeft, this,
+            [this] { waterfall_->setFrequencyCursor(std::nullopt); });
     connect(waterfall_, &WaterfallPlot::measurementActiveChanged, this, [this](bool active) {
         if (active)
             beginMeasurement(waterfall_);
