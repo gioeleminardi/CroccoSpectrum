@@ -514,7 +514,8 @@ void MainWindow::buildControls()
     palette_->setObjectName("waterfallPalette");
     palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo", "Baudline"});
     autoRange_ = new QCheckBox("Automatic range (80 dB span)", this);
-    absoluteFrequency_ = new QCheckBox("Absolute frequency, when known", this);
+    absoluteFrequency_ = new QCheckBox("Absolute frequency", this);
+    absoluteFrequency_->setObjectName("absoluteFrequency");
     waveformMode_ = new QComboBox(this);
     waveformMode_->addItems({"I/Q", "Magnitude", "I only"});
     colorForm->addRow("Minimum", colorMin_);
@@ -664,8 +665,11 @@ void MainWindow::connectWorker()
                                     "the current file");
                     bookmarks_ = restoringSession_->bookmarks;
                     restoringSession_.reset();
-                } else
+                } else {
                     bookmarks_ = descriptor.annotations;
+                    if (descriptor.hasFrequencyAt(range_.begin))
+                        absoluteFrequency_->setChecked(true);
+                }
                 bookmarksList_->clear();
                 for (const auto &mark : bookmarks_)
                     bookmarksList_->addItem(

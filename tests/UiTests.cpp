@@ -123,6 +123,58 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void absoluteFrequencyDefaultsToKnownCenter_data()
+    {
+        QTest::addColumn<bool>("known");
+        QTest::addColumn<double>("center");
+        QTest::newRow("unknown") << false << 0.0;
+        QTest::newRow("zero") << true << 0.0;
+        QTest::newRow("rf") << true << 1'000'000'000.0;
+    }
+    void absoluteFrequencyDefaultsToKnownCenter()
+    {
+        QFETCH(bool, known);
+        QFETCH(double, center);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.lastSession = directory.filePath("session.rfsession.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *absolute = window.findChild<QCheckBox *>("absoluteFrequency");
+        QVERIFY(absolute);
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 4});
+        if (known)
+            descriptor.centerFrequency = center;
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(errors.count(), 0);
+        QCOMPARE(absolute->isChecked(), known);
+        QCOMPARE(absolute->text(), QString("Absolute frequency"));
+        absolute->setChecked(false);
+        auto *fft = window.findChild<QComboBox *>("fftSize");
+        QVERIFY(fft);
+        fft->setCurrentIndex(fft->findData(512));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QVERIFY(!absolute->isChecked());
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(absolute->isChecked(), known);
+        rf::Session session;
+        session.recording = descriptor;
+        session.dsp = window.dspSettings();
+        session.range = window.selectedRange();
+        rf::saveSession(saved.lastSession, session);
+        auto *reopen = findAction(window, "Reopen last saved session");
+        QVERIFY(reopen);
+        reopen->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(errors.count(), 0);
+        QVERIFY(!absolute->isChecked());
+    }
     void partialImportDialog()
     {
         QTemporaryDir directory;
