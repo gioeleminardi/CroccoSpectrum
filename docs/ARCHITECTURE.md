@@ -6,7 +6,7 @@
    read-only file ownership, checked/bounded block access.
 2. `recording/Recording.cpp`: byte decoding and binary16 handling. `pread` avoids
    mutable seek state; fstat/path identity checks detect ordinary source changes.
-3. `dsp/Spectrum.h/.cpp`: one reusable FFTW plan/buffer set per job, periodic
+3. `dsp/Spectrum.h/.cpp`: one reusable FFTW plan/buffer set per FFT worker, periodic
    windows, real/complex outputs, and power normalization.
 4. `app/Analysis.h/.cpp`: bounded previews, exact window traversal, envelopes,
    progress/cancellation checkpoints, transactional exports.
@@ -86,6 +86,13 @@ hop, scaling, detrending, and sidedness, instead of relying on library defaults.
 ## Threads and ownership
 
 Each `AnalysisController` runs recording/DSP jobs on its own `std::jthread`.
+Larger FFT scans use up to eight additional workers, capped at half the advertised
+CPU threads and reduced for short jobs or large FFT buffers. Each worker owns its
+FFTW engine and positional-read buffer. A single bounded batch per worker is
+consumed in window order, preserving the serial online mean, max hold, coverage
+counts, and waterfall cells. Cancellation, progress, and snapshot callbacks run
+only on the coordinating job thread. Cancellation or a worker exception stops
+the batch pipeline and joins every worker before returning or throwing.
 Submitting a new job atomically cancels that controller's running token and
 replaces its pending job. The main window uses separate controllers for one-window hover previews, waterfall
 viewport detail, and the whole-recording minimap. Navigation and hover do not cancel
@@ -107,7 +114,7 @@ slots compare their generation before applying any result.
 
 The controller joins its worker before its QObject/cache members are destroyed.
 FFTW planning/destruction is serialized with a process-wide mutex; execution
-uses job-private arrays. FFTW internal threads are initially disabled to avoid
+uses worker-private arrays. Each FFTW transform remains single-threaded to avoid
 nested parallelism. A blocked filesystem call is not forcibly interrupted;
 cancellation is cooperative between bounded reads/transforms.
 
@@ -120,6 +127,11 @@ change an export midway.
 
 - Maximum individual recording read: 32 MiB.
 - Ordinary decoded read block: 262,144 frames; raised only for a larger FFT.
+- Parallel FFT worker selection uses a 128 MiB storage estimate per scan,
+  accounting for FFT buffers, decoded/raw blocks, and bounded batches. It is
+  not a process RSS limit; the coordinating engine, results, caches, and allocator
+  retention are additional. Batch spectra cover at most 262,144 input frames,
+  or one larger FFT. No recording-sized work queue is allocated.
 - Preview FFT work: at most 128 windows / approximately 8 million input frames.
 - Initial waterfall previews: at most 128 × 1,024 cells. Explicit exact overview
   requests use the same physical-pixel grid bounds as viewport detail.

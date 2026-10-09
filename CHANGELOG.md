@@ -6,6 +6,10 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Parallelize independent FFT windows for exact minimaps, spectral averages,
+  exact overviews, and larger previews/waterfalls with a bounded worker count.
+  Preserve window-order reductions, cancellation, and progressive snapshots;
+  keep small jobs and memory-heavy FFTs serial when appropriate.
 - Show an animated status-bar spinner whenever background analysis, waterfall
   refinement, minimap filling, or exports are queued or running. Pointer-driven
   hover FFT updates do not trigger it.

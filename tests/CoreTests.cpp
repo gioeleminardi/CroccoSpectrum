@@ -10,6 +10,7 @@
 #include <cmath>
 #include <numbers>
 #include <random>
+#include <thread>
 #include <tuple>
 
 namespace
@@ -389,6 +390,110 @@ class CoreTests : public QObject
             rf::analyzeAverage(segmented, {0, 4096}, settings, [] { return false; });
         QVERIFY(segmentAverage->boundaryWindows > 0);
     }
+    void fftScansMatchOrderedReference_data()
+    {
+        QTest::addColumn<bool>("real");
+        QTest::newRow("complex") << false;
+        QTest::newRow("real") << true;
+    }
+    void fftScansMatchOrderedReference()
+    {
+        QFETCH(bool, real);
+        QTemporaryDir directory;
+        constexpr std::uint64_t frames = 1'100'123;
+        std::vector<double> values(static_cast<std::size_t>(frames) * (real ? 1U : 2U));
+        for (std::size_t index = 0; index < values.size(); ++index)
+            values[index] = static_cast<double>((index * 17U) % 101U) / 101.0 - 0.5;
+        values[530'001] = std::numeric_limits<double>::quiet_NaN();
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("scan.dat"),
+            QByteArray(reinterpret_cast<const char *>(values.data()),
+                       static_cast<qsizetype>(values.size() * sizeof(double))));
+        descriptor.format.kind = real ? rf::SampleKind::Real : rf::SampleKind::Complex;
+        descriptor.format.encoding = rf::Encoding::FloatingPoint;
+        descriptor.format.bits = 64;
+        descriptor.captures = {{0, {}, {}}, {37'777, {}, {}}, {700'003, {}, {}}};
+        rf::Recording recording(descriptor);
+        rf::DspSettings settings;
+        settings.fftSize = 1024;
+        settings.overlapPercent = 67;
+        settings.removeDc = true;
+        settings.conjugate = true;
+        settings.scale = rf::PowerScale::Density;
+        const rf::FrameRange range{17, frames - 83};
+        const auto windows = 1 + (range.size() - 1024) / settings.hop();
+        constexpr std::size_t columns = 37, rows = 23;
+        rf::SpectrumEngine engine(descriptor.format.kind, descriptor.sampleRate, settings);
+        std::vector<double> mean(engine.binCount()), maximum(engine.binCount());
+        std::vector<double> cells(rows * columns, std::numeric_limits<double>::quiet_NaN());
+        std::uint64_t valid = 0, invalid = 0, boundaries = 0, row = 0;
+        for (std::uint64_t index = 0; index < windows; ++index) {
+            const auto start = range.begin + index * settings.hop();
+            while (row + 1 < rows && index >= windows * (row + 1) / rows)
+                ++row;
+            if (descriptor.crossesCapture(start, 1024)) {
+                ++boundaries;
+                continue;
+            }
+            const auto spectrum = engine.calculate(recording.read({start, start + 1024}));
+            if (!spectrum.valid) {
+                ++invalid;
+                continue;
+            }
+            ++valid;
+            for (std::size_t bin = 0; bin < mean.size(); ++bin) {
+                mean[bin] += (spectrum.power[bin] - mean[bin]) / static_cast<double>(valid);
+                maximum[bin] = std::max(maximum[bin], spectrum.power[bin]);
+                auto &cell = cells[row * columns + ((bin + 1) * columns - 1) / mean.size()];
+                cell = std::isnan(cell) ? spectrum.power[bin] : std::max(cell, spectrum.power[bin]);
+            }
+        }
+        const auto caller = std::this_thread::get_id();
+        bool callbacksOnCaller = true;
+        double lastProgress = 0;
+        rf::PreviewResult overview;
+        const auto average = rf::analyzeAverage(recording, range, settings,
+            [&] { callbacksOnCaller &= std::this_thread::get_id() == caller; return false; },
+            [&](double progress) {
+                callbacksOnCaller &= std::this_thread::get_id() == caller;
+                QVERIFY(progress >= lastProgress);
+                lastProgress = progress;
+            }, &overview, columns, rows);
+        QCOMPARE(average->averagePower, mean);
+        QCOMPARE(average->maxPower, maximum);
+        QCOMPARE(average->validWindows, valid);
+        QCOMPARE(average->invalidWindows, invalid);
+        QCOMPARE(average->boundaryWindows, boundaries);
+        QCOMPARE(average->trailingFrames, (range.size() - 1024) % settings.hop());
+        QCOMPARE(overview.waterfall, cells);
+        QCOMPARE(lastProgress, 1.0);
+        QVERIFY(invalid > 0 && boundaries > 0);
+        std::vector<std::shared_ptr<const rf::PreviewResult>> updates;
+        const auto waterfall = rf::analyzeWaterfall(recording, settings,
+            {range, 0, 0, columns, rows, true}, {}, [&](auto snapshot) {
+                callbacksOnCaller &= std::this_thread::get_id() == caller;
+                if (!updates.empty())
+                    QVERIFY(snapshot->completedRows >= updates.back()->completedRows);
+                updates.push_back(std::move(snapshot));
+            });
+        QCOMPARE(waterfall->waterfall, cells);
+        QCOMPARE(waterfall->rowStarts, overview.rowStarts);
+        QCOMPARE(waterfall->invalidWindows, invalid);
+        QCOMPARE(waterfall->boundaryWindows, boundaries);
+        QVERIFY(waterfall->complete && callbacksOnCaller);
+        QCOMPARE(updates.front()->completedRows, std::size_t{0});
+        QVERIFY(std::all_of(updates.front()->waterfall.begin(), updates.front()->waterfall.end(),
+                            [](double cell) { return std::isnan(cell); }));
+        int checks = 0;
+        QVERIFY_EXCEPTION_THROWN(rf::analyzeWaterfall(recording, settings,
+            {range, 0, 0, columns, rows, true}, [&] { return ++checks > 20; }), rf::Cancelled);
+        // A read failure must reach the caller and join every FFT worker.
+        QFile source(descriptor.path);
+        QVERIFY(source.open(QIODevice::ReadWrite));
+        QVERIFY(source.resize(0));
+        QVERIFY_EXCEPTION_THROWN(rf::analyzeAverage(recording, range, settings, {}),
+                                 std::runtime_error);
+    }
     void waveformAndByteExport()
     {
         QTemporaryDir directory;
@@ -565,6 +670,9 @@ class CoreTests : public QObject
         QFile sparse(directory.filePath("large.iq"));
         QVERIFY(sparse.open(QIODevice::WriteOnly));
         QVERIFY(sparse.resize(64LL * 1024 * 1024));
+        QCOMPARE(sparse.write(QByteArray::fromHex("00400000").repeated(65536)), qint64{65536 * 4});
+        QVERIFY(sparse.seek(sparse.size() - 65536 * 4));
+        QCOMPARE(sparse.write(QByteArray::fromHex("00600000").repeated(65536)), qint64{65536 * 4});
         sparse.close();
         descriptor.path = sparse.fileName();
         descriptor.captures.clear();
@@ -576,6 +684,36 @@ class CoreTests : public QObject
         QCOMPARE(sampled->rowStarts.size(), std::size_t{512});
         QCOMPARE(sampled->rowStarts.front(), std::uint64_t{0});
         QCOMPARE(sampled->rowStarts.back(), large.frameCount() - 256);
+        settings.fftSize = 65536;
+        request.rows = 128;
+        request.columns = 37;
+        request.fixedRows = true;
+        request.left = -1'000'000;
+        request.right = 1'000'000;
+        const auto parallelSampled = rf::analyzeWaterfall(large, settings, request, {});
+        QVERIFY(parallelSampled->sampled);
+        const auto preview = rf::analyzePreview(large, request.range, settings, {});
+        QCOMPARE(preview->rowStarts, parallelSampled->rowStarts);
+        QCOMPARE(*std::max_element(preview->waterfall.begin(),
+                                   preview->waterfall.begin() + preview->columns), 0.25);
+        QCOMPARE(*std::max_element(preview->waterfall.end() - preview->columns,
+                                   preview->waterfall.end()), 0.5625);
+        rf::SpectrumEngine reference(rf::SampleKind::Complex, descriptor.sampleRate, settings);
+        const auto frequencies = reference.frequencies();
+        const auto first = static_cast<std::size_t>(std::upper_bound(
+            frequencies.begin(), frequencies.end(), request.left) - frequencies.begin() - 1);
+        const auto end = static_cast<std::size_t>(std::lower_bound(
+            frequencies.begin(), frequencies.end(), request.right) - frequencies.begin());
+        for (std::size_t row = 0; row < parallelSampled->rowStarts.size(); ++row) {
+            const auto start = parallelSampled->rowStarts[row];
+            const auto spectrum = reference.calculate(large.read({start, start + 65536}));
+            for (std::size_t column = 0; column < 37; ++column)
+                QCOMPARE(parallelSampled->waterfall[row * 37 + column],
+                    *std::max_element(spectrum.power.begin() +
+                                          static_cast<std::ptrdiff_t>(first + column * (end - first) / 37),
+                                      spectrum.power.begin() +
+                                          static_cast<std::ptrdiff_t>(first + (column + 1) * (end - first) / 37)));
+        }
     }
     void exportTransactionsAndCancellation()
     {

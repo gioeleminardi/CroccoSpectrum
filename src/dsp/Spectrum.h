@@ -32,7 +32,7 @@ struct SpectrumResult {
     double enbwHz = 0;
 };
 
-// Each job owns an engine and its buffers. FFTW execution is safe concurrently,
+// Each FFT worker owns an engine and its buffers. Execution is safe concurrently,
 // but all planning/destruction is protected by the process-wide planner mutex.
 class SpectrumEngine
 {

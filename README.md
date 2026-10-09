@@ -439,6 +439,13 @@ and qualification scope is recorded in [Validation](docs/VALIDATION.md).
 
 ## Performance
 
+Large FFT scans automatically use bounded parallel workers. Short jobs stay
+serial, and large FFT buffers reduce the worker count. Ordered reductions retain
+the same numerical results. On a local 4 GB recording with 65,536-point FFTs and
+50% overlap, parallel processing reduced the exact minimap from 22.2 s to 4.3–4.9 s
+and a 4,096-row viewport from 3.1 s to 0.64–0.66 s in Release. These warm-cache
+computation timings exclude GUI painting; details are in [Benchmarks](docs/BENCHMARKS.md).
+
 Measured with dense synthetic int16 I/Q recordings at 100 MS/s on a Ryzen 9
 9950X3D workstation with NVMe storage:
 
@@ -449,7 +456,8 @@ Measured with dense synthetic int16 I/Q recordings at 100 MS/s on a Ryzen 9
 | Peak memory for those average passes | About 22.5 MiB RSS |
 | Initial GUI preview of a 40 GB file | 150 ms |
 
-Average timings use a warm file cache, Hann 4,096-point FFTs, and 50% overlap.
+These earlier baseline average timings use one worker, a warm file cache,
+Hann 4,096-point FFTs, and 50% overlap.
 The GUI measurement is offscreen, uses a warm cache, and includes a 100 ms layout
 settling delay. Initial previews read bounded regions rather than scanning the
 whole file. See [Benchmarks](docs/BENCHMARKS.md) for hardware, methodology, and

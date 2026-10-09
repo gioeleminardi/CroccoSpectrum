@@ -31,6 +31,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Exact selected/whole-file spectral average | Implemented | Linear mean; invalid/boundary windows counted |
 | Interval max hold | Implemented | Separate result from average |
 | Full exact waterfall overview | Implemented | Explicit full pass; bounded temporal/frequency maxima plus average |
+| Parallel FFT scans | Implemented | Automatic bounded workers for averages, exact overviews/minimaps and larger previews/waterfalls; ordered reductions; short jobs stay serial |
 | Waveform and exact min/max envelopes | Implemented | Full-selection scan is an explicit command |
 | Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work; Baudline spans black to #00F9AB |
 | Docked/floating analysis panels | Implemented | Qt docking, persisted workspace |
