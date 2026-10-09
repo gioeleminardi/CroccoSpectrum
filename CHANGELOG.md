@@ -25,7 +25,13 @@ This file records release history and behavior changes. See
 - Add mouse-wheel zoom around the pointer and left-drag pan for both frequency
   and time in the waterfall. Keep frequency navigation linked to the spectra
   and time navigation within the current preview, preserving measurements,
-  click-to-freeze, and double-click seeking.
+  click-to-freeze, and double-click seeking. Hold Ctrl when starting a drag to
+  pan only time without changing the frequency range. For a selected recording
+  slice, move the interval with its width fixed and update the Start/End fields
+  live. Move cached rows immediately and refresh newly exposed data in the
+  background while dragging, preserving frequency zoom and the active gesture.
+  Clamp the interval to the recording bounds; whole-recording views pan preview
+  rows instead.
 
 ## 0.1.6 — 2026-10-08 — Partial recording import
 

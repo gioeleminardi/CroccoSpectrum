@@ -81,7 +81,10 @@ class WaterfallPlot : public QWidget
     Q_OBJECT
   public:
     explicit WaterfallPlot(QWidget *parent = nullptr);
-    void setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate);
+    void setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
+                    bool resetFrequency = true);
+    void setTimeSelectionPanEnabled(bool enabled) { timeSelectionPanEnabled_ = enabled; }
+    void setTimeSelectionRange(FrameRange range);
     void setView(ViewSettings view, PowerScale scale, double centerFrequency);
     void setFrequencyRange(double left, double right);
     void setFrequencyCursor(std::optional<double> frequency);
@@ -101,6 +104,8 @@ class WaterfallPlot : public QWidget
     void cursorLeft();
     void frameSelected(quint64 frame);
     void frequencyRangeChanged(double left, double right);
+    void timeSelectionPanActiveChanged(bool active);
+    void timeSelectionPanChanged(double fraction);
     void measurementActiveChanged(bool active);
     void measurementChanged();
 
@@ -118,6 +123,7 @@ class WaterfallPlot : public QWidget
     void rebuildImage();
     void updateHover(const QPointF &position);
     double fullFrequencyRight() const;
+    double visibleTop() const;
     double rowY(std::size_t row) const;
     std::optional<std::size_t> rowAt(const QPointF &position) const;
     std::shared_ptr<const PreviewResult> result_;
@@ -132,6 +138,10 @@ class WaterfallPlot : public QWidget
     MeasurementDrag measurementDrag_;
     std::optional<QPointF> dragPosition_;
     bool dragMoved_ = false;
+    bool dragTimeOnly_ = false;
+    bool timeSelectionPanEnabled_ = false, dragTimeSelection_ = false;
+    std::optional<FrameRange> timeSelectionRange_;
+    double dragRowCount_ = 1;
     double dragLeft_ = 0, dragRight_ = 1, dragTop_ = 0, dragBottom_ = 1;
     double top_ = 0, bottom_ = 1;
     double sampleRate_ = 1, center_ = 0, left_ = 0, right_ = 1;

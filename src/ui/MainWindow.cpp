@@ -211,6 +211,59 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     });
     connect(waterfall_, &WaterfallPlot::measurementChanged, this,
             &MainWindow::updateWaterfallSelection);
+    connect(waterfall_, &WaterfallPlot::timeSelectionPanActiveChanged, this, [this](bool active) {
+        if (!recording_)
+            return;
+        if (active) {
+            waterfallPanRange_ = range_;
+            previewTimer_->stop();
+            controller_.cancel();
+            ++generation_;
+            spectrumController_.cancel();
+            ++spectrumGeneration_;
+            setBusy(false);
+        } else if (waterfallPanRange_) {
+            waterfallPanRange_.reset();
+            previewTimer_->stop();
+            if (!busy_ && (!preview_ || preview_->range != range_)) {
+                preserveFrequencyOnPreview_ = true;
+                requestPreview();
+            } else if (!busy_)
+                preserveFrequencyOnPreview_ = false;
+        }
+    });
+    connect(waterfall_, &WaterfallPlot::timeSelectionPanChanged, this, [this](double fraction) {
+        if (!recording_ || !waterfallPanRange_)
+            return;
+        const auto original = *waterfallPanRange_;
+        const auto available = fraction < 0 ? original.begin
+                                           : recording_->frameCount() - original.end;
+        // Subtract integer frame counts before converting, including beyond 2^53.
+        const auto delta = static_cast<std::uint64_t>(std::min(
+            std::round(std::abs(static_cast<long double>(fraction)) * original.size()),
+            static_cast<long double>(available)));
+        const auto begin = fraction < 0 ? original.begin - delta : original.begin + delta;
+        const FrameRange next{begin, begin + original.size()};
+        if (next == range_)
+            return;
+        if (range_ == original) {
+            spectrum_->clearMeasurement();
+            averagePlot_->clear();
+            waterfall_->clearMeasurement();
+            average_.reset();
+            averageLabel_->setText("No current interval result");
+            frameFrozen_ = false;
+            frameCursorVisible_ = false;
+            updateFrameCursors();
+        }
+        range_ = next;
+        updateRanges();
+        waterfall_->setTimeSelectionRange(range_);
+        preserveFrequencyOnPreview_ = true;
+        // Throttle previews without restarting the timer or cancelling work on every move.
+        if (!busy_ && !previewTimer_->isActive())
+            previewTimer_->start();
+    });
     connect(spectrum_, &SpectrumPlot::frequencyRangeChanged, averagePlot_,
             &SpectrumPlot::setFrequencyRange);
     connect(averagePlot_, &SpectrumPlot::frequencyRangeChanged, spectrum_,
@@ -391,7 +444,9 @@ void MainWindow::buildMenus()
             "A sampled waterfall can miss short events. Full averages and Exact waveform process "
             "every required sample/window.\n\n"
             "Wheel: frequency zoom in spectra; frequency/time zoom in waterfall. "
-            "Drag: frequency pan in spectra; frequency/time pan in waterfall. Hover waterfall/waveform: "
+            "Drag: frequency pan in spectra; frequency/time pan in waterfall. "
+            "Ctrl + drag waterfall: pan the selected time slice, or preview rows for the whole "
+            "recording. Hover waterfall/waveform: "
             "inspect the shared frame. Click either plot to freeze/unfreeze it. Double-click: "
             "seek. CSV records analysis settings; sessions preserve interpretation and bookmarks.");
     });
@@ -491,6 +546,8 @@ void MainWindow::showKeyboardShortcuts()
            "Clear a measurement in the focused plot");
     addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; frequency and time in waterfall");
     addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum; frequency and time in waterfall");
+    addRow(plotForm, "Ctrl + left-button drag",
+           "Pan the time selection; pan preview rows when showing the whole recording");
     addRow(plotForm, "Hover", "Inspect coordinates; follow the frame in waterfall / waveform");
     addRow(plotForm, "Left-click", "Freeze / unfreeze the frame in waterfall / waveform");
     addRow(plotForm, "Double-click", "Seek to a frame in waterfall / waveform");
@@ -799,16 +856,21 @@ void MainWindow::connectWorker()
                 ++spectrumGeneration_;
                 preview_ = std::move(result);
                 spectrumFrame_ = preview_->spectrumStart;
-                waterfall_->setPreview(preview_, recording_->descriptor().sampleRate);
+                const bool preserveFrequency = preserveFrequencyOnPreview_ || waterfallPanRange_;
+                waterfall_->setPreview(preview_, recording_->descriptor().sampleRate,
+                                       !preserveFrequency);
                 waveformResult_ = std::make_shared<WaveformResult>(preview_->waveform);
                 waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
                                        recording_->descriptor().format.kind);
-                displaySpectrum(preview_, true);
+                displaySpectrum(preview_, !preserveFrequency);
+                preserveFrequencyOnPreview_ = preserveFrequency && preview_->range != range_;
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
                     "ENBW shown in CSV/numeric results",
                     QString("ENBW: %1 Hz").arg(number(preview_->spectrum.enbwHz))));
                 setBusy(false, "Preview ready");
+                if (preserveFrequencyOnPreview_ && !previewTimer_->isActive())
+                    previewTimer_->start();
                 emit analysisDisplayed();
             });
     connect(&spectrumController_, &AnalysisController::previewReady, this,
@@ -933,6 +995,8 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
 
 void MainWindow::clearMeasurements()
 {
+    waterfallPanRange_.reset();
+    preserveFrequencyOnPreview_ = false;
     spectrumController_.cancel();
     ++spectrumGeneration_;
     spectrumFrame_.reset();
@@ -1196,6 +1260,7 @@ void MainWindow::updateRanges()
     start_->setText(QString::number(range_.begin));
     end_->setText(QString::number(range_.end));
     if (recording_) {
+        waterfall_->setTimeSelectionPanEnabled(range_.size() < recording_->frameCount());
         const QSignalBlocker blocker(timeline_);
         timeline_->setValue(static_cast<int>(static_cast<long double>(range_.begin) /
                                              recording_->frameCount() * 100000));

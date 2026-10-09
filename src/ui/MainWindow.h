@@ -102,6 +102,8 @@ class MainWindow : public QMainWindow
     std::shared_ptr<const AverageResult> average_;
     std::shared_ptr<const WaveformResult> waveformResult_;
     FrameRange range_;
+    std::optional<FrameRange> waterfallPanRange_;
+    bool preserveFrequencyOnPreview_ = false;
     quint64 generation_ = 0;
     quint64 spectrumGeneration_ = 0;
     std::optional<std::uint64_t> spectrumFrame_;
