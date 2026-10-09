@@ -48,6 +48,7 @@ class UpdateChecker : public QObject
     QByteArray response_;
     QString requestError_;
     bool automaticStarted_ = false;
+    bool startupCheckPending_ = false;
     bool manual_ = false;
 };
 } // namespace rf

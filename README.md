@@ -89,15 +89,17 @@ for artifact contents, retention, and runner setup.
 
 ### Update notifications
 
-The GUI checks GitHub for stable releases shortly after startup and at most once
-every 24 hours. A newer version is announced only after both Linux packages and
-their checksums are uploaded. The notification opens the release page; download
+The GUI checks GitHub for stable releases five seconds after each startup and
+every 24 hours while running. A newer version is announced only after both Linux
+packages and their checksums are uploaded. The notification opens the
+[CroccoSpectrum website](https://gioeleminardi.github.io/CroccoSpectrum); download
 and install the package yourself.
 
 Use **Help → Automatically check for updates** to disable background checks, or
 **Help → Check for updates…** to check manually. Automatic failures stay quiet;
 manual checks report connection errors and rate limits. Each version is announced
-automatically once. Checking sends a request to GitHub; recordings and sessions
+automatically once per app session until you install it. Startup checks respect
+GitHub's retry limits. Checking sends a request to GitHub; recordings and sessions
 are not included. The CLI, tests, screenshots, and smoke tests stay offline.
 
 ### Run an AppImage

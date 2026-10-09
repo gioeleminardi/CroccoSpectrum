@@ -180,13 +180,14 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                             "No newer stable release with complete Linux packages is available.");
                     return;
                 }
-                if (!manual && preferences_.updates.lastNotifiedVersion == version)
+                if (!manual && notifiedUpdateVersion_ == version)
                     return;
                 showUpdateMessage(
                     QString("CroccoSpectrum %1 is available. You're running %2.\n\n"
                             "Open the release page to download and install the update.")
                         .arg(version, RF_VERSION),
                     url);
+                notifiedUpdateVersion_ = version;
                 preferences_.updates.lastNotifiedVersion = version;
                 persistPreferences();
             });
@@ -491,6 +492,7 @@ void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUr
     auto *label = new QLabel(message, dialog);
     label->setTextFormat(Qt::PlainText);
     label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(label);
     auto *buttons = new QDialogButtonBox(dialog);
     auto *dismiss = buttons->addButton("Dismiss", QDialogButtonBox::RejectRole);
@@ -498,8 +500,18 @@ void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUr
     if (!releaseUrl.isEmpty()) {
         auto *open = buttons->addButton("Open release page", QDialogButtonBox::AcceptRole);
         open->setObjectName("openUpdateRelease");
-        connect(open, &QPushButton::clicked, dialog, [dialog, releaseUrl] {
-            QDesktopServices::openUrl(releaseUrl);
+        connect(open, &QPushButton::clicked, dialog, [this, dialog, releaseUrl] {
+            // Wayland's URL opener waits for an activation token from the focus window.
+            // Destroy the dialog first so its deletion cannot cancel that pending launch.
+            connect(dialog, &QObject::destroyed, this,
+                    [this, releaseUrl] {
+                        if (!QDesktopServices::openUrl(releaseUrl))
+                            showUpdateMessage("Couldn't open the browser. Open this release URL "
+                                              "manually, or try again:\n\n" +
+                                                  releaseUrl.toDisplayString(),
+                                              releaseUrl);
+                    },
+                    Qt::QueuedConnection);
             dialog->accept();
         });
     }

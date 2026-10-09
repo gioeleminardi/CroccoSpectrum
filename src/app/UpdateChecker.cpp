@@ -105,10 +105,8 @@ std::optional<UpdateRelease> newerRelease(const QByteArray &json, const QString 
             continue;
         newest = version;
         development = false;
-        // Construct the URL from a validated tag rather than trusting a remote link.
-        result = UpdateRelease{
-            version.toString(),
-            QUrl("https://github.com/gioeleminardi/CroccoSpectrum/releases/tag/" + tag)};
+        result = UpdateRelease{version.toString(),
+                               QUrl("https://gioeleminardi.github.io/CroccoSpectrum")};
     }
     return result;
 }
@@ -139,6 +137,8 @@ UpdateChecker::~UpdateChecker()
 
 void UpdateChecker::startAutomaticChecks()
 {
+    if (!automaticStarted_)
+        startupCheckPending_ = true;
     automaticStarted_ = true;
     scheduleAutomaticCheck();
 }
@@ -159,7 +159,7 @@ void UpdateChecker::scheduleAutomaticCheck()
         return;
     const auto now = QDateTime::currentDateTimeUtc();
     auto next = now.addSecs(5);
-    if (settings_.lastAttempt.isValid() && settings_.lastAttempt <= now)
+    if (!startupCheckPending_ && settings_.lastAttempt.isValid() && settings_.lastAttempt <= now)
         next = std::max(next, settings_.lastAttempt.addSecs(day));
     if (settings_.retryAfter.isValid())
         next = std::max(next, settings_.retryAfter);
@@ -184,12 +184,14 @@ void UpdateChecker::check(bool manual)
         return;
     }
     if (!manual &&
-        (!settings_.automatic || (settings_.lastAttempt.isValid() && settings_.lastAttempt <= now &&
+        (!settings_.automatic || (!startupCheckPending_ && settings_.lastAttempt.isValid() &&
+                                  settings_.lastAttempt <= now &&
                                   settings_.lastAttempt.secsTo(now) < day))) {
         scheduleAutomaticCheck();
         return;
     }
     manual_ = manual;
+    startupCheckPending_ = false;
     settings_.lastAttempt = now;
     settings_.retryAfter = {};
     emit settingsChanged();
@@ -272,6 +274,7 @@ void UpdateChecker::cancelRequest()
 void UpdateChecker::stop()
 {
     automaticStarted_ = false;
+    startupCheckPending_ = false;
     automaticTimer_->stop();
     cancelRequest();
 }

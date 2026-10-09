@@ -114,6 +114,7 @@ class MainWindow : public QMainWindow
     AnalysisController controller_;
     AnalysisController spectrumController_;
     UpdateChecker *updateChecker_;
+    QString notifiedUpdateVersion_;
     SpectrumPlot *spectrum_, *averagePlot_;
     WaterfallPlot *waterfall_;
     WaveformPlot *waveform_;

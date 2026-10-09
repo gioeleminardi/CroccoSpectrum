@@ -4,6 +4,15 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Open the CroccoSpectrum website from update notifications, and defer browser
+  launch until the dialog is destroyed so Wayland can complete the request.
+  Show a copyable URL if the browser launch request fails.
+- Check for updates on every startup and announce an available version once per
+  app session, including versions announced on previous launches. Continue to
+  respect disabled automatic checks and GitHub retry limits.
+
 ## 0.2.0 — 2026-10-09 — Update notifications and plot navigation
 
 - Identify development builds with the planned release version, CI build number,
