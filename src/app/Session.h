@@ -32,6 +32,7 @@ struct Preferences {
     QByteArray workspace;
     QString lastSession;
     QStringList recentFiles;
+    bool darkTheme = false;
     UpdateSettings updates;
 };
 

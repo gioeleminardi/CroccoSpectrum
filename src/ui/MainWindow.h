@@ -57,6 +57,7 @@ class MainWindow : public QMainWindow
     void buildControls();
     void connectWorker();
     void applyPreferences();
+    void applyTheme();
     void schedulePreview();
     void requestPreview();
     void beginMeasurement(QWidget *plot);

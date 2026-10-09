@@ -2,6 +2,7 @@
 #include "ui/ImportDialog.h"
 #include "recording/Metadata.h"
 #include <QAction>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDataStream>
@@ -18,6 +19,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -2235,6 +2237,87 @@ class UiTests : public QObject
         QVERIFY(correctTitle);
         QVERIFY(visibleLogo);
         QVERIFY(screenshotSaved);
+    }
+    void darkTheme()
+    {
+        const auto originalPalette = QApplication::palette();
+        const auto restorePalette =
+            qScopeGuard([&] { QApplication::setPalette(originalPalette); });
+        // Simulate a dark desktop: disabling dark mode must still produce light controls.
+        QApplication::setPalette(QPalette(QColor("#202b36")));
+        QTemporaryDir directory;
+        const auto path = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(path, saved);
+        rf::MainWindow window(nullptr, path);
+        window.show();
+        auto *action = window.findChild<QAction *>("darkTheme");
+        QVERIFY(action);
+        QVERIFY(action->isCheckable());
+        QVERIFY(!action->isChecked());
+        const auto lightPalette = QApplication::palette();
+        QVERIFY(lightPalette.color(QPalette::Window).lightness() > 128);
+        auto *shortcuts = window.findChild<QAction *>("keyboardShortcuts");
+        QVERIFY(shortcuts);
+        shortcuts->trigger();
+        auto *dialog = window.findChild<QDialog *>("keyboardShortcutsDialog");
+        QVERIFY(dialog);
+        auto *panel = window.findChild<QDockWidget *>("waveformDock");
+        QVERIFY(panel);
+        panel->setFloating(true);
+        panel->show();
+        window.openRecording(toneRecording(directory.filePath("signal.iq"), {4, 4, 4, 4}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        const auto preview = window.previewResult();
+        QSignalSpy displayed(&window, &rf::MainWindow::analysisDisplayed);
+        action->trigger();
+        QVERIFY(action->isChecked());
+        const auto darkPalette = QApplication::palette();
+        QVERIFY(darkPalette.color(QPalette::Window).lightness() < 128);
+        QVERIFY(darkPalette.color(QPalette::Text).lightness() >
+                darkPalette.color(QPalette::Base).lightness());
+        QVERIFY(darkPalette.color(QPalette::Disabled, QPalette::Text).lightness() >
+                darkPalette.color(QPalette::Disabled, QPalette::Base).lightness());
+        const std::array<QWidget *, 5> widgets{
+            window.menuBar(), window.findChild<QLineEdit *>("selectionStart"),
+            window.findChild<QComboBox *>("fftSize"), dialog, panel};
+        for (auto *widget : widgets) {
+            QVERIFY(widget);
+            QTRY_COMPARE(widget->palette().color(QPalette::Window),
+                         darkPalette.color(QPalette::Window));
+            QCOMPARE(widget->palette().color(QPalette::Text), darkPalette.color(QPalette::Text));
+        }
+        QVERIFY(rf::readPreferences(path).darkTheme);
+        dialog->close();
+        panel->setFloating(false);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/dark-theme.png"));
+        }
+        window.close();
+        rf::MainWindow restored(nullptr, path);
+        restored.show();
+        auto *restoredAction = restored.findChild<QAction *>("darkTheme");
+        QVERIFY(restoredAction);
+        QVERIFY(restoredAction->isChecked());
+        QCOMPARE(QApplication::palette(), darkPalette);
+        restoredAction->trigger();
+        QVERIFY(!restoredAction->isChecked());
+        QCOMPARE(QApplication::palette(), lightPalette);
+        QTRY_COMPARE(window.menuBar()->palette().color(QPalette::Window),
+                     lightPalette.color(QPalette::Window));
+        QVERIFY(!rf::readPreferences(path).darkTheme);
+        if (!screenshots.isEmpty())
+            QVERIFY(restored.grab().save(screenshots + "/light-theme.png"));
+        restored.close();
+        rf::MainWindow lightRestored(nullptr, path);
+        QVERIFY(!lightRestored.findChild<QAction *>("darkTheme")->isChecked());
+        QCOMPARE(QApplication::palette(), lightPalette);
+        QTest::qWait(150);
+        QCOMPARE(window.previewResult(), preview);
+        QCOMPARE(displayed.count(), 0); // Theme changes must not recompute analysis.
     }
     void legacyPreferencesSurviveRename()
     {

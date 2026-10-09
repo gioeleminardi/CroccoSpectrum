@@ -3,6 +3,7 @@
 #include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
+#include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -27,6 +28,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
@@ -126,6 +128,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                 preferencesPath_.clear();
         }
     }
+    applyTheme();
     previewTimer_ = new QTimer(this);
     previewTimer_->setSingleShot(true);
     previewTimer_->setInterval(100);
@@ -416,6 +419,16 @@ void MainWindow::buildMenus()
     mark->setShortcut(QKeySequence("Ctrl+B"));
     connect(mark, &QAction::triggered, this, &MainWindow::addBookmark);
     auto *view = menuBar()->addMenu("&View");
+    auto *darkTheme = view->addAction("Dark theme");
+    darkTheme->setObjectName("darkTheme");
+    darkTheme->setCheckable(true);
+    darkTheme->setChecked(preferences_.darkTheme);
+    connect(darkTheme, &QAction::toggled, this, [this](bool enabled) {
+        preferences_.darkTheme = enabled;
+        applyTheme();
+        persistPreferences();
+    });
+    view->addSeparator();
     for (auto *panel : {controlsDock_, averageDock_, waveformDock_, bookmarksDock_})
         view->addAction(panel->toggleViewAction());
     auto *reset = view->addAction("Reset frequency zoom");
@@ -1030,6 +1043,32 @@ void MainWindow::connectWorker()
                     reportError(message);
                 }
             });
+}
+
+void MainWindow::applyTheme()
+{
+    const bool dark = preferences_.darkTheme;
+    // Build both palettes explicitly so the desktop theme cannot prevent an override.
+    QPalette palette(QColor(dark ? "#202b36" : "#efefef"));
+    const QColor text(dark ? "#e5edf3" : "#202020");
+    const QColor muted(dark ? "#87949f" : "#767676");
+    for (auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText,
+                      QPalette::ToolTipText})
+        palette.setColor(role, text);
+    for (auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
+        palette.setColor(QPalette::Disabled, role, muted);
+    palette.setColor(QPalette::Base, QColor(dark ? "#101923" : "#ffffff"));
+    palette.setColor(QPalette::AlternateBase, QColor(dark ? "#2a3643" : "#f5f5f5"));
+    palette.setColor(QPalette::ToolTipBase, palette.color(QPalette::Window));
+    palette.setColor(QPalette::PlaceholderText, muted);
+    palette.setColor(QPalette::Highlight, QColor(dark ? "#51d3be" : "#16836e"));
+    palette.setColor(QPalette::HighlightedText, QColor(dark ? "#101923" : "#ffffff"));
+    palette.setColor(QPalette::Disabled, QPalette::Highlight,
+                     QColor(dark ? "#394957" : "#d5d5d5"));
+    palette.setColor(QPalette::Disabled, QPalette::HighlightedText, muted);
+    palette.setColor(QPalette::Link, QColor(dark ? "#70dccc" : "#006b58"));
+    palette.setColor(QPalette::LinkVisited, QColor(dark ? "#c2a3e8" : "#6b3f99"));
+    QApplication::setPalette(palette);
 }
 
 void MainWindow::applyPreferences()

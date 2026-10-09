@@ -6,6 +6,9 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add View → Dark theme to switch controls and dialogs between dark and light
+  mode independently of the desktop theme. Save the choice across launches;
+  analysis plots keep their existing colors without recomputing results.
 - Hide the Baseband waveform panel by default. Enable it from View → Baseband
   waveform or run an Exact waveform analysis; saved workspace visibility is
   preserved.

@@ -503,6 +503,24 @@ class CoreTests : public QObject
         QCOMPARE(saved.readAll(), contents);
         QCOMPARE(QDir(directory.path()).entryList(QDir::Files | QDir::Hidden).size(), 1);
     }
+    void darkThemePreferences()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("preferences.json");
+        rf::Preferences preferences;
+        rf::savePreferences(path, preferences);
+        QVERIFY(!rf::readPreferences(path).darkTheme);
+        preferences.darkTheme = true;
+        rf::savePreferences(path, preferences);
+        QVERIFY(rf::readPreferences(path).darkTheme);
+        auto legacy = rf::readJsonObject(path);
+        legacy.remove("dark_theme");
+        rf::writeJsonAtomic(path, legacy);
+        QVERIFY(!rf::readPreferences(path).darkTheme);
+        legacy["dark_theme"] = "false";
+        rf::writeJsonAtomic(path, legacy);
+        QVERIFY_EXCEPTION_THROWN(rf::readPreferences(path), std::runtime_error);
+    }
     void recentFilesPreferences()
     {
         QTemporaryDir directory;

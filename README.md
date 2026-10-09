@@ -281,6 +281,9 @@ shows a local preview at that frame. An Exact waveform keeps its full selection.
 
 Use **View** to show or hide analysis panels. Panels can be docked, floated, and
 resized; preferences and workspace layout are restored on the next launch.
+Enable **View → Dark theme** for dark controls and dialogs, or disable it for
+light mode, independently of the desktop theme. The choice is saved between
+launches; analysis plots keep their existing colors.
 Save a session to retain recording interpretation, analysis settings, selection,
 and bookmarks together.
 

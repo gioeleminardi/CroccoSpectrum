@@ -104,7 +104,9 @@ Preferences readPreferences(const QString &path)
     requireSchema(root, "preferences");
     if (!root["dsp"].isObject() || !root["view"].isObject())
         throw std::runtime_error("Missing preference settings");
+    requireBooleans(root, {"dark_theme"});
     Preferences preferences;
+    preferences.darkTheme = root["dark_theme"].toBool();
     preferences.dsp = dspFromJson(root["dsp"].toObject());
     preferences.view = viewFromJson(root["view"].toObject());
     if (root["import_defaults"].isObject())
@@ -153,6 +155,7 @@ void savePreferences(const QString &path, const Preferences &preferences)
                            {"workspace", QString::fromLatin1(preferences.workspace.toBase64())},
                            {"last_session", preferences.lastSession},
                            {"recent_files", QJsonArray::fromStringList(preferences.recentFiles)},
+                           {"dark_theme", preferences.darkTheme},
                            {"updates", updates}});
 }
 
