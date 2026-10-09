@@ -6,7 +6,6 @@ cd "$(dirname "$0")/.."
 mode=${1:?Missing build configuration}
 output="$PWD/dist/ci/$mode"
 mkdir -p "$output/packages" "$output/reports"
-version=$(python3 -c 'import json; print(json.load(open("packaging/dependencies.json"))["application"])')
 qt_version=$(python3 -c 'import json; print(json.load(open("packaging/dependencies.json"))["release_qt"])')
 aqt_version=$(python3 -c 'import json; print(json.load(open("packaging/dependencies.json"))["aqtinstall"])')
 qt="$PWD/.cache/qt/$qt_version/gcc_64"
@@ -25,9 +24,15 @@ esac
 build="$PWD/build/ci-$mode"
 cmake -S . -B "$build" -G Ninja -DCMAKE_BUILD_TYPE="$type" \
     -DCMAKE_PREFIX_PATH="$qt" -DBUILD_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-    -DRF_ENABLE_ASAN="$sanitizer" -DPython3_EXECUTABLE=/usr/bin/python3
-grep -Fx "CMAKE_PROJECT_VERSION:STATIC=$version" "$build/CMakeCache.txt"
+    -DRF_ENABLE_ASAN="$sanitizer" -DPython3_EXECUTABLE=/usr/bin/python3 \
+    -DRF_BUILD_CHANNEL="${RF_BUILD_CHANNEL:-development}" \
+    -DRF_BUILD_NUMBER="${RF_BUILD_NUMBER:-local}" \
+    -DRF_BUILD_COMMIT="$RF_CI_COMMIT" -DRF_BUILD_DIRTY="${RF_BUILD_DIRTY:-OFF}" \
+    -DRF_BUILD_DATE="${RF_BUILD_DATE:-}"
+version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$build/BUILD-INFO.json")
 cmake --build "$build" --parallel "${RF_CI_JOBS:-2}"
+[[ $("$build/croccospectrum-cli" --version) == "croccospectrum-cli $version" ]]
+[[ $(QT_QPA_PLATFORM=offscreen "$build/croccospectrum" --version) == "CroccoSpectrum $version" ]]
 python3 -c 'import numpy, scipy' # Missing independent-test dependencies must fail CI.
 ctest --test-dir "$build" --output-on-failure --output-junit "$output/reports/tests.xml"
 cp "$build/Testing/Temporary/LastTest.log" "$output/reports/"
@@ -39,19 +44,20 @@ python3 - <<'PY'
 from pathlib import Path
 import hashlib,json,os,shutil,subprocess,tarfile
 output=Path(os.environ['RF_CI_OUTPUT']); build=Path(os.environ['RF_CI_BUILD'])
-pins=json.loads(Path('packaging/dependencies.json').read_text())
 mode=os.environ['RF_CI_MODE']
-info={'application':'CroccoSpectrum','version':pins['application'],'configuration':mode,
-      'commit':os.environ['RF_CI_COMMIT'],'qt':os.environ['RF_CI_QT'],
+info=json.loads((build/'BUILD-INFO.json').read_text())
+info.update({'configuration':mode,'qt':os.environ['RF_CI_QT'],
+      'run_url':os.environ.get('RF_CI_RUN_URL',''),
       'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-      'platform':'Ubuntu 24.04 x86_64','runtime_note':'Development outputs require matching Qt/FFTW and compiler runtimes. Use the release AppImage or portable folder for bundled dependencies.'}
+      'platform':'Ubuntu 24.04 x86_64','runtime_note':'Debug/ASAN outputs require matching Qt/FFTW and compiler runtimes. Use the Release AppImage or portable folder for bundled dependencies.'})
+(build/'BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 (output/'reports/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 if mode != 'release':
     stage=build/'artifact'; stage.mkdir(exist_ok=True)
-    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-soak-test','librf_core.a','librf_ui.a']:
+    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-update-tests','rf-soak-test','librf_core.a','librf_ui.a']:
         shutil.copy2(build/name,stage/name)
     shutil.copy2(output/'reports/BUILD-INFO.json',stage/'BUILD-INFO.json')
-    archive=output/'packages'/f"croccospectrum-{pins['application']}-linux-x86_64-{mode}.tar.gz"
+    archive=output/'packages'/f"croccospectrum-{info['version']}-linux-x86_64-{mode}.tar.gz"
     with tarfile.open(archive,'w:gz') as target:
         target.add(stage,arcname=archive.name.removesuffix('.tar.gz'))
     digest=hashlib.sha256(archive.read_bytes()).hexdigest()

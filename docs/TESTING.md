@@ -14,7 +14,23 @@ The metadata stress test uses only Python's standard library.
 
 ASAN/UBSAN require the runtime matching the compiler. Use the Ubuntu container
 from README when the host compiler installation lacks matching sanitizer libs.
-Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run all four suites.
+Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run the CTest suites.
+
+The `updates` suite uses simulated network replies for release selection,
+timeouts, rate limits, cancellation, preferences, and notification behavior.
+The `release-pipeline` suite checks generated versions, release tag validation,
+checksums, interrupted uploads, and publication retries using simulated GitHub
+responses. When Node.js is installed, `website-releases` verifies both download
+channels, incomplete assets, and out-of-order builds. CI installs Node.js.
+Normal tests never contact GitHub. To explicitly check real HTTPS connectivity:
+
+```sh
+QT_QPA_PLATFORM=offscreen RF_TEST_LIVE_UPDATE_CHECK=1 build/debug/rf-update-tests liveHttpsCheck
+```
+
+GUI `--smoke-test` also verifies that a usable TLS backend is available without
+making a network request. Packaged HTTPS checks use the host's certificate trust
+store; Linux systems used for online checks need current CA certificates.
 
 For useful TSAN GUI evidence, instrument Qt too. With the accompanying Qt base
 source archive extracted into `.cache/qt-source`, run in the Ubuntu builder:
@@ -35,7 +51,7 @@ an unexplained race report into a claimed passing gate.
 Explicit dense-file benchmark (up to 40 GB temporary disk space, cleaned on exit):
 
 ```sh
-python3 tests/benchmark.py --cli dist/croccospectrum-0.1.6-x86_64/croccospectrum-cli --gui dist/croccospectrum-0.1.6-x86_64/AppRun --output build/benchmarks.json
+python3 tests/benchmark.py --cli dist/croccospectrum-0.2.0-x86_64/croccospectrum-cli --gui dist/croccospectrum-0.2.0-x86_64/AppRun --output build/benchmarks.json
 ```
 
 Extended GUI stress test (eight hours in this example), built when

@@ -152,7 +152,8 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Shift + left-click twice to measure frequency width and mean spectral power. "
+    setToolTip("Shift + left-click to start measuring frequency width and mean spectral power; "
+               "left-click again to finish. "
                "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
@@ -164,6 +165,8 @@ void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool 
     updateMeasurementPower();
     if (resetZoom)
         resetFrequency();
+    else if (hoverPosition_)
+        updateHover(*hoverPosition_);
     update();
 }
 void SpectrumPlot::setAverage(std::shared_ptr<const AverageResult> result, bool maxHold)
@@ -189,7 +192,7 @@ void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFre
 void SpectrumPlot::clear()
 {
     clearMeasurement();
-    hoverPosition_.reset();
+    leaveEvent(nullptr);
     dragX_ = -1;
     preview_.reset();
     average_.reset();
@@ -242,7 +245,7 @@ QString SpectrumPlot::measurementText() const
     return QString("Start: %1 · End: %2\nΔf: %3\n%4\n%5")
         .arg(frequencyText(first + center), frequencyText(last + center),
              frequencyText(std::abs(last - first)),
-             measuring_ ? "Shift-click to set end · Esc to clear"
+             measuring_ ? "Click to set end · Esc to clear"
                         : "Mean spectral power: " + mean,
              source);
 }
@@ -291,7 +294,7 @@ void SpectrumPlot::paintCrosshair(QPainter &painter, double minimum, double maxi
         painter.drawText(rect, Qt::AlignCenter, text);
     };
     const double labelHeight = painter.fontMetrics().height() + 2;
-    const auto frequencyLabel = frequencyText(frequency);
+    const auto frequencyLabel = frequencyText(std::round(frequency));
     const double labelWidth =
         std::min(plot.width(), painter.fontMetrics().horizontalAdvance(frequencyLabel) + 12.0);
     badge(QRectF(std::clamp(position.x() - labelWidth / 2, plot.left(), plot.right() - labelWidth),
@@ -326,6 +329,8 @@ void SpectrumPlot::resetFrequency()
         right_ = frequency.back() + (left_ < 0 ? frequency[1] - frequency[0] : 0);
         emit frequencyRangeChanged(left_, right_);
     }
+    if (hoverPosition_)
+        updateHover(*hoverPosition_);
     update();
 }
 void SpectrumPlot::setFrequencyRange(double left, double right)
@@ -333,6 +338,8 @@ void SpectrumPlot::setFrequencyRange(double left, double right)
     if (std::isfinite(left) && std::isfinite(right) && left < right) {
         left_ = left;
         right_ = right;
+        if (hoverPosition_)
+            updateHover(*hoverPosition_);
         update();
     }
 }
@@ -479,15 +486,13 @@ void SpectrumPlot::updateHover(const QPointF &position)
     const auto frequency = frequencies();
     const auto power = powers();
     if (frequency.empty() || power.empty() || !plot.contains(position)) {
-        if (hoverPosition_) {
-            hoverPosition_.reset();
-            update();
-        }
+        leaveEvent(nullptr);
         return;
     }
     hoverPosition_ = position;
     const double target =
         left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_);
+    emit frequencyHovered(target);
     auto found = std::lower_bound(frequency.begin(), frequency.end(), target);
     const auto index =
         std::min(static_cast<std::size_t>(found - frequency.begin()), power.size() - 1);
@@ -502,16 +507,26 @@ void SpectrumPlot::updateHover(const QPointF &position)
                                frequency[index] + (view_.absoluteFrequency ? center_ : 0), 'g', 17))
                            .arg(number(powerToDb(power[index])))
                            .arg(powerUnit(scale_))
-                           .arg(QString::number(target + (view_.absoluteFrequency ? center_ : 0),
-                                                'g', 17))
+                           .arg(QString::number(
+                               std::round(target + (view_.absoluteFrequency ? center_ : 0)), 'f', 0))
                            .arg(number(level)));
     update();
 }
 
 void SpectrumPlot::leaveEvent(QEvent *)
 {
-    hoverPosition_.reset();
+    if (hoverPosition_) {
+        hoverPosition_.reset();
+        emit cursorLeft();
+    }
     update();
+}
+
+void SpectrumPlot::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (hoverPosition_)
+        updateHover(*hoverPosition_);
 }
 
 void SpectrumPlot::wheelEvent(QWheelEvent *event)
@@ -533,12 +548,14 @@ void SpectrumPlot::wheelEvent(QWheelEvent *event)
     left_ = std::clamp(anchor - fraction * span, frequency.front(), frequency.back() - span);
     right_ = left_ + span;
     emit frequencyRangeChanged(left_, right_);
+    updateHover(event->position());
     update();
     event->accept();
 }
 void SpectrumPlot::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)) {
+    if (event->button() == Qt::LeftButton &&
+        (measuring_ || (event->modifiers() & Qt::ShiftModifier))) {
         if (const auto bin = binAt(event->position())) {
             setFocus(Qt::MouseFocusReason);
             dragX_ = -1;
@@ -617,21 +634,47 @@ WaterfallPlot::WaterfallPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 210);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Shift + left-click twice to measure duration between waterfall rows. "
+    setToolTip("Wheel to zoom frequency and time around the pointer. Drag to pan both axes. "
+               "Hold Ctrl when starting a drag to pan only time. A selected recording slice "
+               "moves with the Start/End fields while new data loads in the background. "
+               "Click to freeze/unfreeze the frame; double-click to seek. "
+               "Shift + left-click to start measuring duration between waterfall rows; "
+               "left-click again to finish. "
                "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
-void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate)
+void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
+                               bool resetFrequency)
 {
     clearMeasurement();
+    if (!dragTimeSelection_ || resetFrequency) {
+        dragPosition_.reset();
+        dragTimeSelection_ = false;
+    }
+    const double rows = result_ ? static_cast<double>(result_->rowStarts.size()) : 0;
+    const double topFraction = !resetFrequency && rows > 0 ? top_ / rows : 0;
+    const double bottomFraction = !resetFrequency && rows > 0 ? bottom_ / rows : 1;
     result_ = std::move(result);
     hoveredRow_ = -1;
     frameFrozen_ = false;
     sampleRate_ = sampleRate;
-    if (result_ && result_->frequencies.size() > 1) {
+    const double newRows = result_ ? static_cast<double>(result_->rowStarts.size()) : 1;
+    top_ = topFraction * newRows;
+    bottom_ = bottomFraction * newRows;
+    if (resetFrequency || (!dragTimeSelection_ && result_ && timeSelectionRange_ &&
+                            *timeSelectionRange_ == result_->range))
+        timeSelectionRange_.reset();
+    if (resetFrequency && result_ && result_->frequencies.size() > 1) {
         left_ = result_->frequencies.front();
-        right_ = result_->frequencies.back();
+        right_ = fullFrequencyRight();
     }
+    if (dragTimeSelection_ && dragMoved_)
+        setCursor(Qt::ClosedHandCursor);
     rebuildImage();
+    update();
+}
+void WaterfallPlot::setTimeSelectionRange(FrameRange range)
+{
+    timeSelectionRange_ = range;
     update();
 }
 void WaterfallPlot::setView(ViewSettings view, PowerScale scale, double centerFrequency)
@@ -644,8 +687,15 @@ void WaterfallPlot::setView(ViewSettings view, PowerScale scale, double centerFr
 }
 void WaterfallPlot::setFrequencyRange(double left, double right)
 {
-    left_ = left;
-    right_ = right;
+    if (std::isfinite(left) && std::isfinite(right) && left < right) {
+        left_ = left;
+        right_ = right;
+        update();
+    }
+}
+void WaterfallPlot::setFrequencyCursor(std::optional<double> frequency)
+{
+    frequencyCursor_ = frequency;
     update();
 }
 void WaterfallPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool frozen)
@@ -663,10 +713,14 @@ void WaterfallPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool froz
 void WaterfallPlot::clear()
 {
     clearMeasurement();
+    dragPosition_.reset();
+    dragTimeSelection_ = false;
+    timeSelectionRange_.reset();
     result_.reset();
     hoveredRow_ = -1;
     frameFrozen_ = false;
     image_ = {};
+    frequencyCursor_.reset();
     update();
 }
 void WaterfallPlot::clearMeasurement()
@@ -702,7 +756,7 @@ QString WaterfallPlot::measurementText() const
         .arg(number(static_cast<double>(first) / sampleRate_)).arg(first)
         .arg(number(static_cast<double>(last) / sampleRate_)).arg(last)
         .arg(durationText(duration)).arg(frames)
-        .arg(measuring_ ? "\nShift-click to set end · Esc to clear" : "");
+        .arg(measuring_ ? "\nClick to set end · Esc to clear" : "");
 }
 void WaterfallPlot::rebuildImage()
 {
@@ -735,26 +789,39 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
         return;
     const auto plot = area(*this);
     const double fullLeft = result_->frequencies.front();
-    const double fullRight =
-        result_->frequencies.back() + (fullLeft < 0 ? result_->frequencies[1] - fullLeft : 0);
-    const QRectF source((left_ - fullLeft) / (fullRight - fullLeft) * image_.width(), 0,
+    const double fullRight = fullFrequencyRight();
+    const QRectF source((left_ - fullLeft) / (fullRight - fullLeft) * image_.width(), visibleTop(),
                         (right_ - left_) / (fullRight - fullLeft) * image_.width(),
-                        image_.height());
+                        bottom_ - top_);
     painter.drawImage(plot, image_, source);
     if (hoveredRow_ >= 0) {
-        const double rowHeight = plot.height() / static_cast<double>(result_->rowStarts.size());
-        painter.fillRect(QRectF(plot.left(), plot.top() + hoveredRow_ * rowHeight, plot.width(),
-                                rowHeight),
+        const double rowHeight = plot.height() / (bottom_ - top_);
+        painter.save();
+        painter.setClipRect(plot);
+        painter.fillRect(QRectF(plot.left(), rowY(static_cast<std::size_t>(hoveredRow_)) -
+                                               rowHeight / 2, plot.width(), rowHeight),
                          QColor(255, 255, 255, frameFrozen_ ? 180 : 90));
+        painter.restore();
+    }
+    if (frequencyCursor_ && *frequencyCursor_ >= left_ && *frequencyCursor_ <= right_) {
+        const double x = plot.left() + (*frequencyCursor_ - left_) / (right_ - left_) * plot.width();
+        painter.save();
+        painter.setClipRect(plot);
+        painter.setPen(QPen(crosshairColor, 1, Qt::DashLine));
+        painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        painter.restore();
     }
     painter.setPen(foreground);
-    const double timeScale = static_cast<double>(result_->range.end) / sampleRate_ < 0.1 ? 1000 : 1;
+    const auto timeRange = timeSelectionRange_.value_or(result_->range);
+    const double timeScale = static_cast<double>(timeRange.end) / sampleRate_ < 0.1 ? 1000 : 1;
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const auto row = std::min(
-            static_cast<std::size_t>(fraction * static_cast<double>(result_->rowStarts.size())),
+            static_cast<std::size_t>(top_ + fraction * (bottom_ - top_)),
             result_->rowStarts.size() - 1);
-        const double time = static_cast<double>(result_->rowStarts[row]) / sampleRate_;
+        const double time = static_cast<double>(timeRange.begin) / sampleRate_ +
+                            static_cast<double>(result_->rowStarts[row] - result_->range.begin) /
+                                sampleRate_;
         painter.drawText(QRectF(0, plot.top() + fraction * plot.height() - 9, 68, 18),
                          Qt::AlignRight | Qt::AlignVCenter,
                          QString::number(time * timeScale, 'g', 5));
@@ -775,11 +842,8 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
                          QPointF(legend.right(), legend.top() + y));
     }
     if (measurementRows_) {
-        const double rowHeight = plot.height() / static_cast<double>(result_->rowStarts.size());
-        const double startY =
-            plot.top() + (static_cast<double>(measurementRows_->first) + 0.5) * rowHeight;
-        const double endY =
-            plot.top() + (static_cast<double>(measurementRows_->second) + 0.5) * rowHeight;
+        const double startY = rowY(measurementRows_->first);
+        const double endY = rowY(measurementRows_->second);
         painter.save();
         painter.setClipRect(plot);
         painter.fillRect(
@@ -792,13 +856,38 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
         measurementReadout(painter, plot, measurementText());
     }
 }
+double WaterfallPlot::fullFrequencyRight() const
+{
+    const auto &frequency = result_->frequencies;
+    return frequency.back() + (frequency.front() < 0 ? frequency[1] - frequency[0] : 0);
+}
+double WaterfallPlot::rowY(std::size_t row) const
+{
+    const auto plot = area(*this);
+    return plot.top() + (static_cast<double>(row) + 0.5 - visibleTop()) /
+                           (bottom_ - top_) * plot.height();
+}
+double WaterfallPlot::visibleTop() const
+{
+    if (!result_ || !timeSelectionRange_)
+        return top_;
+    const auto begin = timeSelectionRange_->begin;
+    const auto original = result_->range.begin;
+    // Use integer differences so narrow slices remain precise beyond 2^53.
+    const double delta = begin >= original ? static_cast<double>(begin - original)
+                                          : -static_cast<double>(original - begin);
+    return top_ + delta / static_cast<double>(result_->range.size()) *
+                      static_cast<double>(result_->rowStarts.size());
+}
 std::optional<std::size_t> WaterfallPlot::rowAt(const QPointF &position) const
 {
     if (!result_ || result_->rowStarts.empty() || !area(*this).contains(position))
         return {};
     const auto plot = area(*this);
-    return std::min(static_cast<std::size_t>((position.y() - plot.top()) / plot.height() *
-                                            static_cast<double>(result_->rowStarts.size())),
+    const double row = visibleTop() + (position.y() - plot.top()) / plot.height() * (bottom_ - top_);
+    if (row < 0 || row > static_cast<double>(result_->rowStarts.size()))
+        return {};
+    return std::min(static_cast<std::size_t>(row),
                     result_->rowStarts.size() - 1);
 }
 void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
@@ -830,6 +919,48 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
         }
         return;
     }
+    if (dragPosition_) {
+        dragMoved_ |= (event->position() - *dragPosition_).manhattanLength() >=
+                      QApplication::startDragDistance();
+        if (dragMoved_) {
+            const auto plot = area(*this);
+            if (dragTimeSelection_) {
+                const double fraction = -(event->position().y() - dragPosition_->y()) /
+                                        plot.height() * (dragBottom_ - dragTop_) /
+                                        dragRowCount_;
+                emit timeSelectionPanChanged(fraction);
+                setCursor(Qt::ClosedHandCursor);
+                event->accept();
+                return;
+            }
+            if (!dragTimeOnly_) {
+                const double fullLeft = result_->frequencies.front();
+                const double fullRight = fullFrequencyRight();
+                const double span = std::min(dragRight_ - dragLeft_, fullRight - fullLeft);
+                const double delta =
+                    (event->position().x() - dragPosition_->x()) / plot.width() * span;
+                left_ = std::clamp(dragLeft_ - delta, fullLeft, fullRight - span);
+                right_ = left_ + span;
+            }
+            const double rows = dragBottom_ - dragTop_;
+            const double rowDelta =
+                (event->position().y() - dragPosition_->y()) / plot.height() * rows;
+            top_ = std::clamp(dragTop_ - rowDelta, 0.0,
+                              static_cast<double>(result_->rowStarts.size()) - rows);
+            bottom_ = top_ + rows;
+            setCursor(Qt::ClosedHandCursor);
+            if (!dragTimeOnly_)
+                emit frequencyRangeChanged(left_, right_);
+            update();
+        }
+        event->accept();
+        return;
+    }
+    updateHover(event->position());
+}
+void WaterfallPlot::updateHover(const QPointF &position)
+{
+    const auto row = rowAt(position);
     if (!row) {
         leaveEvent(nullptr);
         return;
@@ -840,7 +971,7 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
         update();
     }
     const double frequency =
-        left_ + (event->position().x() - plot.left()) / plot.width() * (right_ - left_) +
+        left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_) +
         (view_.absoluteFrequency ? center_ : 0);
     emit cursorChanged(QString("%1 row %2 · frame %3 · %4 s · %5 Hz · click to %6 · "
                                "double-click to seek")
@@ -860,20 +991,50 @@ void WaterfallPlot::leaveEvent(QEvent *)
     }
     emit cursorLeft();
 }
+void WaterfallPlot::wheelEvent(QWheelEvent *event)
+{
+    if (dragPosition_ || measurementDrag_.target != MeasurementDrag::Target::None) {
+        event->accept();
+        return;
+    }
+    if (!result_ || image_.isNull() || result_->frequencies.size() < 2 ||
+        !area(*this).contains(event->position()) || event->angleDelta().y() == 0) {
+        event->ignore();
+        return;
+    }
+    const auto plot = area(*this);
+    const double factor = event->angleDelta().y() > 0 ? 0.8 : 1.25;
+    const auto &frequency = result_->frequencies;
+    const double fullRight = fullFrequencyRight();
+    const double fraction = (event->position().x() - plot.left()) / plot.width();
+    const double anchor = left_ + fraction * (right_ - left_);
+    const double span = std::clamp((right_ - left_) * factor, frequency[1] - frequency[0],
+                                  fullRight - frequency.front());
+    left_ = std::clamp(anchor - fraction * span, frequency.front(), fullRight - span);
+    right_ = left_ + span;
+    const double rowFraction = (event->position().y() - plot.top()) / plot.height();
+    const double rowAnchor = top_ + rowFraction * (bottom_ - top_);
+    const double rowCount = static_cast<double>(result_->rowStarts.size());
+    const double rows = std::clamp((bottom_ - top_) * factor, 1.0, rowCount);
+    top_ = std::clamp(rowAnchor - rowFraction * rows, 0.0, rowCount - rows);
+    bottom_ = top_ + rows;
+    emit frequencyRangeChanged(left_, right_);
+    if (!measuring_)
+        updateHover(event->position());
+    update();
+    event->accept();
+}
 void WaterfallPlot::mousePressEvent(QMouseEvent *event)
 {
     const auto row = rowAt(event->position());
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)) {
+    if (event->button() == Qt::LeftButton &&
+        (measuring_ || (event->modifiers() & Qt::ShiftModifier))) {
         if (row) {
             setFocus(Qt::MouseFocusReason);
+            dragPosition_.reset();
             if (measurementRows_ && !measuring_) {
-                const auto plot = area(*this);
-                const double rowHeight =
-                    plot.height() / static_cast<double>(result_->rowStarts.size());
-                const double start =
-                    plot.top() + (static_cast<double>(measurementRows_->first) + 0.5) * rowHeight;
-                const double end =
-                    plot.top() + (static_cast<double>(measurementRows_->second) + 0.5) * rowHeight;
+                const double start = rowY(measurementRows_->first);
+                const double end = rowY(measurementRows_->second);
                 const auto target = measurementTarget(event->position().y(), start, end);
                 if (target != MeasurementDrag::Target::None) {
                     measurementDrag_ = {target, *measurementRows_, event->position(), *row, false};
@@ -899,11 +1060,37 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
     }
     if (isMeasuring())
         return;
-    if (event->button() == Qt::LeftButton && row)
-        emit frameClicked(result_->rowStarts[*row]);
+    if (event->button() == Qt::LeftButton && row) {
+        dragPosition_ = event->position();
+        dragMoved_ = false;
+        dragTimeOnly_ = event->modifiers().testFlag(Qt::ControlModifier);
+        dragTimeSelection_ = dragTimeOnly_ && timeSelectionPanEnabled_;
+        dragLeft_ = left_;
+        dragRight_ = right_;
+        dragTop_ = top_;
+        dragBottom_ = bottom_;
+        dragRowCount_ = static_cast<double>(result_->rowStarts.size());
+        event->accept();
+        if (dragTimeSelection_)
+            emit timeSelectionPanActiveChanged(true);
+    }
 }
 void WaterfallPlot::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && dragPosition_) {
+        mouseMoveEvent(event);
+        dragPosition_.reset();
+        unsetCursor();
+        if (dragTimeSelection_) {
+            dragTimeSelection_ = false;
+            emit timeSelectionPanActiveChanged(false);
+        }
+        if (!dragMoved_)
+            if (const auto row = rowAt(event->position()))
+                emit frameClicked(result_->rowStarts[*row]);
+        event->accept();
+        return;
+    }
     if (event->button() != Qt::LeftButton ||
         measurementDrag_.target == MeasurementDrag::Target::None)
         return;
@@ -922,12 +1109,14 @@ void WaterfallPlot::mouseReleaseEvent(QMouseEvent *event)
 }
 void WaterfallPlot::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (event->modifiers() & Qt::ShiftModifier) {
+    if (measuring_ || (event->modifiers() & Qt::ShiftModifier)) {
         mousePressEvent(event);
         return;
     }
     if (isMeasuring())
         return;
+    dragPosition_.reset();
+    unsetCursor();
     const auto row = rowAt(event->position());
     if (row)
         emit frameSelected(result_->rowStarts[*row]);

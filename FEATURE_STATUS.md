@@ -1,7 +1,7 @@
 # Feature status
 
-Updated: 2026-10-08. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.6.
+Updated: 2026-10-09. Target: C++20 + Qt 6 Widgets on amd64 Linux.
+Application: CroccoSpectrum 0.2.0.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -38,6 +38,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Cursor readouts and shared time selection | Implemented | Exact indices, sample-count time, optional UTC at millisecond resolution |
 | Optional capture UTC and retune-aware frequency axes | Implemented | Unknown/gapped UTC is not inferred; mixed-frequency aggregates remain baseband |
 | Preferences and reproducible sessions | Implemented | Versioned, atomic JSON; indices stored as decimal strings |
+| Recent files | Implemented | File → Open recent; ten recordings/sessions; persistent history; metadata source paths retained; clear history |
+| Update notifications | Implemented | Stable GitHub releases with complete Linux packages/checksums; daily automatic checks with opt-out; manual Help action; browser download/install; quiet automatic failures |
 | SigMF core recording import | Implemented subset | Single stream; required extensions and embedded later headers rejected |
 | Bookmarks/notes | Implemented | Persist in sessions |
 | Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw + sidecar; cancellable worker writes; refuses overwrite |

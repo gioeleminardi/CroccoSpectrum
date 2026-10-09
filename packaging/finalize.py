@@ -42,9 +42,10 @@ source_name = f"croccospectrum-{manifest['application_version']}"
 source_archive = bundle.parent / (source_name + "-source.tar.gz")
 with tarfile.open(source_archive, "w:gz") as tar:
     for path in sorted(root.iterdir()):
-        if path.name in {"build", "dist", ".cache", ".git", "aqtinstall.log"}:
+        if path.name in {"build", "dist", ".cache", ".git", "aqtinstall.log", "BUILD-INFO.json"}:
             continue
         tar.add(path, arcname=source_name + "/" + path.name, filter=lambda entry: None if "__pycache__" in entry.name else entry)
+    tar.add(bundle / "BUILD-INFO.json", arcname=source_name + "/BUILD-INFO.json")
 digest = hashlib.sha256(source_archive.read_bytes()).hexdigest()
 source_archive.with_name(source_archive.name + ".sha256").write_text(f"{digest}  {source_archive.name}\n")
 print(f"Updated binary/source archives and {len(manifest['files'])} manifest hashes")

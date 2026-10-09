@@ -112,6 +112,17 @@ Preferences readPreferences(const QString &path)
     preferences.geometry = QByteArray::fromBase64(root["geometry"].toString().toLatin1());
     preferences.workspace = QByteArray::fromBase64(root["workspace"].toString().toLatin1());
     preferences.lastSession = root["last_session"].toString();
+    const auto updates = root["updates"].toObject();
+    requireBooleans(updates, {"automatic"});
+    preferences.updates.automatic = updates["automatic"].toBool(true);
+    preferences.updates.lastAttempt =
+        QDateTime::fromString(updates["last_attempt"].toString(), Qt::ISODate).toUTC();
+    preferences.updates.retryAfter =
+        QDateTime::fromString(updates["retry_after"].toString(), Qt::ISODate).toUTC();
+    preferences.updates.lastNotifiedVersion = updates["last_notified_version"].toString();
+    for (const auto value : root["recent_files"].toArray())
+        if (value.isString() && !value.toString().isEmpty())
+            preferences.recentFiles.append(value.toString());
     return preferences;
 }
 
@@ -128,6 +139,11 @@ void savePreferences(const QString &path, const Preferences &preferences)
     defaults.allowPartial = false;
     defaults.centerFrequency.reset();
     defaults.startUtc.clear();
+    const QJsonObject updates{
+        {"automatic", preferences.updates.automatic},
+        {"last_attempt", preferences.updates.lastAttempt.toUTC().toString(Qt::ISODate)},
+        {"retry_after", preferences.updates.retryAfter.toUTC().toString(Qt::ISODate)},
+        {"last_notified_version", preferences.updates.lastNotifiedVersion}};
     writeJsonAtomic(path, {{"schema", 1},
                            {"type", "preferences"},
                            {"dsp", dspToJson(preferences.dsp)},
@@ -135,7 +151,9 @@ void savePreferences(const QString &path, const Preferences &preferences)
                            {"import_defaults", recordingToJson(defaults)},
                            {"geometry", QString::fromLatin1(preferences.geometry.toBase64())},
                            {"workspace", QString::fromLatin1(preferences.workspace.toBase64())},
-                           {"last_session", preferences.lastSession}});
+                           {"last_session", preferences.lastSession},
+                           {"recent_files", QJsonArray::fromStringList(preferences.recentFiles)},
+                           {"updates", updates}});
 }
 
 Session readSession(const QString &path)

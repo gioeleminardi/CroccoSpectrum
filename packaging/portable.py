@@ -21,15 +21,15 @@ parser.add_argument("--qt", type=pathlib.Path, required=True)
 parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("dist"))
 args = parser.parse_args()
 source = pathlib.Path(__file__).resolve().parent.parent
-pins = json.loads((source / "packaging/dependencies.json").read_text())
-version = pins["application"]
+build_info = json.loads((args.build / "BUILD-INFO.json").read_text())
+version = build_info["version"]
 destination = args.output.resolve() / f"croccospectrum-{version}-x86_64"
 if destination.exists():
     raise SystemExit(f"Refusing to replace {destination}; remove the old generated bundle explicitly")
 destination.mkdir(parents=True)
 lib = destination / "lib"
 lib.mkdir()
-manifest = {"application_name": "CroccoSpectrum", "application_version": version, "architecture": "x86_64", "build_os": pathlib.Path("/etc/os-release").read_text(), "files": []}
+manifest = {"application_name": "CroccoSpectrum", "application_version": version, "build": build_info, "architecture": "x86_64", "build_os": pathlib.Path("/etc/os-release").read_text(), "files": []}
 pending = []
 
 
@@ -43,14 +43,25 @@ for name in ["croccospectrum", "croccospectrum-cli"]:
     binary = (args.build / name).resolve()
     copy(binary, destination / "bin" / name)
     pending.append(binary)
+copy(args.build / "BUILD-INFO.json", destination / "BUILD-INFO.json")
 
-plugin_groups = ["platforms", "imageformats", "platforminputcontexts", "xcbglintegrations", "wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration"]
+plugin_groups = ["platforms", "imageformats", "platforminputcontexts", "xcbglintegrations", "wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration", "tls"]
 for group in plugin_groups:
     for plugin in sorted((args.qt / "plugins" / group).glob("*.so")):
         if group == "platforms" and plugin.name not in {"libqxcb.so", "libqwayland.so", "libqwayland-generic.so", "libqwayland-egl.so", "libqoffscreen.so", "libqminimal.so"}:
             continue  # Desktop launchers do not need embedded/VNC platform backends.
         copy(plugin, destination / "plugins" / group / plugin.name)
         pending.append(plugin)
+
+# Qt's OpenSSL backend dlopens these libraries, so ldd alone cannot find them.
+tls_backend = args.qt / "plugins/tls/libqopensslbackend.so"
+if not tls_backend.is_file():
+    raise SystemExit("The Qt SDK must provide the OpenSSL TLS backend")
+openssl_directory = pathlib.Path("/usr/lib/x86_64-linux-gnu")
+for name in ["libssl.so.3", "libcrypto.so.3"]:
+    dependency = openssl_directory / name
+    copy(dependency, lib / name)
+    pending.append(dependency)
 
 # qt.conf overrides the SDK's absolute build paths. No host Qt plugins should
 # be loaded just because the developer happened to install a different Qt.

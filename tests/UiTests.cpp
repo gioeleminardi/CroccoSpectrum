@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "ui/ImportDialog.h"
+#include "recording/Metadata.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
@@ -9,16 +10,19 @@
 #include <QDockWidget>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QDrag>
 #include <QFile>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -87,6 +91,15 @@ QAction *findAction(const QWidget &widget, const QString &text)
             return action;
     return nullptr;
 }
+
+QStringList recentPaths(const QMenu &menu)
+{
+    QStringList paths;
+    for (auto *action : menu.actions())
+        if (action->data().isValid())
+            paths.append(action->data().toString());
+    return paths;
+}
 } // namespace
 
 // QSignalSpy observes signals synchronously. Relay worker emissions onto the
@@ -123,6 +136,202 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void absoluteFrequencyDefaultsToKnownCenter_data()
+    {
+        QTest::addColumn<bool>("known");
+        QTest::addColumn<double>("center");
+        QTest::newRow("unknown") << false << 0.0;
+        QTest::newRow("zero") << true << 0.0;
+        QTest::newRow("rf") << true << 1'000'000'000.0;
+    }
+    void absoluteFrequencyDefaultsToKnownCenter()
+    {
+        QFETCH(bool, known);
+        QFETCH(double, center);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.lastSession = directory.filePath("session.rfsession.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *absolute = window.findChild<QCheckBox *>("absoluteFrequency");
+        QVERIFY(absolute);
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 4});
+        if (known)
+            descriptor.centerFrequency = center;
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(errors.count(), 0);
+        QCOMPARE(absolute->isChecked(), known);
+        QCOMPARE(absolute->text(), QString("Absolute frequency"));
+        absolute->setChecked(false);
+        auto *fft = window.findChild<QComboBox *>("fftSize");
+        QVERIFY(fft);
+        fft->setCurrentIndex(fft->findData(512));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QVERIFY(!absolute->isChecked());
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(absolute->isChecked(), known);
+        rf::Session session;
+        session.recording = descriptor;
+        session.dsp = window.dspSettings();
+        session.range = window.selectedRange();
+        rf::saveSession(saved.lastSession, session);
+        auto *reopen = findAction(window, "Reopen last saved session");
+        QVERIFY(reopen);
+        reopen->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(errors.count(), 0);
+        QVERIFY(!absolute->isChecked());
+    }
+    void recentFiles()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *menu = window.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(menu);
+        QVERIFY(!menu->isEnabled());
+        QStringList paths;
+        for (int index = 0; index < 11; ++index) {
+            const auto path = directory.filePath(QString("signal-%1.iq").arg(index));
+            paths.append(path);
+            window.openRecording(toneRecording(path, {4, 4}));
+            QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        }
+        QStringList expected;
+        for (int index = 10; index > 0; --index)
+            expected.append(paths[index]);
+        QVERIFY(menu->isEnabled());
+        QCOMPARE(recentPaths(*menu), expected);
+        window.openRecording(toneRecording(paths[3], {4, 4}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu).first(), paths[3]);
+        QCOMPARE(recentPaths(*menu).size(), 10);
+        QCOMPARE(recentPaths(*menu).count(paths[3]), 1);
+        expected = recentPaths(*menu);
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>())
+                dialog->reject();
+        });
+        menu->actions()[2]->trigger();
+        QCOMPARE(recentPaths(*menu), expected);
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        rf::RecordingDescriptor missing;
+        missing.path = directory.filePath("missing.iq");
+        window.openRecording(missing);
+        QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 1, 5000);
+        QVERIFY(!window.isBusy());
+        QCOMPARE(recentPaths(*menu), expected);
+        const auto reopenedPath = menu->actions()[2]->data().toString();
+        QString reviewedPath;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>()) {
+                reviewedPath = dialog->descriptor().path;
+                dialog->accept();
+            }
+        });
+        menu->actions()[2]->trigger();
+        QCOMPARE(reviewedPath, reopenedPath);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu).first(), reopenedPath);
+        QCOMPARE(recentPaths(*menu).size(), 10);
+        expected = recentPaths(*menu);
+        window.close();
+        QCOMPARE(rf::readPreferences(preferences).recentFiles, expected);
+        rf::MainWindow restored(nullptr, preferences);
+        restored.show();
+        auto *restoredMenu = restored.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(restoredMenu && restoredMenu->isEnabled());
+        QCOMPARE(recentPaths(*restoredMenu), expected);
+        auto *clear = findAction(restored, "Clear recent files");
+        QVERIFY(clear);
+        clear->trigger();
+        QVERIFY(!restoredMenu->isEnabled());
+        QVERIFY(recentPaths(*restoredMenu).isEmpty());
+        restored.close();
+        QVERIFY(rf::readPreferences(preferences).recentFiles.isEmpty());
+    }
+    void recentMetadataAndSessions()
+    {
+        QTemporaryDir directory;
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 4});
+        descriptor.centerFrequency = 1'000'000'000;
+        const auto metadataPath = directory.filePath("signal.rfmeta.json");
+        rf::writeJsonAtomic(metadataPath, {{"recording", rf::recordingToJson(descriptor)}});
+        rf::Session session;
+        session.recording = descriptor;
+        session.dsp.fftSize = 512;
+        session.range = {0, 512};
+        const auto sessionPath = directory.filePath("session.rfsession.json");
+        rf::saveSession(sessionPath, session);
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.lastSession = sessionPath;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *menu = window.findChild<QMenu *>("recentFilesMenu");
+        QVERIFY(menu);
+        rf::RecordingDescriptor reviewed;
+        QTimer confirm, timeout;
+        confirm.setInterval(10);
+        timeout.setSingleShot(true);
+        connect(&confirm, &QTimer::timeout, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>()) {
+                auto *buttons = dialog->findChild<QDialogButtonBox *>();
+                if (buttons->button(QDialogButtonBox::Ok)->isEnabled()) {
+                    reviewed = dialog->descriptor();
+                    dialog->accept();
+                }
+            }
+        });
+        connect(&timeout, &QTimer::timeout, &window, [&] {
+            if (auto *dialog = window.findChild<rf::ImportDialog *>())
+                dialog->reject();
+        });
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        confirm.start();
+        timeout.start(5000);
+        window.openPath(metadataPath);
+        confirm.stop();
+        timeout.stop();
+        QCOMPARE(reviewed.path, descriptor.path);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), QStringList{metadataPath});
+        auto *reopen = findAction(window, "Reopen last saved session");
+        QVERIFY(reopen);
+        reopen->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{sessionPath, metadataPath}));
+        QCOMPARE(window.dspSettings().fftSize, 512);
+        descriptor.centerFrequency = 2'000'000'000;
+        rf::writeJsonAtomic(metadataPath, {{"recording", rf::recordingToJson(descriptor)}});
+        confirm.start();
+        timeout.start(5000);
+        menu->actions()[1]->trigger();
+        confirm.stop();
+        timeout.stop();
+        QCOMPARE(reviewed.centerFrequency.value_or(0), 2'000'000'000.0);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{metadataPath, sessionPath}));
+        timeout.start(5000);
+        menu->actions()[1]->trigger();
+        timeout.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(recentPaths(*menu), (QStringList{sessionPath, metadataPath}));
+        QVERIFY(!window.findChild<QCheckBox *>("absoluteFrequency")->isChecked());
+        QCOMPARE(errors.count(), 0);
+    }
     void partialImportDialog()
     {
         QTemporaryDir directory;
@@ -295,6 +504,204 @@ class UiTests : public QObject
         moveMouse(&plot, QPoint(276, 152));
         QCOMPARE(plot.grab().toImage(), empty);
     }
+    void spectrumCrosshairOnWaterfall()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto descriptor = toneRecording(directory.filePath("signal.iq"), {4, 8, 12});
+        descriptor.centerFrequency = 1'000'000'000;
+        window.openRecording(descriptor);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QVERIFY(spectrum && waterfall);
+        QCOMPARE(spectrum->width(), waterfall->width());
+        moveMouse(waterfall, QPoint(10, 10));
+        moveMouse(spectrum, QPoint(10, 10));
+        const auto preview = window.previewResult();
+        const auto original = waterfall->grab().toImage();
+        const auto cursorPixels = [waterfall](const QImage &image, int x) {
+            int count = 0;
+            for (int y = 33; y < waterfall->height() - 38; ++y)
+                count += image.pixelColor(qRound(x * image.devicePixelRatio()),
+                                          qRound(y * image.devicePixelRatio())) ==
+                         QColor("#8ecae6");
+            return count;
+        };
+        const int x = 76 + (spectrum->width() - 100) / 3;
+        moveMouse(spectrum, QPoint(x, 60));
+        QVERIFY(cursorPixels(waterfall->grab().toImage(), x) > (waterfall->height() - 70) / 2);
+        const QPointF zoomPosition(x, 60);
+        QWheelEvent zoom(zoomPosition, spectrum->mapToGlobal(zoomPosition.toPoint()), {},
+                         QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(spectrum, &zoom);
+        moveMouse(spectrum, QPoint(x + 40, 60));
+        auto *reset = findAction(window, "Reset frequency zoom");
+        QVERIFY(reset);
+        reset->trigger();
+        const auto moved = waterfall->grab().toImage();
+        QCOMPARE(cursorPixels(moved, x), 0);
+        QVERIFY(cursorPixels(moved, x + 40) > (waterfall->height() - 70) / 2);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/spectrum-waterfall-crosshair.png"));
+        }
+        const auto size = window.size();
+        window.resize(size.width() - 120, size.height());
+        QCoreApplication::processEvents();
+        QCOMPARE(spectrum->width(), waterfall->width());
+        QVERIFY(cursorPixels(waterfall->grab().toImage(), x + 40) >
+                (waterfall->height() - 70) / 2);
+        window.resize(size);
+        QCoreApplication::processEvents();
+        moveMouse(spectrum, QPoint(10, 10));
+        QCOMPARE(waterfall->grab().toImage(), original);
+        moveMouse(spectrum, QPoint(x, 60));
+        QEvent leave(QEvent::Leave);
+        QApplication::sendEvent(spectrum, &leave);
+        QCOMPARE(waterfall->grab().toImage(), original);
+        moveMouse(spectrum, QPoint(x, 60));
+        auto invalid = std::make_shared<rf::PreviewResult>(*window.spectrumResult());
+        invalid->spectrum.power.clear();
+        invalid->spectrum.valid = false;
+        spectrum->setPreview(invalid, false);
+        QCOMPARE(waterfall->grab().toImage(), original);
+        spectrum->setPreview(preview, false);
+        moveMouse(spectrum, QPoint(x, 60));
+        spectrum->clear();
+        QCOMPARE(waterfall->grab().toImage(), original);
+        QCOMPARE(window.previewResult(), preview);
+        QVERIFY(!window.isBusy());
+    }
+    void averageDockLayout_data()
+    {
+        QTest::addColumn<QSize>("size");
+        QTest::addColumn<bool>("restoreWorkspace");
+        QTest::newRow("default") << QSize(1440, 980) << false;
+        QTest::newRow("compact") << QSize(1200, 800) << false;
+        QTest::newRow("large") << QSize(1920, 1080) << false;
+        QTest::newRow("restored") << QSize(1440, 980) << true;
+    }
+    void averageDockLayout()
+    {
+        QFETCH(QSize, size);
+        QFETCH(bool, restoreWorkspace);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        if (restoreWorkspace) {
+            rf::MainWindow previous(nullptr, preferences);
+            previous.show();
+            previous.findChild<QDockWidget *>("averageDock")->show();
+            QCoreApplication::processEvents();
+            saved.workspace = previous.saveState(1);
+        }
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.resize(size);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *averageAction = findAction(window, "Average entire recording");
+        QVERIFY(averageAction);
+        averageAction->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+        auto *averageDock = window.findChild<QDockWidget *>("averageDock");
+        auto *waveformDock = window.findChild<QDockWidget *>("waveformDock");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QVERIFY(averageDock && waveformDock && waterfall);
+        QVERIFY(averageDock->isVisible());
+        auto *plot = averageDock->findChild<rf::SpectrumPlot *>();
+        auto *label = averageDock->findChild<QLabel *>();
+        auto *maxHold = averageDock->findChild<QCheckBox *>();
+        QVERIFY(plot && label && maxHold);
+        QTRY_COMPARE(label->height(), label->heightForWidth(label->width()));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/average-dock-" +
+                                      QTest::currentDataTag() + ".png"));
+        }
+        QCOMPARE(maxHold->height(), maxHold->sizeHint().height());
+        const auto bottom = [&window](QWidget *widget) {
+            return widget->mapTo(&window, QPoint(0, widget->height())).y();
+        };
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        QCOMPARE(bottom(averageDock), bottom(waterfall));
+        waveformDock->hide();
+        QCoreApplication::processEvents();
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        waveformDock->show();
+        QCoreApplication::processEvents();
+        QCOMPARE(bottom(plot), bottom(waterfall));
+        window.resize(size + QSize(120, 80));
+        QCoreApplication::processEvents();
+        QCOMPARE(label->height(), label->heightForWidth(label->width()));
+        QCOMPARE(bottom(plot), bottom(waterfall));
+    }
+    void maximizedFloatingDock_data()
+    {
+        QTest::addColumn<QString>("dockName");
+        QTest::newRow("average") << QString("averageDock");
+        QTest::newRow("waveform") << QString("waveformDock");
+    }
+    void maximizedFloatingDock()
+    {
+        QFETCH(QString, dockName);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *averageAction = findAction(window, "Average entire recording");
+        QVERIFY(averageAction);
+        averageAction->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+        auto *panel = window.findChild<QDockWidget *>(dockName);
+        QVERIFY(panel);
+        panel->setFloating(true);
+        panel->show();
+        int ticks = 0;
+        QTimer heartbeat;
+        connect(&heartbeat, &QTimer::timeout, this, [&ticks] { ++ticks; });
+        heartbeat.start(20);
+        for (auto *screen : QGuiApplication::screens()) {
+            panel->showNormal();
+            panel->setScreen(screen);
+            panel->move(screen->availableGeometry().topLeft() + QPoint(40, 40));
+            QTest::qWait(100);
+            QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, QPoint(100, 10));
+            QTimer::singleShot(50, &window, [] { QDrag::cancel(); });
+            moveMouse(panel, QPoint(150, 10), Qt::LeftButton);
+            panel->showMaximized();
+            QTest::mouseRelease(panel, Qt::LeftButton, Qt::NoModifier, QPoint(150, 10));
+            QTest::qWait(300);
+            QTRY_VERIFY_WITH_TIMEOUT(panel->isMaximized(), 2000);
+            const int before = ticks;
+            QTRY_VERIFY_WITH_TIMEOUT(ticks >= before + 3, 2000);
+            auto *absolute = window.findChild<QCheckBox *>("absoluteFrequency");
+            QVERIFY(absolute);
+            const bool checked = absolute->isChecked();
+            QTest::mouseClick(window.windowHandle(), Qt::LeftButton, Qt::NoModifier,
+                              absolute->mapTo(&window, QPoint(8, absolute->height() / 2)));
+            QCOMPARE(absolute->isChecked(), !checked);
+            QCOMPARE(QWidget::mouseGrabber(), nullptr);
+        }
+        panel->showNormal();
+        panel->setFloating(false);
+        QVERIFY(!panel->isFloating());
+    }
     void spectrumCrosshairDuringMeasurements()
     {
         rf::SpectrumPlot plot;
@@ -329,8 +736,16 @@ class UiTests : public QObject
         QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 200));
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
     }
+    void spectrumMeasurement_data()
+    {
+        QTest::addColumn<bool>("shiftEnd");
+        QTest::newRow("plain-end") << false;
+        QTest::newRow("shift-end") << true;
+    }
     void spectrumMeasurement()
     {
+        QFETCH(bool, shiftEnd);
+        const auto endModifiers = shiftEnd ? Qt::ShiftModifier : Qt::NoModifier;
         rf::SpectrumPlot plot;
         plot.resize(600, 310);
         auto result = std::make_shared<rf::PreviewResult>();
@@ -344,7 +759,7 @@ class UiTests : public QObject
         QVERIFY(plot.isMeasuring());
         moveMouse(&plot, QPoint(276, 180));
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, QPoint(276, 180));
         QVERIFY(!plot.isMeasuring());
         // Mean(0.25, 1) = 0.625; averaging dB would incorrectly give -3.0103.
         QVERIFY(plot.measurementText().contains("-2.041199827 dBFS"));
@@ -382,11 +797,13 @@ class UiTests : public QObject
         plot.setView({}, rf::PowerScale::Spectrum, 0);
         // Reverse direction, then replace with a same-bin zero-power selection.
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(176, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, QPoint(176, 180));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
         QVERIFY(plot.isMeasuring());
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QTest::mouseDClick(&plot, Qt::LeftButton, endModifiers, QPoint(76, 180));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
         QVERIFY(plot.measurementText().contains("−∞ dBFS"));
         plot.setPreview(result);
@@ -503,8 +920,232 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().contains("-60.20599913 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
     }
+    void waterfallNavigation_data()
+    {
+        QTest::addColumn<bool>("complex");
+        QTest::newRow("complex") << true;
+        QTest::newRow("real") << false;
+    }
+    void waterfallNavigation()
+    {
+        QFETCH(bool, complex);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {100, 2800};
+        result->frequencies = complex ? std::vector<double>{-20, -10, 0, 10, 20}
+                                     : std::vector<double>{0, 10, 20, 30, 40};
+        result->columns = 5;
+        result->rowStarts = {100, 200, 400, 800, 1200, 1600, 2000, 2400};
+        for (int row = 0; row < 8; ++row)
+            for (int column = 0; column < 5; ++column)
+                result->waterfall.push_back(std::pow(10.0, (-40 + row * 4 + column) / 10.0));
+        plot.setPreview(result, 100);
+        rf::ViewSettings view;
+        view.autoRange = false;
+        view.colorMin = -40;
+        view.colorMax = 0;
+        view.palette = "Grayscale";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.setFrameCursor(std::nullopt, true);
+        plot.show();
+        QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        const auto wheel = [&plot](const QPoint &position, int delta) {
+            QWheelEvent event(position, plot.mapToGlobal(position), {}, QPoint(0, delta),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &event);
+        };
+        wheel(QPoint(10, 10), 120);
+        wheel(QPoint(326, 152), 0);
+        QCOMPARE(ranges.count(), 0);
+        wheel(QPoint(326, 152), 120);
+        wheel(QPoint(326, 152), 120);
+        const double fullLeft = complex ? -20 : 0;
+        const double fullSpan = complex ? 50 : 40;
+        QCOMPARE(ranges.count(), 2);
+        QVERIFY(std::abs(ranges.last().at(0).toDouble() - (fullLeft + fullSpan * 0.18)) < 1e-9);
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - (fullLeft + fullSpan * 0.82)) < 1e-9);
+        // The pointer stays on the middle row; the visible top now starts at row 1.
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1200});
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{200});
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor(38, 38, 38));
+
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        hovered.clear();
+        moveMouse(&plot, QPoint(426, 212), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(426, 212));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(hovered.count(), 0);
+        QVERIFY(std::abs(ranges.last().at(0).toDouble() - (fullLeft + fullSpan * 0.052)) < 1e-9);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{100});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1600});
+
+        // Pan beyond both ends: the viewport stays within available bins and rows.
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(-1000, -1000), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(-1000, -1000));
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - (fullLeft + fullSpan)) < 1e-9);
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{2400});
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        QCOMPARE(clicked.count(), 1);
+        // Small pointer jitter is still a click, not a pan.
+        const auto rangeCount = ranges.count();
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(327, 153), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(327, 153));
+        QCOMPARE(clicked.count(), 2);
+        QCOMPARE(ranges.count(), rangeCount);
+
+        for (int step = 0; step < 30; ++step)
+            wheel(QPoint(326, 152), 120);
+        QVERIFY(std::abs(ranges.last().at(1).toDouble() - ranges.last().at(0).toDouble() - 10) < 1e-9);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1200});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1600});
+        for (int step = 0; step < 30; ++step)
+            wheel(QPoint(326, 152), -120);
+        QCOMPARE(ranges.last().at(0).toDouble(), fullLeft);
+        QCOMPARE(ranges.last().at(1).toDouble(), fullLeft + fullSpan);
+        moveMouse(&plot, QPoint(326, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{100});
+        moveMouse(&plot, QPoint(326, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{2400});
+        plot.clear();
+        ranges.clear();
+        wheel(QPoint(326, 152), 120);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        QCOMPARE(ranges.count(), 0);
+        QCOMPARE(clicked.count(), 2);
+    }
+    void waterfallTimeOnlyPan()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 800};
+        result->frequencies = {-20, -10, 0, 10, 20};
+        result->columns = 5;
+        result->rowStarts = {0, 100, 200, 300, 400, 500, 600, 700};
+        result->waterfall.assign(40, 0.01);
+        plot.setPreview(result, 100);
+        plot.show();
+        const QPoint center(326, 152);
+        for (int step = 0; step < 2; ++step) {
+            QWheelEvent event(center, plot.mapToGlobal(center), {}, QPoint(0, 120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &event);
+        }
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 82));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 222));
+        const auto measurement = plot.measurementText();
+        QVERIFY(measurement.contains("Duration: 3 s"));
+        QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        QSignalSpy cursor(&plot, &rf::WaterfallPlot::cursorChanged);
+        // Select time at press, then release Ctrl before the diagonal drag finishes.
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ControlModifier, center);
+        moveMouse(&plot, center + QPoint(100, 60), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, center + QPoint(100, 60));
+        QCOMPARE(ranges.count(), 0);
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(hovered.count(), 0);
+        QCOMPARE(plot.measurementText(), measurement);
+        moveMouse(&plot, QPoint(76, 33));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{0});
+        QVERIFY(cursor.last().at(0).toString().contains("· -11 Hz ·"));
+        moveMouse(&plot, QPoint(76, 271));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{500});
+        // Horizontal motion has no effect; time still clamps at the preview bounds.
+        for (const auto offset : {QPoint(80, 0), QPoint(-1000, -1000), QPoint(1000, 1000)}) {
+            QTest::mousePress(&plot, Qt::LeftButton, Qt::ControlModifier, center);
+            moveMouse(&plot, center + offset, Qt::LeftButton, Qt::ControlModifier);
+            QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ControlModifier, center + offset);
+            moveMouse(&plot, QPoint(76, 271));
+            QCOMPARE(hovered.last().at(0).toULongLong(),
+                     offset.y() < 0 ? std::uint64_t{700} : std::uint64_t{500});
+            QVERIFY(cursor.last().at(0).toString().contains("· -11 Hz ·"));
+        }
+        QCOMPARE(ranges.count(), 0);
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(plot.measurementText(), measurement);
+    }
+    void waterfallNavigationMeasurements()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 800};
+        result->frequencies = {-20, -10, 0, 10, 20};
+        result->columns = 5;
+        result->rowStarts = {0, 100, 200, 300, 400, 500, 600, 700};
+        result->waterfall.assign(40, 0.01);
+        plot.setPreview(result, 100);
+        plot.show();
+        const auto wheel = [&plot] {
+            const QPoint position(326, 152);
+            QWheelEvent event(position, plot.mapToGlobal(position), {}, QPoint(0, 120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &event);
+        };
+        wheel();
+        wheel();
+        const auto position = [](int row, double top = 1.44) {
+            return QPoint(326, qRound(32 + (row + 0.5 - top) / 5.12 * 240));
+        };
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, position(2));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, position(5));
+        QVERIFY(plot.measurementText().contains("Duration: 3 s"));
+        const auto text = plot.measurementText();
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy selected(&plot, &rf::WaterfallPlot::frameSelected);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 152));
+        moveMouse(&plot, QPoint(376, 172), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(376, 172));
+        QCOMPARE(plot.measurementText(), text);
+        QCOMPARE(clicked.count(), 0);
+        const double top = 1.44 - 20.0 / 240 * 5.12;
+        const auto image = plot.grab().toImage();
+        for (const auto row : {2, 5}) {
+            const int y = position(row, top).y();
+            QVERIFY(image.pixelColor(550, y - 1) == QColor("#ffd166") ||
+                    image.pixelColor(550, y) == QColor("#ffd166"));
+        }
+        shiftDrag(&plot, position(3, top), position(4, top));
+        QVERIFY(plot.measurementRange());
+        QCOMPARE(plot.measurementRange()->begin, std::uint64_t{300});
+        QCOMPARE(plot.measurementRange()->end, std::uint64_t{600});
+        QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, position(3, top));
+        wheel();
+        QCOMPARE(ranges.count(), 0); // A wheel cannot move the viewport while editing a marker.
+        moveMouse(&plot, position(2, top), Qt::LeftButton, Qt::ShiftModifier);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, position(2, top));
+        QCOMPARE(plot.measurementRange()->begin, std::uint64_t{200});
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QTest::mouseDClick(&plot, Qt::LeftButton, Qt::NoModifier, position(4, top));
+        QCOMPARE(selected.count(), 1);
+        QCOMPARE(selected.last().at(0).toULongLong(), std::uint64_t{400});
+        plot.setPreview(result, 100);
+        QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
+        moveMouse(&plot, rowPosition(plot, 0, 8));
+        QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{0});
+    }
+    void waterfallMeasurement_data()
+    {
+        spectrumMeasurement_data();
+    }
     void waterfallMeasurement()
     {
+        QFETCH(bool, shiftEnd);
+        const auto endModifiers = shiftEnd ? Qt::ShiftModifier : Qt::NoModifier;
         rf::WaterfallPlot plot;
         plot.resize(600, 310);
         constexpr std::uint64_t begin = 9'007'199'254'740'993;
@@ -525,7 +1166,7 @@ class UiTests : public QObject
         hovered.clear();
         moveMouse(&plot, rowPosition(plot, 0, 3));
         QCOMPARE(hovered.count(), 0);
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 0, 3));
         QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 400 ms"));
         QVERIFY(plot.measurementText().contains("1 frames"));
@@ -549,7 +1190,7 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().isEmpty());
         plot.resize(600, 310);
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
-        QTest::mouseDClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 2, 3));
+        QTest::mouseDClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 2, 3));
         QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 400 s"));
         QCOMPARE(selected.count(), 0);
@@ -565,8 +1206,11 @@ class UiTests : public QObject
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(10, 10));
         QVERIFY(!plot.isMeasuring());
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 1, 3));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 0 s"));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(selected.count(), 0);
         plot.clear();
         QVERIFY(plot.measurementText().isEmpty());
     }
@@ -666,7 +1310,7 @@ class UiTests : public QObject
         QCOMPARE(start->text(), "256");
         QCOMPARE(end->text(), "768");
         QVERIFY(!average->isEnabled());
-        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::ShiftModifier, last);
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::NoModifier, last);
         QVERIFY(average->isEnabled());
         QCOMPARE(window.selectedRange(), range);
         QCOMPARE(window.previewResult(), preview);
@@ -797,7 +1441,7 @@ class UiTests : public QObject
         moveMouse(waveform, waveformRowPosition(*waveform, 2, 3));
         QTest::qWait(100);
         QCOMPARE(window.spectrumResult(), held);
-        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(200, 100));
+        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::NoModifier, QPoint(200, 100));
         QVERIFY(!spectrum->measurementText().isEmpty());
         moveMouse(waterfall, rowPosition(*waterfall, 2, 3));
         if (frozen) {
@@ -824,7 +1468,7 @@ class UiTests : public QObject
         moveMouse(waveform, waveformRowPosition(*waveform, 1, 3));
         QTest::qWait(100);
         QCOMPARE(window.spectrumResult(), durationHeld);
-        QTest::mouseDClick(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+        QTest::mouseDClick(waterfall, Qt::LeftButton, Qt::NoModifier,
                            rowPosition(*waterfall, 2, 3));
         QVERIFY(waterfall->measurementText().contains("Duration: 2 s"));
         QCOMPARE(window.selectedRange(), range);
@@ -1093,6 +1737,229 @@ class UiTests : public QObject
         QCOMPARE(hovered.last().at(0).toULongLong(), result->rowStarts[row]);
         plot.setPreview(result, 256);
         QCOMPARE(plot.grab().toImage(), original);
+    }
+    void waterfallLivePanImage_data()
+    {
+        QTest::addColumn<quint64>("begin");
+        QTest::newRow("small-indices") << quint64{100};
+        QTest::newRow("beyond-2-to-53") << quint64{9'007'199'254'740'993};
+    }
+    void waterfallLivePanImage()
+    {
+        QFETCH(quint64, begin);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {begin, begin + 800};
+        result->frequencies = {-20, -10, 0, 10, 20};
+        result->columns = 5;
+        for (int row = 0; row < 8; ++row) {
+            result->rowStarts.push_back(begin + static_cast<quint64>(row) * 100);
+            for (int column = 0; column < 5; ++column)
+                result->waterfall.push_back(std::pow(10.0, (-40 + row * 4 + column) / 10.0));
+        }
+        plot.setPreview(result, 100);
+        rf::ViewSettings view;
+        view.autoRange = false;
+        view.colorMin = -40;
+        view.colorMax = 0;
+        view.palette = "Grayscale";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.setFrameCursor(std::nullopt, true);
+        plot.setTimeSelectionPanEnabled(true);
+        plot.show();
+        connect(&plot, &rf::WaterfallPlot::timeSelectionPanChanged, &plot,
+                [&plot, begin](double fraction) {
+                    const auto start = begin + static_cast<quint64>(std::llround(fraction * 800));
+                    plot.setTimeSelectionRange({start, start + 800});
+                });
+        QSignalSpy active(&plot, &rf::WaterfallPlot::timeSelectionPanActiveChanged);
+        QSignalSpy pans(&plot, &rf::WaterfallPlot::timeSelectionPanChanged);
+        QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
+        QSignalSpy frequencies(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
+        const QPoint center(326, 152);
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor(13, 13, 13));
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::ControlModifier, center);
+        moveMouse(&plot, center - QPoint(0, 60), Qt::LeftButton);
+        QCOMPARE(pans.last().at(0).toDouble(), 0.25);
+        const auto moved = plot.grab().toImage();
+        QCOMPARE(moved.pixelColor(326, 33), QColor(64, 64, 64)); // Existing rows move immediately.
+        QCOMPARE(moved.pixelColor(326, 230), QColor("#101923")); // Unloaded rows stay empty.
+        auto next = std::make_shared<rf::PreviewResult>(*result);
+        next->range = {begin + 100, begin + 900}; // A completed preview can trail the pointer.
+        next->rowStarts.clear();
+        next->waterfall.clear();
+        for (int row = 0; row < 16; ++row) {
+            next->rowStarts.push_back(begin + 100 + static_cast<quint64>(row) * 50);
+            for (int column = 0; column < 5; ++column)
+                next->waterfall.push_back(std::pow(10.0, (-36 + row * 2 + column) / 10.0));
+        }
+        plot.setPreview(next, 100, false);
+        QCOMPARE(plot.cursor().shape(), Qt::ClosedHandCursor);
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor(64, 64, 64));
+        QVERIFY(plot.grab().toImage().pixelColor(326, 230) != QColor("#101923"));
+        moveMouse(&plot, center - QPoint(0, 120), Qt::LeftButton);
+        QCOMPARE(pans.last().at(0).toDouble(), 0.5); // Original anchor survives changed row counts.
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor(115, 115, 115));
+        QCOMPARE(active.count(), 1);
+        moveMouse(&plot, center, Qt::LeftButton);
+        QCOMPARE(pans.last().at(0).toDouble(), 0.0);
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 33), QColor("#101923"));
+        QCOMPARE(plot.grab().toImage().pixelColor(326, 80), QColor(51, 51, 51));
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, center);
+        QCOMPARE(active.count(), 2);
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(frequencies.count(), 0);
+    }
+    void waterfallTimeSelectionPan_data()
+    {
+        QTest::addColumn<quint64>("length");
+        QTest::newRow("slice") << quint64{2048};
+        QTest::newRow("one-fft-window") << quint64{256};
+    }
+    void waterfallTimeSelectionPan()
+    {
+        QFETCH(quint64, length);
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), std::vector<int>(32, 8)));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *start = window.findChild<QLineEdit *>("selectionStart");
+        auto *end = window.findChild<QLineEdit *>("selectionEnd");
+        start->setText("1024");
+        end->setText(QString::number(1024 + length));
+        QTest::mouseClick(window.findChild<QPushButton *>("applySelection"), Qt::LeftButton);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        QSignalSpy frequencies(spectrum, &rf::SpectrumPlot::frequencyRangeChanged);
+        const QPoint zoomPosition(200, 60);
+        QWheelEvent zoom(zoomPosition, spectrum->mapToGlobal(zoomPosition), {}, QPoint(0, 120),
+                         Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(spectrum, &zoom);
+        QCOMPARE(frequencies.count(), 1);
+        const auto frequencyLeft = frequencies.last().at(0).toDouble();
+        frequencies.clear();
+        const auto preview = window.previewResult();
+        const int height = waterfall->height() - 70;
+        const QPoint center(150, 32 + height / 2);
+        QSignalSpy panActive(waterfall, &rf::WaterfallPlot::timeSelectionPanActiveChanged);
+        QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
+        for (const int offset : {-height / 4, -height / 2}) {
+            moveMouse(waterfall, center + QPoint(80, offset), Qt::LeftButton);
+            const auto begin = 1024 + static_cast<quint64>(std::llround(-double(offset) / height * length));
+            QCOMPARE(window.selectedRange(), (rf::FrameRange{begin, begin + length}));
+            QCOMPARE(start->text(), QString::number(begin));
+            QCOMPARE(end->text(), QString::number(begin + length));
+            QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() &&
+                                        window.previewResult()->range == window.selectedRange(), 3000);
+            QCOMPARE(panActive.count(), 1); // Incoming previews preserve the held gesture.
+            QCOMPARE(frequencies.count(), 0);
+        }
+        QVERIFY(window.previewResult() != preview);
+        const auto selected = window.selectedRange();
+        QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::NoModifier,
+                            center + QPoint(80, -height / 2));
+        QCOMPARE(panActive.count(), 2);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QCOMPARE(window.previewResult()->range, selected);
+        QCOMPARE(window.spectrumResult()->spectrumStart, selected.begin);
+        QCOMPARE(frequencies.count(), 0);
+        QSignalSpy cursor(spectrum, &rf::SpectrumPlot::cursorChanged);
+        moveMouse(spectrum, QPoint(76, 60));
+        QVERIFY(cursor.last().at(0).toString().contains(
+            "Cursor: " + QString::number(std::round(frequencyLeft), 'f', 0) + " Hz"));
+        for (const int offset : {height * 40, -height * 40}) {
+            QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
+            moveMouse(waterfall, center + QPoint(80, offset), Qt::LeftButton, Qt::ControlModifier);
+            const auto begin = offset > 0 ? quint64{0} : quint64{8192} - length;
+            QCOMPARE(window.selectedRange(), (rf::FrameRange{begin, begin + length}));
+            QCOMPARE(start->text(), QString::number(begin));
+            QCOMPARE(end->text(), QString::number(begin + length));
+            QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::ControlModifier,
+                                center + QPoint(80, offset));
+            QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+            QCOMPARE(window.previewResult()->range, window.selectedRange());
+        }
+        const auto lastPreview = window.previewResult();
+        QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
+        moveMouse(waterfall, center + QPoint(80, 0), Qt::LeftButton, Qt::ControlModifier);
+        QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::ControlModifier, center + QPoint(80, 0));
+        QVERIFY(!window.isBusy());
+        QCOMPARE(window.previewResult(), lastPreview);
+        QCOMPARE(frequencies.count(), 0);
+        QCOMPARE(errors.count(), 0);
+    }
+    void waterfallNavigationSynchronization_data()
+    {
+        QTest::addColumn<bool>("timeOnly");
+        QTest::newRow("both-axes") << false;
+        QTest::newRow("time-only") << true;
+    }
+    void waterfallNavigationSynchronization()
+    {
+        QFETCH(bool, timeOnly);
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 16, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        auto *averageDock = window.findChild<QDockWidget *>("averageDock");
+        QVERIFY(averageDock);
+        findAction(window, "Average time selection")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && averageDock->isVisible(), 10000);
+        QCOMPARE(errors.count(), 0);
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *average = averageDock->findChild<rf::SpectrumPlot *>();
+        QVERIFY(waterfall && spectrum && average);
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::NoModifier, rowPosition(*waterfall, 0, 4));
+        const auto preview = window.previewResult();
+        const auto frame = window.spectrumResult()->spectrumStart;
+        QSignalSpy ranges(waterfall, &rf::WaterfallPlot::frequencyRangeChanged);
+        const QPoint center(76 + (waterfall->width() - 100) / 2,
+                            32 + (waterfall->height() - 70) / 2);
+        QWheelEvent event(center, waterfall->mapToGlobal(center), {}, QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(waterfall, &event);
+        const auto rangeCount = ranges.count();
+        QTest::mousePress(waterfall, Qt::LeftButton,
+                          timeOnly ? Qt::ControlModifier : Qt::NoModifier, center);
+        moveMouse(waterfall, center + QPoint(40, 20), Qt::LeftButton);
+        QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::NoModifier, center + QPoint(40, 20));
+        if (timeOnly)
+            QCOMPARE(ranges.count(), rangeCount);
+        else
+            QVERIFY(ranges.count() > rangeCount);
+        const auto left = ranges.last().at(0).toDouble();
+        for (auto *plot : {spectrum, average}) {
+            QSignalSpy cursor(plot, &rf::SpectrumPlot::cursorChanged);
+            moveMouse(plot, QPoint(76, 60));
+            QVERIFY(!cursor.isEmpty());
+            QVERIFY(cursor.last().at(0).toString().contains(
+                "Cursor: " + QString::number(std::round(left), 'f', 0) + " Hz"));
+        }
+        QCOMPARE(window.spectrumResult()->spectrumStart, frame); // Drag preserves frame freeze.
+        QCOMPARE(window.previewResult(), preview);
+        QCOMPARE(window.selectedRange(), preview->range);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/waterfall-navigation.png"));
+        }
     }
     void waterfallSpectrumSynchronization()
     {
@@ -1414,7 +2281,21 @@ class UiTests : public QObject
         QSignalSpy cursor(&plot, &rf::SpectrumPlot::cursorChanged);
         QTest::mouseMove(&plot, QPoint(76, 60));
         QTRY_VERIFY(!cursor.isEmpty());
-        QVERIFY(cursor.last().at(0).toString().contains("999999904.63256836 Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Bin 0 · 999999904.63256836 Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 999999905 Hz"));
+        const auto badge = QRect(76, plot.height() - 37,
+                                 plot.fontMetrics().horizontalAdvance("999.999905 MHz") + 12,
+                                 plot.fontMetrics().height() + 2);
+        const auto roundedLabel = plot.grab(badge).toImage();
+        // The fractional coordinate and its nearest whole Hz render the same badge.
+        plot.setView(view, rf::PowerScale::Spectrum, 1'000'000'000.367431640625);
+        QCOMPARE(plot.grab(badge).toImage(), roundedLabel);
+        view.absoluteFrequency = false;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        moveMouse(&plot, QPoint(76, 60));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: -95 Hz"));
+        moveMouse(&plot, QPoint(576, 60));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 191 Hz"));
     }
     void latestRequestAndPalette()
     {

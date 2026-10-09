@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.6-3B82F6?style=for-the-badge" alt="Version 0.1.6"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-3B82F6?style=for-the-badge" alt="Version 0.2.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -68,8 +68,14 @@ supported formats, and verification results.
 
 Open [Releases](https://github.com/gioeleminardi/CroccoSpectrum/releases) and
 download the AppImage or portable tarball from **Assets**. New releases and
-pre-releases receive packages, accompanying sources, and checksums automatically
-after their build and verification workflow succeeds.
+development prereleases are published with packages, accompanying sources,
+checksums, and build information after their verification workflow succeeds.
+
+The [download website](https://gioeleminardi.github.io/CroccoSpectrum/#download)
+offers the stable release and latest successful development build separately.
+Development versions such as `0.2.0-dev.184.g233be51` identify the planned release,
+CI run, and source commit. They are intended for beta testing. See [release workflow](docs/CI.md#publish-a-stable-release)
+for development and stable publication instructions.
 
 ### Download a CI build
 
@@ -81,26 +87,39 @@ the AppImage or the extract-and-run tarball. Accompanying sources are in
 Debug and ASAN/UBSAN builds can be run locally for development. See [CI builds](docs/CI.md)
 for artifact contents, retention, and runner setup.
 
+### Update notifications
+
+The GUI checks GitHub for stable releases shortly after startup and at most once
+every 24 hours. A newer version is announced only after both Linux packages and
+their checksums are uploaded. The notification opens the release page; download
+and install the package yourself.
+
+Use **Help → Automatically check for updates** to disable background checks, or
+**Help → Check for updates…** to check manually. Automatic failures stay quiet;
+manual checks report connection errors and rate limits. Each version is announced
+automatically once. Checking sends a request to GitHub; recordings and sessions
+are not included. The CLI, tests, screenshots, and smoke tests stay offline.
+
 ### Run an AppImage
 
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.1.6-x86_64.AppImage
-./croccospectrum-0.1.6-x86_64.AppImage
+chmod +x croccospectrum-0.2.0-x86_64.AppImage
+./croccospectrum-0.2.0-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.1.6-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-0.2.0-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.1.6-x86_64.tar.gz
-./croccospectrum-0.1.6-x86_64/AppRun
+tar -xzf croccospectrum-0.2.0-x86_64.tar.gz
+./croccospectrum-0.2.0-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -118,6 +137,10 @@ follow [Build from source](#build-from-source).
 The initial raw-file preset is **signed int16 · complex I/Q · little-endian ·
 100 MS/s**. Raw files do not describe their own layout: use the recording
 writer's format and rate. At this preset, 400 MB of samples represents one second.
+
+Use **File → Open recent** to reopen the ten most recent recordings and sessions
+across launches. Recording entries open the interpretation dialog; session
+entries restore their saved settings. Use **Clear recent files** to reset the list.
 
 ## Recording formats
 
@@ -205,11 +228,13 @@ open while you work in the main window.
 
 | Action | Control |
 | --- | --- |
-| Zoom frequency | Mouse wheel over the spectrum |
-| Pan frequency | Drag the spectrum |
+| Zoom frequency | Mouse wheel over the spectrum or waterfall |
+| Pan frequency | Drag the spectrum or waterfall |
+| Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
+| Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
 | Inspect frequency and power coordinates | Hover over the spectrum |
-| Measure spectrum width and mean power | `Shift` + left-click the start, then the end |
-| Measure waterfall duration | `Shift` + left-click the start row, then the end row |
+| Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
+| Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
 | Move / resize a measurement | `Shift` + drag its shaded band / boundary marker |
 | Clear a plot measurement | `Escape` in that plot |
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
@@ -221,6 +246,19 @@ open while you work in the main window.
 | Zoom time | `Ctrl++` / `Ctrl+-` |
 | Pan time | `Alt+Left` / `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
+
+Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
+Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
+When the time selection shows a slice of the recording, Ctrl dragging moves that
+interval with its width fixed, stopping at the recording bounds. The Start and
+End frame fields update during the drag. Cached rows move immediately, while
+newly exposed data loads in the background during the gesture, preserving
+frequency zoom. Changing the interval clears measurements and frame freeze.
+When showing the whole recording, Ctrl dragging pans rows within the current
+preview. Ordinary dragging and wheel zoom also stay within the preview and
+preserve measurements. Zoom out to restore all its rows, or use the time
+shortcuts to change the analyzed interval. Frequency navigation stays linked
+to the spectra.
 
 The frequency spectrum initially shows the FFT window starting at sample frame
 0. Hovering either time plot selects the corresponding waterfall row, highlights
@@ -253,9 +291,9 @@ and power coordinates labeled on the axes. The status bar also retains the
 exact FFT-bin frequency and power. The crosshair follows the current zoom and
 power scale, works on average and max-hold traces, and hides on pointer exit.
 
-**Shift + left-click twice** inside the spectrum to measure a frequency interval.
-The first click sets the start; moving the pointer previews the end, and the
-second Shift-click completes the measurement. Endpoints snap to the nearest FFT
+**Shift + left-click** inside the spectrum to start measuring a frequency interval.
+Moving the pointer previews the end; **left-click again** to complete the
+measurement, without needing Shift. Endpoints snap to the nearest FFT
 bins. The readout shows both frequencies, their absolute difference, and the
 mean spectral power across all bins between the endpoints, including both ends.
 Power is averaged in linear units before conversion to dB; this is the mean of
@@ -263,10 +301,11 @@ the selected spectral values, rather than integrated signal power. The same
 gesture works on the average and max-hold traces, with the source identified.
 Zero mean power is shown as −∞; invalid data is unavailable.
 
-In the waterfall, **Shift + left-click two rows** to measure elapsed time between
-their window-start sample frames. The readout shows exact frame indices, start
-and end times, and duration calculated from the frame difference and sample
-rate. Sampled previews and aggregated overviews limit how precisely event
+In the waterfall, **Shift + left-click the start row**, then **left-click the end
+row** to measure elapsed time between their window-start sample frames. The
+readout shows exact frame indices, start and end times, and duration calculated
+from the frame difference and sample rate. Sampled previews and aggregated
+overviews limit how precisely event
 boundaries can be located; zoom into the event for finer row spacing. Selecting
 the same row gives zero duration.
 
@@ -418,6 +457,11 @@ ctest --preset release
 ./build/release/croccospectrum
 ```
 
+Source builds show a development version with the commit ID, and `.dirty` for
+modified checkouts. `CMakeLists.txt` holds the next planned release version;
+feature notes remain under `Unreleased` until release preparation. The build
+directory's `BUILD-INFO.json` records the exact build identity.
+
 <details>
 <summary><strong>Build portable release packages</strong></summary>
 
@@ -441,16 +485,17 @@ The bundler records dependency versions, notices, and SHA-256 hashes, and refuse
 to replace an existing generated bundle. Before distribution:
 
 1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-0.1.6-x86_64` there to collect
+   `packaging/sources.py --bundle dist/croccospectrum-VERSION-x86_64` there to collect
    the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.1.6-x86_64` to refresh
+2. Run `packaging/finalize.py --bundle dist/croccospectrum-VERSION-x86_64` to refresh
    documentation, manifests, and binary/source archives.
 3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.1.6-x86_64 OUTPUT.AppImage`.
+   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-VERSION-x86_64 OUTPUT.AppImage`.
    Supply the pinned tool and the verified runtime at
    `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
    it explicitly.
 
+Replace `VERSION` with the generated version in `build/ubuntu24/BUILD-INFO.json`.
 Source archives and license provisions accompany distributed binaries. See
 [Third-party components](docs/THIRD_PARTY.md) for the complete provisions.
 
@@ -458,7 +503,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.1.6 is an early release.** The recorded checks include 167
+**CroccoSpectrum 0.2.0 is an early release.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 

@@ -3,11 +3,10 @@ name: Build, test and package
 on:
   push:
     branches: [devel, main]
+    tags: ['v*']
   pull_request:
     branches: [devel, main]
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -15,17 +14,29 @@ permissions:
 jobs:
   release:
     name: Portable Linux amd64 packages
+    # An App token can trigger a push for the development tags CI creates.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') || !contains(github.ref_name, '-dev.') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       RF_CI_COMMIT: ${{ github.sha }}
+      RF_BUILD_CHANNEL: ${{ startsWith(github.ref, 'refs/tags/') && 'stable' || 'development' }}
+      RF_BUILD_NUMBER: ${{ github.run_number }}
+      RF_CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: Validate stable tag, release notes and main ancestry
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 ci/publish.py validate-tag "$RELEASE_TAG"
       - name: Build, test, package and check supported distributions
         run: bash ci/build.sh release
       - name: Upload runnable AppImage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: CroccoSpectrum-linux-amd64-AppImage
           path: dist/ci/release/packages/*.AppImage
@@ -33,7 +44,7 @@ jobs:
           retention-days: 30
           compression-level: 0
       - name: Upload extract-and-run tarball
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: CroccoSpectrum-linux-amd64-portable
           path: dist/ci/release/packages/*-x86_64.tar.gz
@@ -41,7 +52,7 @@ jobs:
           retention-days: 30
           compression-level: 0
       - name: Upload accompanying application and dependency sources
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: CroccoSpectrum-linux-amd64-sources
           path: dist/ci/release/sources/
@@ -50,7 +61,7 @@ jobs:
           compression-level: 0
       - name: Upload package verification and test reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: reports-release
           path: dist/ci/release/reports/
@@ -58,25 +69,35 @@ jobs:
           retention-days: 30
 
   upload-release:
-    name: Upload GitHub release assets
+    name: Publish verified stable or development release
     needs: release
-    if: github.event_name == 'release'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/devel' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-24.04
+    concurrency:
+      group: release-publish-${{ github.ref == 'refs/heads/devel' && github.run_id || 'stable' }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
+      - name: Check out the built source and release notes
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check release token permissions prerequisite
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_TOKEN" ]] && ! git diff --quiet HEAD origin/main -- .github/workflows; then
+            echo '::error::Publishing this commit requires a RELEASE_TOKEN with Contents and Workflows write permissions, or matching workflow files on main. See docs/CI.md.'
+            exit 1
+          fi
       - name: Download verified build artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: release-assets
-      - name: Upload packages, sources and checksums
+      - name: Upload to a draft and publish when complete
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          gh release upload "$RELEASE_TAG" \
-            release-assets/CroccoSpectrum-linux-amd64-AppImage/*.AppImage \
-            release-assets/CroccoSpectrum-linux-amd64-portable/*-x86_64.tar.gz \
-            release-assets/CroccoSpectrum-linux-amd64-sources/*.tar.gz \
-            release-assets/reports-release/checksums/*.sha256
+        run: python3 ci/publish.py publish

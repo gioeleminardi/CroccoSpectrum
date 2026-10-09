@@ -503,6 +503,20 @@ class CoreTests : public QObject
         QCOMPARE(saved.readAll(), contents);
         QCOMPARE(QDir(directory.path()).entryList(QDir::Files | QDir::Hidden).size(), 1);
     }
+    void recentFilesPreferences()
+    {
+        QTemporaryDir directory;
+        const auto path = directory.filePath("preferences.json");
+        rf::Preferences preferences;
+        preferences.recentFiles = {directory.filePath("signal.iq"),
+                                   directory.filePath("session.rfsession.json")};
+        rf::savePreferences(path, preferences);
+        QCOMPARE(rf::readPreferences(path).recentFiles, preferences.recentFiles);
+        auto legacy = rf::readJsonObject(path);
+        legacy.remove("recent_files");
+        rf::writeJsonAtomic(path, legacy);
+        QVERIFY(rf::readPreferences(path).recentFiles.isEmpty());
+    }
     void strictSettingsAndMetadata()
     {
         QTemporaryDir settingsDirectory;

@@ -1,16 +1,19 @@
 #include "MainWindow.h"
 #include "ImportDialog.h"
+#include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -21,6 +24,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPixmap>
@@ -51,10 +55,29 @@ namespace rf
 {
 namespace
 {
+class DockWidget : public QDockWidget
+{
+  public:
+    using QDockWidget::QDockWidget;
+
+  protected:
+    bool event(QEvent *event) override
+    {
+        const bool handled = QDockWidget::event(event);
+        // Qt can reacquire the dock's mouse grab after a native drag has ended.
+        // Maximized docks skip Qt's resize handler that normally releases it.
+        if (isFloating() && isMaximized() && mouseGrabber() == this &&
+            (event->type() == QEvent::WindowStateChange || event->type() == QEvent::MouseMove ||
+             event->type() == QEvent::MouseButtonRelease))
+            releaseMouse();
+        return handled;
+    }
+};
+
 QDockWidget *dock(QMainWindow *window, const QString &name, const QString &id, QWidget *content,
                   Qt::DockWidgetArea side)
 {
-    auto *panel = new QDockWidget(name, window);
+    auto *panel = new DockWidget(name, window);
     panel->setObjectName(id);
     panel->setWidget(content);
     window->addDockWidget(side, panel);
@@ -127,12 +150,16 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     waveform_->setObjectName("waveformPlot");
     auto *averageContainer = new QWidget(this);
     auto *averageLayout = new QVBoxLayout(averageContainer);
+    averageLayout->setContentsMargins(0, 0, 0, 0);
     averageLabel_ = new QLabel("Run an interval or whole-recording average", this);
     averageLabel_->setWordWrap(true);
     maxHold_ = new QCheckBox("Show max hold instead of average", this);
-    averageLayout->addWidget(averageLabel_);
-    averageLayout->addWidget(maxHold_);
-    averageLayout->addWidget(averagePlot_);
+    auto *averageTextLayout = new QVBoxLayout;
+    averageTextLayout->setContentsMargins(10, 0, 0, 0);
+    averageTextLayout->addWidget(averageLabel_);
+    averageTextLayout->addWidget(maxHold_);
+    averageLayout->addLayout(averageTextLayout);
+    averageLayout->addWidget(averagePlot_, 1);
     averageDock_ =
         dock(this, "Average spectrum", "averageDock", averageContainer, Qt::RightDockWidgetArea);
     averageDock_->hide();
@@ -143,6 +170,31 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                           Qt::RightDockWidgetArea);
     bookmarksDock_->hide();
     buildControls();
+    updateChecker_ = new UpdateChecker(preferences_.updates, this);
+    connect(updateChecker_, &UpdateChecker::settingsChanged, this, &MainWindow::persistPreferences);
+    connect(updateChecker_, &UpdateChecker::finished, this,
+            [this](const QString &version, const QUrl &url, bool manual) {
+                if (version.isEmpty()) {
+                    if (manual)
+                        showUpdateMessage(
+                            "No newer stable release with complete Linux packages is available.");
+                    return;
+                }
+                if (!manual && preferences_.updates.lastNotifiedVersion == version)
+                    return;
+                showUpdateMessage(
+                    QString("CroccoSpectrum %1 is available. You're running %2.\n\n"
+                            "Open the release page to download and install the update.")
+                        .arg(version, RF_VERSION),
+                    url);
+                preferences_.updates.lastNotifiedVersion = version;
+                persistPreferences();
+            });
+    connect(updateChecker_, &UpdateChecker::failed, this,
+            [this](const QString &message, bool manual) {
+                if (manual)
+                    showUpdateMessage("Couldn't check for updates.\n\n" + message);
+            });
     buildMenus();
     connectWorker();
     cursorLabel_ = new QLabel("Cursor: move over a plot", this);
@@ -166,17 +218,76 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         connect(plot, &SpectrumPlot::cursorChanged, cursorLabel_, &QLabel::setText);
         connect(plot, &SpectrumPlot::frequencyRangeChanged, waterfall_,
                 &WaterfallPlot::setFrequencyRange);
+        connect(waterfall_, &WaterfallPlot::frequencyRangeChanged, plot,
+                &SpectrumPlot::setFrequencyRange);
         connect(plot, &SpectrumPlot::measurementActiveChanged, this, [this, plot](bool active) {
             if (active)
                 beginMeasurement(plot);
         });
     }
+    connect(spectrum_, &SpectrumPlot::frequencyHovered, this,
+            [this](double frequency) { waterfall_->setFrequencyCursor(frequency); });
+    connect(spectrum_, &SpectrumPlot::cursorLeft, this,
+            [this] { waterfall_->setFrequencyCursor(std::nullopt); });
     connect(waterfall_, &WaterfallPlot::measurementActiveChanged, this, [this](bool active) {
         if (active)
             beginMeasurement(waterfall_);
     });
     connect(waterfall_, &WaterfallPlot::measurementChanged, this,
             &MainWindow::updateWaterfallSelection);
+    connect(waterfall_, &WaterfallPlot::timeSelectionPanActiveChanged, this, [this](bool active) {
+        if (!recording_)
+            return;
+        if (active) {
+            waterfallPanRange_ = range_;
+            previewTimer_->stop();
+            controller_.cancel();
+            ++generation_;
+            spectrumController_.cancel();
+            ++spectrumGeneration_;
+            setBusy(false);
+        } else if (waterfallPanRange_) {
+            waterfallPanRange_.reset();
+            previewTimer_->stop();
+            if (!busy_ && (!preview_ || preview_->range != range_)) {
+                preserveFrequencyOnPreview_ = true;
+                requestPreview();
+            } else if (!busy_)
+                preserveFrequencyOnPreview_ = false;
+        }
+    });
+    connect(waterfall_, &WaterfallPlot::timeSelectionPanChanged, this, [this](double fraction) {
+        if (!recording_ || !waterfallPanRange_)
+            return;
+        const auto original = *waterfallPanRange_;
+        const auto available = fraction < 0 ? original.begin
+                                           : recording_->frameCount() - original.end;
+        // Subtract integer frame counts before converting, including beyond 2^53.
+        const auto delta = static_cast<std::uint64_t>(std::min(
+            std::round(std::abs(static_cast<long double>(fraction)) * original.size()),
+            static_cast<long double>(available)));
+        const auto begin = fraction < 0 ? original.begin - delta : original.begin + delta;
+        const FrameRange next{begin, begin + original.size()};
+        if (next == range_)
+            return;
+        if (range_ == original) {
+            spectrum_->clearMeasurement();
+            averagePlot_->clear();
+            waterfall_->clearMeasurement();
+            average_.reset();
+            averageLabel_->setText("No current interval result");
+            frameFrozen_ = false;
+            frameCursorVisible_ = false;
+            updateFrameCursors();
+        }
+        range_ = next;
+        updateRanges();
+        waterfall_->setTimeSelectionRange(range_);
+        preserveFrequencyOnPreview_ = true;
+        // Throttle previews without restarting the timer or cancelling work on every move.
+        if (!busy_ && !previewTimer_->isActive())
+            previewTimer_->start();
+    });
     connect(spectrum_, &SpectrumPlot::frequencyRangeChanged, averagePlot_,
             &SpectrumPlot::setFrequencyRange);
     connect(averagePlot_, &SpectrumPlot::frequencyRangeChanged, spectrum_,
@@ -224,6 +335,11 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
         QTimer::singleShot(0, this, [this, settingsError] { reportError(settingsError); });
 }
 
+void MainWindow::startUpdateChecks()
+{
+    updateChecker_->startAutomaticChecks();
+}
+
 void MainWindow::buildMenus()
 {
     auto *file = menuBar()->addMenu("&File");
@@ -236,13 +352,16 @@ void MainWindow::buildMenus()
         if (!path.isEmpty())
             openPath(path);
     });
+    recentFilesMenu_ = file->addMenu("Open recent");
+    recentFilesMenu_->setObjectName("recentFilesMenu");
+    updateRecentFilesMenu();
     auto *reinterpret = file->addAction("Review / change interpretation…");
     connect(reinterpret, &QAction::triggered, this, [this] {
         if (!recording_)
             return;
         ImportDialog dialog(recording_->descriptor().path, recording_->descriptor(), this);
         if (dialog.exec() == QDialog::Accepted)
-            openRecording(dialog.descriptor());
+            openRecording(dialog.descriptor(), {}, openingPath_);
     });
     file->addSeparator();
     auto *sessionOpen = file->addAction("Open session…");
@@ -319,6 +438,20 @@ void MainWindow::buildMenus()
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
     auto *help = menuBar()->addMenu("&Help");
+    auto *updates = help->addAction("Check for updates…");
+    updates->setObjectName("checkForUpdates");
+    connect(updates, &QAction::triggered, this, [this] { updateChecker_->check(); });
+    connect(updateChecker_, &UpdateChecker::checkingChanged, updates, [updates](bool checking) {
+        updates->setEnabled(!checking);
+        updates->setText(checking ? "Checking for updates…" : "Check for updates…");
+    });
+    auto *automaticUpdates = help->addAction("Automatically check for updates");
+    automaticUpdates->setObjectName("automaticUpdateChecks");
+    automaticUpdates->setCheckable(true);
+    automaticUpdates->setChecked(preferences_.updates.automatic);
+    connect(automaticUpdates, &QAction::toggled, updateChecker_,
+            &UpdateChecker::setAutomaticChecking);
+    help->addSeparator();
     auto *shortcuts = help->addAction("Keyboard shortcuts…");
     shortcuts->setObjectName("keyboardShortcuts");
     shortcuts->setShortcut(QKeySequence(Qt::Key_F1));
@@ -334,13 +467,45 @@ void MainWindow::buildMenus()
             "are excluded and counted.\n\n"
             "A sampled waterfall can miss short events. Full averages and Exact waveform process "
             "every required sample/window.\n\n"
-            "Wheel: frequency zoom. Drag spectrum: frequency pan. Hover waterfall/waveform: "
+            "Wheel: frequency zoom in spectra; frequency/time zoom in waterfall. "
+            "Drag: frequency pan in spectra; frequency/time pan in waterfall. "
+            "Ctrl + drag waterfall: pan the selected time slice, or preview rows for the whole "
+            "recording. Hover waterfall/waveform: "
             "inspect the shared frame. Click either plot to freeze/unfreeze it. Double-click: "
             "seek. CSV records analysis settings; sessions preserve interpretation and bookmarks.");
     });
     auto *about = help->addAction("About CroccoSpectrum");
     about->setObjectName("aboutCroccoSpectrum");
     connect(about, &QAction::triggered, this, &MainWindow::showAbout);
+}
+
+void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUrl)
+{
+    if (auto *existing = findChild<QDialog *>("updateDialog"))
+        delete existing;
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName("updateDialog");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle("CroccoSpectrum updates");
+    auto *layout = new QVBoxLayout(dialog);
+    auto *label = new QLabel(message, dialog);
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+    layout->addWidget(label);
+    auto *buttons = new QDialogButtonBox(dialog);
+    auto *dismiss = buttons->addButton("Dismiss", QDialogButtonBox::RejectRole);
+    connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
+    if (!releaseUrl.isEmpty()) {
+        auto *open = buttons->addButton("Open release page", QDialogButtonBox::AcceptRole);
+        open->setObjectName("openUpdateRelease");
+        connect(open, &QPushButton::clicked, dialog, [dialog, releaseUrl] {
+            QDesktopServices::openUrl(releaseUrl);
+            dialog->accept();
+        });
+    }
+    layout->addWidget(buttons);
+    dialog->resize(420, 160);
+    dialog->show();
 }
 
 void MainWindow::showKeyboardShortcuts()
@@ -397,14 +562,16 @@ void MainWindow::showKeyboardShortcuts()
     commands->addStretch();
     auto *plots = new QGroupBox("Plot controls", content);
     auto *plotForm = new QFormLayout(plots);
-    addRow(plotForm, "Shift + left-click twice",
+    addRow(plotForm, "Shift + left-click, then left-click",
            "Measure width / mean power in a spectrum, or duration in the waterfall");
     addRow(plotForm, "Shift + drag band", "Move a spectrum / waterfall measurement");
     addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");
     addRow(plotForm, QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
            "Clear a measurement in the focused plot");
-    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum");
-    addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum");
+    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; frequency and time in waterfall");
+    addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum; frequency and time in waterfall");
+    addRow(plotForm, "Ctrl + left-button drag",
+           "Pan the time selection; pan preview rows when showing the whole recording");
     addRow(plotForm, "Hover", "Inspect coordinates; follow the frame in waterfall / waveform");
     addRow(plotForm, "Left-click", "Freeze / unfreeze the frame in waterfall / waveform");
     addRow(plotForm, "Double-click", "Seek to a frame in waterfall / waveform");
@@ -429,6 +596,29 @@ void MainWindow::showKeyboardShortcuts()
     const auto available = dialog->screen()->availableGeometry();
     dialog->resize(std::min(960, available.width() - 60), std::min(620, available.height() - 80));
     dialog->show();
+}
+
+void MainWindow::updateRecentFilesMenu()
+{
+    recentFilesMenu_->clear();
+    recentFilesMenu_->setEnabled(!preferences_.recentFiles.isEmpty());
+    for (const auto &path : preferences_.recentFiles) {
+        auto *action = recentFilesMenu_->addAction(QDir::toNativeSeparators(path).replace("&", "&&"));
+        action->setData(path);
+        connect(action, &QAction::triggered, this, [this, path] {
+            if (path.endsWith(".rfsession.json"))
+                openSessionPath(path);
+            else
+                openPath(path);
+        });
+    }
+    recentFilesMenu_->addSeparator();
+    auto *clear = recentFilesMenu_->addAction("Clear recent files");
+    connect(clear, &QAction::triggered, this, [this] {
+        preferences_.recentFiles.clear();
+        updateRecentFilesMenu();
+        saveTimer_->start();
+    });
 }
 
 void MainWindow::showAbout()
@@ -514,7 +704,8 @@ void MainWindow::buildControls()
     palette_->setObjectName("waterfallPalette");
     palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo", "Baudline"});
     autoRange_ = new QCheckBox("Automatic range (80 dB span)", this);
-    absoluteFrequency_ = new QCheckBox("Absolute frequency, when known", this);
+    absoluteFrequency_ = new QCheckBox("Absolute frequency", this);
+    absoluteFrequency_->setObjectName("absoluteFrequency");
     waveformMode_ = new QComboBox(this);
     waveformMode_->addItems({"I/Q", "Magnitude", "I only"});
     colorForm->addRow("Minimum", colorMin_);
@@ -657,6 +848,11 @@ void MainWindow::connectWorker()
                     QJsonDocument(recordingToJson(descriptor)).toJson(QJsonDocument::Indented)));
                 setWindowTitle(QFileInfo(descriptor.path).fileName() + " — CroccoSpectrum");
                 preferences_.importDefaults = descriptor;
+                preferences_.recentFiles.removeAll(openingPath_);
+                preferences_.recentFiles.prepend(openingPath_);
+                while (preferences_.recentFiles.size() > 10)
+                    preferences_.recentFiles.removeLast();
+                updateRecentFilesMenu();
                 if (restoringSession_) {
                     if (!restoringSession_->sourceIdentity.isEmpty() &&
                         restoringSession_->sourceIdentity != recording_->identity())
@@ -664,8 +860,11 @@ void MainWindow::connectWorker()
                                     "the current file");
                     bookmarks_ = restoringSession_->bookmarks;
                     restoringSession_.reset();
-                } else
+                } else {
                     bookmarks_ = descriptor.annotations;
+                    if (descriptor.hasFrequencyAt(range_.begin))
+                        absoluteFrequency_->setChecked(true);
+                }
                 bookmarksList_->clear();
                 for (const auto &mark : bookmarks_)
                     bookmarksList_->addItem(
@@ -681,16 +880,21 @@ void MainWindow::connectWorker()
                 ++spectrumGeneration_;
                 preview_ = std::move(result);
                 spectrumFrame_ = preview_->spectrumStart;
-                waterfall_->setPreview(preview_, recording_->descriptor().sampleRate);
+                const bool preserveFrequency = preserveFrequencyOnPreview_ || waterfallPanRange_;
+                waterfall_->setPreview(preview_, recording_->descriptor().sampleRate,
+                                       !preserveFrequency);
                 waveformResult_ = std::make_shared<WaveformResult>(preview_->waveform);
                 waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
                                        recording_->descriptor().format.kind);
-                displaySpectrum(preview_, true);
+                displaySpectrum(preview_, !preserveFrequency);
+                preserveFrequencyOnPreview_ = preserveFrequency && preview_->range != range_;
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
                     "ENBW shown in CSV/numeric results",
                     QString("ENBW: %1 Hz").arg(number(preview_->spectrum.enbwHz))));
                 setBusy(false, "Preview ready");
+                if (preserveFrequencyOnPreview_ && !previewTimer_->isActive())
+                    previewTimer_->start();
                 emit analysisDisplayed();
             });
     connect(&spectrumController_, &AnalysisController::previewReady, this,
@@ -787,10 +991,17 @@ void MainWindow::openPath(const QString &path)
     defaults.metadataSource = "User import";
     ImportDialog dialog(path, defaults, this);
     if (dialog.exec() == QDialog::Accepted)
-        openRecording(dialog.descriptor());
+        openRecording(dialog.descriptor(), {}, path);
 }
 
 void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
+{
+    const auto sourcePath = descriptor.path;
+    openRecording(std::move(descriptor), range, sourcePath);
+}
+
+void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
+                               const QString &sourcePath)
 {
     try {
         descriptor.validate();
@@ -798,6 +1009,7 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
         previewTimer_->stop();
         clearMeasurements();
         recording_.reset();
+        openingPath_ = QFileInfo(sourcePath).absoluteFilePath();
         generation_ = controller_.open(std::move(descriptor), preferences_.dsp, range);
         setBusy(true, "Opening recording…");
     } catch (const std::exception &error) {
@@ -807,6 +1019,8 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range)
 
 void MainWindow::clearMeasurements()
 {
+    waterfallPanRange_.reset();
+    preserveFrequencyOnPreview_ = false;
     spectrumController_.cancel();
     ++spectrumGeneration_;
     spectrumFrame_.reset();
@@ -1070,6 +1284,7 @@ void MainWindow::updateRanges()
     start_->setText(QString::number(range_.begin));
     end_->setText(QString::number(range_.end));
     if (recording_) {
+        waterfall_->setTimeSelectionPanEnabled(range_.size() < recording_->frameCount());
         const QSignalBlocker blocker(timeline_);
         timeline_->setValue(static_cast<int>(static_cast<long double>(range_.begin) /
                                              recording_->frameCount() * 100000));
@@ -1285,7 +1500,7 @@ void MainWindow::openSessionPath(const QString &path)
         restoringSession_ = session;
         sessionPath_ = path;
         preferences_.lastSession = path;
-        openRecording(session.recording, session.range);
+        openRecording(session.recording, session.range, path);
     } catch (const std::exception &error) {
         reportError(QString::fromUtf8(error.what()));
     }
@@ -1365,6 +1580,7 @@ void MainWindow::reportError(const QString &text)
 }
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    updateChecker_->stop();
     previewTimer_->stop();
     controller_.cancel();
     spectrumController_.cancel();

@@ -2,6 +2,7 @@
 #include "Plots.h"
 #include "app/AnalysisController.h"
 #include <QMainWindow>
+#include <QUrl>
 class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
@@ -14,9 +15,11 @@ class QProgressBar;
 class QDockWidget;
 class QListWidget;
 class QTimer;
+class QMenu;
 
 namespace rf
 {
+class UpdateChecker;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -26,6 +29,8 @@ class MainWindow : public QMainWindow
     // explicit --accept-defaults CLI option; normal File/Open reviews import.
     void openRecording(RecordingDescriptor descriptor, FrameRange range = {});
     void openPath(const QString &path);
+    // Explicitly started by normal GUI launches; tests/automation stay offline.
+    void startUpdateChecks();
     [[nodiscard]] std::shared_ptr<const PreviewResult> previewResult() const { return preview_; }
     [[nodiscard]] std::shared_ptr<const PreviewResult> spectrumResult() const
     {
@@ -43,8 +48,11 @@ class MainWindow : public QMainWindow
 
   private:
     void buildMenus();
+    void updateRecentFilesMenu();
+    void openRecording(RecordingDescriptor descriptor, FrameRange range, const QString &sourcePath);
     void showAbout();
     void showKeyboardShortcuts();
+    void showUpdateMessage(const QString &message, const QUrl &releaseUrl = {});
     void buildControls();
     void connectWorker();
     void applyPreferences();
@@ -85,6 +93,7 @@ class MainWindow : public QMainWindow
     Preferences preferences_;
     QString preferencesPath_;
     QString sessionPath_;
+    QString openingPath_;
     std::optional<Session> restoringSession_;
     std::vector<Annotation> bookmarks_;
     std::shared_ptr<Recording> recording_;
@@ -93,6 +102,8 @@ class MainWindow : public QMainWindow
     std::shared_ptr<const AverageResult> average_;
     std::shared_ptr<const WaveformResult> waveformResult_;
     FrameRange range_;
+    std::optional<FrameRange> waterfallPanRange_;
+    bool preserveFrequencyOnPreview_ = false;
     quint64 generation_ = 0;
     quint64 spectrumGeneration_ = 0;
     std::optional<std::uint64_t> spectrumFrame_;
@@ -102,6 +113,7 @@ class MainWindow : public QMainWindow
     bool applying_ = false;
     AnalysisController controller_;
     AnalysisController spectrumController_;
+    UpdateChecker *updateChecker_;
     SpectrumPlot *spectrum_, *averagePlot_;
     WaterfallPlot *waterfall_;
     WaveformPlot *waveform_;
@@ -117,5 +129,6 @@ class MainWindow : public QMainWindow
     QProgressBar *progress_;
     QListWidget *bookmarksList_;
     QTimer *previewTimer_, *saveTimer_;
+    QMenu *recentFilesMenu_;
 };
 } // namespace rf

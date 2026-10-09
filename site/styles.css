@@ -117,6 +117,12 @@ h3 { font-weight: 600; letter-spacing: -.025em; }
 .release-links a { display: inline-flex; align-items: center; gap: 7px; }
 .release-links .icon { width: 15px; height: 15px; }
 .no-script { margin-top: 20px; color: var(--muted); text-align: center; }
+.development-download { max-width: 840px; margin: 40px auto 0; padding-top: 32px; border-top: 1px solid var(--border); text-align: center; }
+.development-download h3 { font-size: 23px; }
+.development-download > p { margin-top: 14px; color: var(--muted); font-size: 13px; }
+.development-download .download-grid { margin-top: 22px; }
+.development-download .button { display: flex; }
+.package-meta { overflow-wrap: anywhere; }
 .getting-started { display: grid; grid-template-columns: 1fr 1.1fr; gap: 80px; }
 .getting-started h2 { margin-top: 18px; }
 .getting-started .text-link { margin-top: 28px; color: var(--cyan); }

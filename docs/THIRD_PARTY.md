@@ -2,11 +2,13 @@
 
 Application: GPL-3.0-or-later (`LICENSE`).
 
-- Qt 6.11.2 Core/Gui/Widgets and needed platform/image modules: use applicable
+- Qt 6.11.2 Core/Gui/Widgets/Network and needed platform/image/TLS modules: use applicable
   LGPL/GPL options and retain module/third-party notices. Shared libraries are
   bundled and replaceable; the application source/build instructions are provided.
 - FFTW 3.3.10: GPL-2.0-or-later (compatible with the application GPLv3 choice).
 - ICU 73.2 from the Qt SDK: Unicode/ICU license.
+- OpenSSL 3 from Ubuntu: Apache-2.0; the TLS backend's runtime libraries are
+  bundled explicitly, with package notices and matching sources.
 - DejaVu Sans: its font notices accompany bundled fonts.
 - AppImage type-2 runtime: pinned commit and binary checksum in the manifest.
   The accompanying source includes its FUSE patches/build scripts; libfuse

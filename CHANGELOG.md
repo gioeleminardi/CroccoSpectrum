@@ -4,6 +4,44 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.2.0 — 2026-10-09 — Update notifications and plot navigation
+
+- Identify development builds with the planned release version, CI build number,
+  and source commit in the application, exports, packages, and build manifests.
+  Publish verified `devel` pushes as distinct GitHub prereleases and stable tags
+  as releases after all packages, sources, and checksums are ready. Offer stable
+  and development downloads separately on the website; development applications
+  recognize the corresponding final stable release as an update.
+- Add automatic stable-release checks and update notifications with a release
+  page link for manual installation. Help actions check on demand or disable
+  automatic checks; incomplete release uploads, offline failures, and rate
+  limits are handled without interrupting analysis. Bundle Qt Network's TLS
+  backend and OpenSSL runtime libraries in Linux packages.
+- Add File → Open recent for the ten most recently opened recordings and
+  sessions, with history saved across launches and a Clear recent files action.
+  Metadata recordings reopen through their original metadata file.
+- Automatically enable absolute-frequency display when opening or changing a
+  recording interpretation with a known center frequency. Rename the display
+  checkbox to `Absolute frequency`.
+- Round spectrum crosshair frequency labels and cursor status readouts to the
+  nearest whole Hz.
+- Extend the spectrum's vertical frequency cursor through the waterfall to
+  correlate signals across both plots. Keep it aligned during zooming and
+  resizing, and clear it when the spectrum cursor disappears.
+- Add mouse-wheel zoom around the pointer and left-drag pan for both frequency
+  and time in the waterfall. Keep frequency navigation linked to the spectra
+  and time navigation within the current preview, preserving measurements,
+  click-to-freeze, and double-click seeking. Hold Ctrl when starting a drag to
+  pan only time without changing the frequency range. For a selected recording
+  slice, move the interval with its width fixed and update the Start/End fields
+  live. Move cached rows immediately and refresh newly exposed data in the
+  background while dragging, preserving frequency zoom and the active gesture.
+  Clamp the interval to the recording bounds; whole-recording views pan preview
+  rows instead.
+- Complete spectrum and waterfall measurements with a plain left-click after
+  Shift-clicking the start. Update plot hints and the keyboard shortcuts
+  cheatsheet to describe the gesture.
+
 ## 0.1.6 — 2026-10-08 — Partial recording import
 
 - Add Open partial / growing file in the import dialog and `--partial` in the
