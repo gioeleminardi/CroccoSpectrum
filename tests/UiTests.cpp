@@ -1422,6 +1422,7 @@ class UiTests : public QObject
         const auto preferences = directory.filePath("preferences.json");
         rf::savePreferences(preferences, saved);
         rf::MainWindow window(nullptr, preferences);
+        window.findChild<QDockWidget *>("waveformDock")->show();
         window.show();
         QTest::mouseMove(&window, QPoint(5, 5));
         window.openRecording(toneRecording(directory.filePath("tones.iq"), {32, 64, 96}));
@@ -1562,6 +1563,7 @@ class UiTests : public QObject
         const auto preferences = directory.filePath("preferences.json");
         rf::savePreferences(preferences, saved);
         rf::MainWindow window(nullptr, preferences);
+        window.findChild<QDockWidget *>("waveformDock")->show();
         window.show();
         QTest::mouseMove(&window, QPoint(5, 5));
         window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
@@ -1662,6 +1664,7 @@ class UiTests : public QObject
         rf::RecordingDescriptor descriptor;
         descriptor.path = file.fileName();
         rf::MainWindow window(nullptr, preferences);
+        window.findChild<QDockWidget *>("waveformDock")->show();
         window.show();
         QTest::mouseMove(&window, QPoint(5, 5));
         window.openRecording(descriptor);

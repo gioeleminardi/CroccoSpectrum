@@ -165,6 +165,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     averageDock_->hide();
     waveformDock_ =
         dock(this, "Baseband waveform", "waveformDock", waveform_, Qt::BottomDockWidgetArea);
+    waveformDock_->hide();
     bookmarksList_ = new QListWidget(this);
     bookmarksDock_ = dock(this, "Bookmarks / SigMF annotations", "bookmarksDock", bookmarksList_,
                           Qt::RightDockWidgetArea);

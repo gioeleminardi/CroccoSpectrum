@@ -6,6 +6,16 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Hide the Baseband waveform panel by default. Enable it from View → Baseband
+  waveform or run an Exact waveform analysis; saved workspace visibility is
+  preserved.
+- Add Help → Plot controls with spectrum, waterfall, and waveform gesture
+  instructions in a dialog that can stay open while working. Remove plot hover
+  tooltips and display waveform time-range labels to three decimal places.
+- Align the average spectrum plot with the waterfall and keep its label and
+  max-hold checkbox compact across window sizes and restored workspaces.
+- Fix maximized floating panels retaining the mouse grab after a dock drag,
+  keeping the rest of the application responsive.
 - Open the CroccoSpectrum website from update notifications, and defer browser
   launch until the dialog is destroyed so Wayland can complete the request.
   Show a copyable URL if the browser launch request fails.
