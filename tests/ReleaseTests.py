@@ -138,6 +138,80 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("- Final feature.", self.release["body"])
         self.assertEqual(self.calls[-1][2], {"draft": False, "make_latest": "false"})
 
+    def test_development_release_falls_back_to_matching_version_notes(self):
+        self.changelog = ("## 0.2.0 — 2026-10-09\n\n- Final feature.\n\n"
+                          "## 0.1.6 — 2026-10-08\n\n- Older feature.\n")
+        self.latest = {"tag_name": "v0.1.6"}
+        self.publish()
+        self.assertFalse(self.release["draft"])
+        self.assertTrue(self.release["prerelease"])
+        self.assertEqual(self.release["make_latest"], "false")
+        self.assertIn("- Final feature.", self.release["body"])
+        self.assertNotIn("- Older feature.", self.release["body"])
+
+    def test_development_release_requires_nonempty_matching_version_notes(self):
+        for changelog in ("## 0.1.6\n\n- Older feature.\n", "## 0.2.0\n\n"):
+            with self.subTest(changelog=changelog):
+                self.changelog = changelog
+                with self.assertRaisesRegex(ValueError, "nonempty '0[.]2[.]0' section"):
+                    self.publish()
+                self.assertIsNone(self.ref)
+                self.assertIsNone(self.release)
+                self.upload.assert_not_called()
+
+    def test_development_release_rejects_empty_unreleased_notes(self):
+        self.changelog = "## Unreleased\n\n## 0.2.0\n\n- Final feature.\n"
+        with self.assertRaisesRegex(ValueError, "nonempty 'Unreleased' section"):
+            self.publish()
+        self.assertIsNone(self.ref)
+        self.assertIsNone(self.release)
+        self.upload.assert_not_called()
+
+    def test_release_notes_include_versions_since_latest_stable(self):
+        for channel, heading in (("stable", "0.3.1"),
+                                 ("development", "Unreleased"),
+                                 ("development", "0.3.1")):
+            with self.subTest(channel=channel, heading=heading):
+                self.ref = self.release = None
+                version = "0.3.1" if channel == "stable" else "0.3.1-dev.184.g233be51"
+                self.info.update(base_version="0.3.1", version=version, channel=channel)
+                self.make_assets()
+                self.latest = {"tag_name": "v0.2.0"}
+                self.changelog = (f"## {heading}\n\n- Current feature.\n\n"
+                                  "## 0.4.0\n\n- Future feature.\n\n"
+                                  "## 0.3.0 — 2026-10-09 — Faster analysis\n\n- Skipped feature.\n\n"
+                                  "## 0.2.0\n\n- Published feature.\n\n"
+                                  "## 0.1.6\n\n- Older feature.\n")
+                self.publish()
+                body = self.release["body"]
+                self.assertIn("- Current feature.", body)
+                self.assertIn("## 0.3.0 — 2026-10-09 — Faster analysis", body)
+                self.assertIn("- Skipped feature.", body)
+                self.assertNotIn("- Future feature.", body)
+                self.assertNotIn("- Published feature.", body)
+                self.assertNotIn("- Older feature.", body)
+                self.assertLess(body.index("- Current feature."), body.index("- Skipped feature."))
+                self.assertEqual(self.release["prerelease"], channel == "development")
+
+    def test_first_release_includes_earlier_changelog_sections(self):
+        self.info.update(channel="stable", version="0.2.0")
+        self.make_assets()
+        self.changelog += "\n## 0.1.6\n\n- Earlier feature.\n"
+        self.publish()
+        self.assertIn("- Final feature.", self.release["body"])
+        self.assertIn("- Earlier feature.", self.release["body"])
+        self.assertNotIn("- New feature.", self.release["body"])
+
+    def test_stable_release_requires_numbered_notes(self):
+        self.info.update(channel="stable", version="0.2.0")
+        self.make_assets()
+        self.changelog = "## Unreleased\n\n- New feature.\n"
+        with self.assertRaisesRegex(ValueError, "nonempty '0[.]2[.]0' section"):
+            self.publish()
+        self.assertIsNone(self.ref)
+        self.assertIsNone(self.release)
+        self.upload.assert_not_called()
+
     def test_failed_upload_remains_a_draft_and_can_be_retried(self):
         self.upload.side_effect = subprocess.CalledProcessError(1, "gh release upload")
         with self.assertRaises(subprocess.CalledProcessError):
@@ -194,6 +268,19 @@ class PublicationTests(unittest.TestCase):
         self.latest = {"tag_name": "v0.1.6"}
         self.publish()
         self.assertEqual(self.release["make_latest"], "true")
+
+    def test_newer_stable_release_published_during_upload_remains_latest(self):
+        self.info.update(channel="stable", version="0.2.0")
+        self.make_assets()
+        self.latest = {"tag_name": "v0.1.6"}
+
+        def upload_with_newer_release(command, **kwargs):
+            self.upload_files(command, **kwargs)
+            self.latest = {"tag_name": "v0.3.0"}
+
+        self.upload.side_effect = upload_with_newer_release
+        self.publish()
+        self.assertEqual(self.release["make_latest"], "false")
 
     def test_stable_tag_requires_matching_version_notes_and_main(self):
         root = self.assets

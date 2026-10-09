@@ -107,7 +107,19 @@ def publish(assets, changelog, repository):
         require_uploaded(existing, files)
         print(f"{tag} is already published; keeping its original assets")
         return
-    notes = changelog_section(changelog, "Unreleased" if development else info["base_version"])
+    heading = info["base_version"]
+    if development and re.search(r"^## Unreleased(?:[ \t][^\n]*)?\n", changelog, re.MULTILINE):
+        heading = "Unreleased"
+    notes = changelog_section(changelog, heading)
+    version_key = lambda value: tuple(map(int, value.removeprefix("v").split(".")))
+    current_version = version_key(info["base_version"])
+    previous = api(f"{prefix}/releases/latest", missing_ok=True)
+    previous_version = version_key(previous["tag_name"]) if previous else None
+    for section in re.finditer(r"^## ([0-9]+\.[0-9]+\.[0-9]+)(?:[ \t][^\n]*)?\n.*?(?=^## |\Z)",
+                               changelog, re.MULTILINE | re.DOTALL):
+        version = version_key(section[1])
+        if version < current_version and (previous_version is None or version > previous_version):
+            notes += "\n\n" + section[0].strip()
     body = (f"{'Development build from devel' if development else 'Stable release'}\n\n"
             f"Version: {expected}\nCommit: {commit}\nBuild date: {info['built_at']}\n"
             f"CI run: {info['run_url']}\n\n{notes}\n")
@@ -127,7 +139,6 @@ def publish(assets, changelog, repository):
     latest = api(f"{prefix}/releases/latest", missing_ok=True) if not development else None
     make_latest = "false"
     if not development:
-        version_key = lambda value: tuple(map(int, value.removeprefix("v").split(".")))
         if latest is None or version_key(tag) > version_key(latest["tag_name"]):
             make_latest = "true"
     api(f"{prefix}/releases/{release['id']}", "PATCH",
