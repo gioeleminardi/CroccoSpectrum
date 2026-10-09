@@ -128,7 +128,7 @@ class MainWindow : public QMainWindow
     QDockWidget *controlsDock_, *averageDock_, *waveformDock_, *bookmarksDock_;
     QComboBox *fft_, *window_, *scale_, *palette_, *waveformMode_;
     QSpinBox *overlap_;
-    QCheckBox *removeDc_, *conjugate_, *autoRange_, *absoluteFrequency_, *maxHold_;
+    QCheckBox *removeDc_, *conjugate_, *autoRange_, *waterfallAutoRangeOnZoom_, *absoluteFrequency_, *maxHold_;
     QDoubleSpinBox *colorMin_, *colorMax_;
     QLineEdit *start_, *end_, *seekTime_;
     QSlider *timeline_;

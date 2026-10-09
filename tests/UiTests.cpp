@@ -431,6 +431,84 @@ class UiTests : public QObject
             QVERIFY(plot.grab().save(screenshots + "/baudline-palette.png"));
         }
     }
+    void waterfallColorRangeOnZoom_data()
+    {
+        QTest::addColumn<bool>("adaptive");
+        QTest::newRow("adaptive") << true;
+        QTest::newRow("fixed") << false;
+    }
+    void waterfallColorRangeOnZoom()
+    {
+        QFETCH(bool, adaptive);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto full = std::make_shared<rf::PreviewResult>();
+        full->range = {0, 200};
+        full->frequencies = {0, 1, 2};
+        full->columns = 3;
+        full->rowStarts = {0, 100};
+        full->waterfall = {1, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6};
+        plot.setPreview(full, 100);
+        rf::ViewSettings view;
+        view.autoRange = true;
+        view.waterfallAutoRangeOnZoom = adaptive;
+        view.palette = "Grayscale";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        plot.show();
+        moveMouse(&plot, QPoint(10, 10));
+        const auto pixel = [&plot] {
+            const auto image = plot.grab().toImage();
+            return image.pixelColor(qRound(490 * image.devicePixelRatio()),
+                                    qRound(92 * image.devicePixelRatio()));
+        };
+        const auto originalNoise = pixel();
+        QCOMPARE(originalNoise, QColor(61, 61, 61));
+        // Both time and frequency zoom exclude the strong signal.
+        plot.setRecordingExtent({0, 200}, 1);
+        plot.setViewport({100, 200});
+        plot.setFrequencyRange(1, 3);
+        auto noise = std::make_shared<rf::PreviewResult>(*full);
+        noise->range = {100, 200};
+        noise->waterfallBand = std::pair{1.0, 3.0};
+        noise->columns = 2;
+        noise->rowStarts = {100, 150};
+        noise->waterfall.assign(4, 1e-6);
+        plot.setDetail(noise);
+        QCOMPARE(pixel(), adaptive ? QColor(246, 246, 246) : originalNoise);
+        // Switching the option applies immediately and can freeze the zoomed limits.
+        view.waterfallAutoRangeOnZoom = true;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        QCOMPARE(pixel(), QColor(246, 246, 246));
+        view.waterfallAutoRangeOnZoom = false;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        auto pending = std::make_shared<rf::PreviewResult>(*noise);
+        pending->complete = false;
+        pending->waterfall.assign(4, qQNaN());
+        plot.setDetail(pending);
+        QCOMPARE(pixel(), QColor(30, 43, 58));
+        plot.setDetail(noise);
+        QCOMPARE(pixel(), QColor(246, 246, 246));
+        auto quieter = std::make_shared<rf::PreviewResult>(*noise);
+        quieter->waterfall.assign(4, 1e-8);
+        plot.setDetail(quieter);
+        QCOMPARE(pixel(), QColor(184, 184, 184));
+        // An exact overview and a palette change retain the same limits.
+        plot.setPreview(quieter, 100, false);
+        view.palette = "Baudline";
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        QCOMPARE(pixel(), QColor(0, 180, 124));
+        view.palette = "Grayscale";
+        view.autoRange = false;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        QCOMPARE(pixel(), QColor(51, 51, 51));
+        view.autoRange = true;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        QCOMPARE(pixel(), QColor(246, 246, 246));
+        // Loading a new analysis context establishes a new fixed range.
+        plot.clear();
+        plot.setPreview(full, 100);
+        QCOMPARE(pixel(), originalNoise);
+    }
     void spectrumCrosshair()
     {
         rf::SpectrumPlot plot;
@@ -2413,6 +2491,14 @@ class UiTests : public QObject
         palette->setCurrentText("Viridis");
         palette->setCurrentText("Baudline");
         window.findChild<QDoubleSpinBox *>("colorMinimum")->setValue(-80);
+        auto *automaticRange = window.findChild<QCheckBox *>("automaticRange");
+        auto *adaptColors = window.findChild<QCheckBox *>("waterfallAutoRangeOnZoom");
+        QVERIFY(automaticRange && adaptColors);
+        QVERIFY(adaptColors->isChecked());
+        QVERIFY(!adaptColors->isEnabled());
+        automaticRange->setChecked(true);
+        QVERIFY(adaptColors->isEnabled());
+        adaptColors->setChecked(false);
         QTest::qWait(250);
         QCOMPARE(window.previewResult(), before); // Palette-only editing must not run DSP.
         auto *fft = window.findChild<QComboBox *>("fftSize");
@@ -2433,7 +2519,9 @@ class UiTests : public QObject
         QCOMPARE(preferences.dsp.fftSize, 2048);
         QCOMPARE(preferences.view.colorMin, -80.0);
         QCOMPARE(preferences.view.palette, QString("Baudline"));
+        QVERIFY(!preferences.view.waterfallAutoRangeOnZoom);
         rf::MainWindow restored(nullptr, directory.filePath("preferences.json"));
+        QVERIFY(!restored.findChild<QCheckBox *>("waterfallAutoRangeOnZoom")->isChecked());
         QCOMPARE(restored.findChild<QComboBox *>("waterfallPalette")->currentText(),
                  QString("Baudline"));
     }

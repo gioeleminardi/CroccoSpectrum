@@ -142,6 +142,7 @@ class WaterfallPlot : public QWidget
     void rememberMeasurement();
     std::shared_ptr<const PreviewResult> result_;
     QImage image_;
+    std::optional<std::pair<double, double>> colorRange_;
     ViewSettings view_;
     PowerScale scale_ = PowerScale::Spectrum;
     int hoveredRow_ = -1;

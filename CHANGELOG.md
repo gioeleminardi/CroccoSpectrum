@@ -6,6 +6,8 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add a saved Display option to adapt waterfall colors on zoom or keep the
+  current automatic color limits fixed across zoom, pan, and minimap navigation.
 - Increase waterfall detail using physical viewport pixels and visible FFT bins,
   with bounded asynchronous refinement and explicit sampling/aggregation labels.
 - Add a progressively populated whole-recording waterfall minimap with a movable

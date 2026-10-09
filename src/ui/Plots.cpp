@@ -163,9 +163,10 @@ FrameRange shiftedViewport(FrameRange range, long double delta, FrameRange exten
     return {range.begin + shift, range.end + shift};
 }
 
-QImage waterfallImage(const PreviewResult &result, const ViewSettings &view)
+QImage waterfallImage(const PreviewResult &result, const ViewSettings &view,
+                      std::pair<double, double> limits)
 {
-    const auto [minimum, maximum] = colorLimits(view, result.waterfall);
+    const auto [minimum, maximum] = limits;
     std::array<QRgb, 4096> colors;
     for (std::size_t index = 0; index < colors.size(); ++index)
         colors[index] = paletteColor(view.palette, static_cast<double>(index) / (colors.size() - 1));
@@ -688,6 +689,8 @@ void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, doub
     const double bottomFraction = !resetFrequency && rows > 0 ? bottom_ / rows : 1;
     result_ = std::move(result);
     hoveredRow_ = -1;
+    if (resetFrequency)
+        colorRange_.reset();
     frameFrozen_ = false;
     sampleRate_ = sampleRate;
     const double newRows = result_ ? static_cast<double>(result_->rowStarts.size()) : 1;
@@ -775,8 +778,11 @@ void WaterfallPlot::setTimeSelectionRange(FrameRange range)
 }
 void WaterfallPlot::setView(ViewSettings view, PowerScale scale, double centerFrequency)
 {
+    if (view_.autoRange != view.autoRange || scale_ != scale)
+        colorRange_.reset();
     const bool recolor = view_.colorMin != view.colorMin || view_.colorMax != view.colorMax ||
-                         view_.autoRange != view.autoRange || view_.palette != view.palette;
+                         view_.autoRange != view.autoRange || view_.palette != view.palette ||
+                         view_.waterfallAutoRangeOnZoom != view.waterfallAutoRangeOnZoom || scale_ != scale;
     view_ = std::move(view);
     scale_ = scale;
     center_ = centerFrequency;
@@ -825,6 +831,7 @@ void WaterfallPlot::clear()
     hoveredRow_ = -1;
     frameFrozen_ = false;
     image_ = {};
+    colorRange_.reset();
     frequencyCursor_.reset();
     update();
 }
@@ -866,8 +873,11 @@ QString WaterfallPlot::measurementText() const
 }
 void WaterfallPlot::rebuildImage()
 {
-    if (result_)
-        image_ = waterfallImage(*result_, view_);
+    if (result_) {
+        if (!colorRange_ || !view_.autoRange || view_.waterfallAutoRangeOnZoom)
+            colorRange_ = colorLimits(view_, result_->waterfall);
+        image_ = waterfallImage(*result_, view_, *colorRange_);
+    }
 }
 void WaterfallPlot::paintEvent(QPaintEvent *)
 {
@@ -927,7 +937,7 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
                          Qt::AlignRight | Qt::AlignVCenter,
                          QString::number(time * timeScale, 'g', 5));
     }
-    const auto [minimum, maximum] = colorLimits(view_, result_->waterfall);
+    const auto [minimum, maximum] = *colorRange_;
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("Time (%6) · %1 rows · %2 … %3 %4 · %5")
                          .arg(result_->rowStarts.size())
@@ -1392,7 +1402,7 @@ void WaterfallMinimap::clear()
 void WaterfallMinimap::rebuildImage()
 {
     if (result_)
-        image_ = waterfallImage(*result_, view_);
+        image_ = waterfallImage(*result_, view_, colorLimits(view_, result_->waterfall));
 }
 std::uint64_t WaterfallMinimap::frameAt(double y) const
 {

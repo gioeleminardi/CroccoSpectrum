@@ -774,6 +774,12 @@ void MainWindow::buildControls()
     palette_->setObjectName("waterfallPalette");
     palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo", "Baudline"});
     autoRange_ = new QCheckBox("Automatic range (80 dB span)", this);
+    autoRange_->setObjectName("automaticRange");
+    waterfallAutoRangeOnZoom_ = new QCheckBox("Adapt waterfall colors on zoom", this);
+    waterfallAutoRangeOnZoom_->setObjectName("waterfallAutoRangeOnZoom");
+    waterfallAutoRangeOnZoom_->setToolTip(
+        "With Automatic range enabled, recalculate the waterfall color limits as you zoom or pan. "
+        "Turn off to keep the current limits until the recording, analysis range, or DSP settings change.");
     absoluteFrequency_ = new QCheckBox("Absolute frequency", this);
     absoluteFrequency_->setObjectName("absoluteFrequency");
     waveformMode_ = new QComboBox(this);
@@ -782,6 +788,7 @@ void MainWindow::buildControls()
     colorForm->addRow("Maximum", colorMax_);
     colorForm->addRow("Palette", palette_);
     colorForm->addRow(autoRange_);
+    colorForm->addRow(waterfallAutoRangeOnZoom_);
     colorForm->addRow(absoluteFrequency_);
     colorForm->addRow("Waveform", waveformMode_);
     layout->addWidget(colors);
@@ -885,7 +892,7 @@ void MainWindow::buildControls()
         connect(check, &QCheckBox::toggled, this, &MainWindow::updateDsp);
     for (auto *combo : {palette_, waveformMode_})
         connect(combo, &QComboBox::currentIndexChanged, this, &MainWindow::updateView);
-    for (auto *check : {autoRange_, absoluteFrequency_})
+    for (auto *check : {autoRange_, waterfallAutoRangeOnZoom_, absoluteFrequency_})
         connect(check, &QCheckBox::toggled, this, &MainWindow::updateView);
     for (auto *spin : {colorMin_, colorMax_})
         connect(spin, &QDoubleSpinBox::valueChanged, this, &MainWindow::updateView);
@@ -1101,6 +1108,7 @@ void MainWindow::applyPreferences()
     colorMax_->setValue(preferences_.view.colorMax);
     palette_->setCurrentText(preferences_.view.palette);
     autoRange_->setChecked(preferences_.view.autoRange);
+    waterfallAutoRangeOnZoom_->setChecked(preferences_.view.waterfallAutoRangeOnZoom);
     absoluteFrequency_->setChecked(preferences_.view.absoluteFrequency);
     waveformMode_->setCurrentIndex(preferences_.view.waveformMode);
     applying_ = false;
@@ -1425,6 +1433,8 @@ void MainWindow::updateView()
     view.colorMax = colorMax_->value();
     view.palette = palette_->currentText();
     view.autoRange = autoRange_->isChecked();
+    view.waterfallAutoRangeOnZoom = waterfallAutoRangeOnZoom_->isChecked();
+    waterfallAutoRangeOnZoom_->setEnabled(view.autoRange);
     view.absoluteFrequency = absoluteFrequency_->isChecked();
     view.waveformMode = waveformMode_->currentIndex();
     try {

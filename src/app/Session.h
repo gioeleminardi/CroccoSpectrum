@@ -12,6 +12,7 @@ struct ViewSettings {
     double colorMax = 0;
     QString palette = "Baudline";
     bool autoRange = false;
+    bool waterfallAutoRangeOnZoom = true;
     bool absoluteFrequency = false;
     int waveformMode = 0; // 0: I/Q, 1: magnitude, 2: I only.
     void validate() const;

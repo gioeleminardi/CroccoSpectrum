@@ -74,6 +74,7 @@ QJsonObject viewToJson(const ViewSettings &settings)
             {"color_max", settings.colorMax},
             {"palette", settings.palette},
             {"auto_range", settings.autoRange},
+            {"waterfall_auto_range_on_zoom", settings.waterfallAutoRangeOnZoom},
             {"absolute_frequency", settings.absoluteFrequency},
             {"waveform_mode", settings.waveformMode}};
 }
@@ -81,7 +82,7 @@ QJsonObject viewToJson(const ViewSettings &settings)
 ViewSettings viewFromJson(const QJsonObject &object)
 {
     requireIntegers(object, {"waveform_mode"});
-    requireBooleans(object, {"auto_range", "absolute_frequency"});
+    requireBooleans(object, {"auto_range", "waterfall_auto_range_on_zoom", "absolute_frequency"});
     for (const auto *field : {"color_min", "color_max"})
         if (object.contains(field) && !object[field].isDouble())
             throw std::runtime_error("Invalid color setting type");
@@ -92,6 +93,7 @@ ViewSettings viewFromJson(const QJsonObject &object)
     settings.colorMax = object["color_max"].toDouble(0);
     settings.palette = object["palette"].toString(settings.palette);
     settings.autoRange = object["auto_range"].toBool();
+    settings.waterfallAutoRangeOnZoom = object["waterfall_auto_range_on_zoom"].toBool(true);
     settings.absoluteFrequency = object["absolute_frequency"].toBool();
     settings.waveformMode = object["waveform_mode"].toInt(0);
     settings.validate();

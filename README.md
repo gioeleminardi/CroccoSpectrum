@@ -276,6 +276,11 @@ below the map. Navigation does not restart its background scan; new files and DS
 settings do. Partial imports scan only the snapshot available when opened.
 Palette changes recolor both views without rerunning FFTs. Frequency navigation
 stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
+With **Automatic range** enabled, **Adapt waterfall colors on zoom** recalculates
+the color limits for the displayed data. Turn it off to freeze the current limits
+while zooming, panning, or navigating the minimap. A new recording, analysis range,
+or DSP setting establishes a new range. The choice is saved in preferences and
+sessions; with Automatic range off, the Minimum and Maximum fields set fixed limits.
 
 The frequency spectrum initially shows the FFT window starting at sample frame
 0. Hovering either time plot selects the corresponding waterfall row, highlights
