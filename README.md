@@ -227,8 +227,8 @@ open while you work in the main window.
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
 | Inspect frequency and power coordinates | Hover over the spectrum |
-| Measure spectrum width and mean power | `Shift` + left-click the start, then the end |
-| Measure waterfall duration | `Shift` + left-click the start row, then the end row |
+| Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
+| Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
 | Move / resize a measurement | `Shift` + drag its shaded band / boundary marker |
 | Clear a plot measurement | `Escape` in that plot |
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
@@ -285,9 +285,9 @@ and power coordinates labeled on the axes. The status bar also retains the
 exact FFT-bin frequency and power. The crosshair follows the current zoom and
 power scale, works on average and max-hold traces, and hides on pointer exit.
 
-**Shift + left-click twice** inside the spectrum to measure a frequency interval.
-The first click sets the start; moving the pointer previews the end, and the
-second Shift-click completes the measurement. Endpoints snap to the nearest FFT
+**Shift + left-click** inside the spectrum to start measuring a frequency interval.
+Moving the pointer previews the end; **left-click again** to complete the
+measurement, without needing Shift. Endpoints snap to the nearest FFT
 bins. The readout shows both frequencies, their absolute difference, and the
 mean spectral power across all bins between the endpoints, including both ends.
 Power is averaged in linear units before conversion to dB; this is the mean of
@@ -295,10 +295,11 @@ the selected spectral values, rather than integrated signal power. The same
 gesture works on the average and max-hold traces, with the source identified.
 Zero mean power is shown as −∞; invalid data is unavailable.
 
-In the waterfall, **Shift + left-click two rows** to measure elapsed time between
-their window-start sample frames. The readout shows exact frame indices, start
-and end times, and duration calculated from the frame difference and sample
-rate. Sampled previews and aggregated overviews limit how precisely event
+In the waterfall, **Shift + left-click the start row**, then **left-click the end
+row** to measure elapsed time between their window-start sample frames. The
+readout shows exact frame indices, start and end times, and duration calculated
+from the frame difference and sample rate. Sampled previews and aggregated
+overviews limit how precisely event
 boundaries can be located; zoom into the event for finer row spacing. Selecting
 the same row gives zero duration.
 

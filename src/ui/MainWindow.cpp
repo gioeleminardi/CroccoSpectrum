@@ -538,7 +538,7 @@ void MainWindow::showKeyboardShortcuts()
     commands->addStretch();
     auto *plots = new QGroupBox("Plot controls", content);
     auto *plotForm = new QFormLayout(plots);
-    addRow(plotForm, "Shift + left-click twice",
+    addRow(plotForm, "Shift + left-click, then left-click",
            "Measure width / mean power in a spectrum, or duration in the waterfall");
     addRow(plotForm, "Shift + drag band", "Move a spectrum / waterfall measurement");
     addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");

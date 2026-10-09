@@ -611,8 +611,16 @@ class UiTests : public QObject
         QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 200));
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
     }
+    void spectrumMeasurement_data()
+    {
+        QTest::addColumn<bool>("shiftEnd");
+        QTest::newRow("plain-end") << false;
+        QTest::newRow("shift-end") << true;
+    }
     void spectrumMeasurement()
     {
+        QFETCH(bool, shiftEnd);
+        const auto endModifiers = shiftEnd ? Qt::ShiftModifier : Qt::NoModifier;
         rf::SpectrumPlot plot;
         plot.resize(600, 310);
         auto result = std::make_shared<rf::PreviewResult>();
@@ -626,7 +634,7 @@ class UiTests : public QObject
         QVERIFY(plot.isMeasuring());
         moveMouse(&plot, QPoint(276, 180));
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, QPoint(276, 180));
         QVERIFY(!plot.isMeasuring());
         // Mean(0.25, 1) = 0.625; averaging dB would incorrectly give -3.0103.
         QVERIFY(plot.measurementText().contains("-2.041199827 dBFS"));
@@ -664,11 +672,13 @@ class UiTests : public QObject
         plot.setView({}, rf::PowerScale::Spectrum, 0);
         // Reverse direction, then replace with a same-bin zero-power selection.
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(276, 180));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(176, 180));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, QPoint(176, 180));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
         QVERIFY(plot.isMeasuring());
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
+        QTest::mouseDClick(&plot, Qt::LeftButton, endModifiers, QPoint(76, 180));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
         QVERIFY(plot.measurementText().contains("−∞ dBFS"));
         plot.setPreview(result);
@@ -1003,8 +1013,14 @@ class UiTests : public QObject
         moveMouse(&plot, rowPosition(plot, 0, 8));
         QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{0});
     }
+    void waterfallMeasurement_data()
+    {
+        spectrumMeasurement_data();
+    }
     void waterfallMeasurement()
     {
+        QFETCH(bool, shiftEnd);
+        const auto endModifiers = shiftEnd ? Qt::ShiftModifier : Qt::NoModifier;
         rf::WaterfallPlot plot;
         plot.resize(600, 310);
         constexpr std::uint64_t begin = 9'007'199'254'740'993;
@@ -1025,7 +1041,7 @@ class UiTests : public QObject
         hovered.clear();
         moveMouse(&plot, rowPosition(plot, 0, 3));
         QCOMPARE(hovered.count(), 0);
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 0, 3));
         QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 400 ms"));
         QVERIFY(plot.measurementText().contains("1 frames"));
@@ -1049,7 +1065,7 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().isEmpty());
         plot.resize(600, 310);
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 3));
-        QTest::mouseDClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 2, 3));
+        QTest::mouseDClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 2, 3));
         QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 400 s"));
         QCOMPARE(selected.count(), 0);
@@ -1065,8 +1081,11 @@ class UiTests : public QObject
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(10, 10));
         QVERIFY(!plot.isMeasuring());
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
-        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 3));
+        QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, rowPosition(plot, 1, 3));
+        QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Duration: 0 s"));
+        QCOMPARE(clicked.count(), 0);
+        QCOMPARE(selected.count(), 0);
         plot.clear();
         QVERIFY(plot.measurementText().isEmpty());
     }
@@ -1166,7 +1185,7 @@ class UiTests : public QObject
         QCOMPARE(start->text(), "256");
         QCOMPARE(end->text(), "768");
         QVERIFY(!average->isEnabled());
-        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::ShiftModifier, last);
+        QTest::mouseClick(waterfall, Qt::LeftButton, Qt::NoModifier, last);
         QVERIFY(average->isEnabled());
         QCOMPARE(window.selectedRange(), range);
         QCOMPARE(window.previewResult(), preview);
@@ -1297,7 +1316,7 @@ class UiTests : public QObject
         moveMouse(waveform, waveformRowPosition(*waveform, 2, 3));
         QTest::qWait(100);
         QCOMPARE(window.spectrumResult(), held);
-        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, QPoint(200, 100));
+        QTest::mouseClick(spectrum, Qt::LeftButton, Qt::NoModifier, QPoint(200, 100));
         QVERIFY(!spectrum->measurementText().isEmpty());
         moveMouse(waterfall, rowPosition(*waterfall, 2, 3));
         if (frozen) {
@@ -1324,7 +1343,7 @@ class UiTests : public QObject
         moveMouse(waveform, waveformRowPosition(*waveform, 1, 3));
         QTest::qWait(100);
         QCOMPARE(window.spectrumResult(), durationHeld);
-        QTest::mouseDClick(waterfall, Qt::LeftButton, Qt::ShiftModifier,
+        QTest::mouseDClick(waterfall, Qt::LeftButton, Qt::NoModifier,
                            rowPosition(*waterfall, 2, 3));
         QVERIFY(waterfall->measurementText().contains("Duration: 2 s"));
         QCOMPARE(window.selectedRange(), range);

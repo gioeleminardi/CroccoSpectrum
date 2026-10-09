@@ -32,6 +32,9 @@ This file records release history and behavior changes. See
   background while dragging, preserving frequency zoom and the active gesture.
   Clamp the interval to the recording bounds; whole-recording views pan preview
   rows instead.
+- Complete spectrum and waterfall measurements with a plain left-click after
+  Shift-clicking the start. Update plot hints and the keyboard shortcuts
+  cheatsheet to describe the gesture.
 
 ## 0.1.6 — 2026-10-08 — Partial recording import
 

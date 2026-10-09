@@ -152,7 +152,8 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Shift + left-click twice to measure frequency width and mean spectral power. "
+    setToolTip("Shift + left-click to start measuring frequency width and mean spectral power; "
+               "left-click again to finish. "
                "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
@@ -244,7 +245,7 @@ QString SpectrumPlot::measurementText() const
     return QString("Start: %1 · End: %2\nΔf: %3\n%4\n%5")
         .arg(frequencyText(first + center), frequencyText(last + center),
              frequencyText(std::abs(last - first)),
-             measuring_ ? "Shift-click to set end · Esc to clear"
+             measuring_ ? "Click to set end · Esc to clear"
                         : "Mean spectral power: " + mean,
              source);
 }
@@ -553,7 +554,8 @@ void SpectrumPlot::wheelEvent(QWheelEvent *event)
 }
 void SpectrumPlot::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)) {
+    if (event->button() == Qt::LeftButton &&
+        (measuring_ || (event->modifiers() & Qt::ShiftModifier))) {
         if (const auto bin = binAt(event->position())) {
             setFocus(Qt::MouseFocusReason);
             dragX_ = -1;
@@ -636,7 +638,8 @@ WaterfallPlot::WaterfallPlot(QWidget *parent) : QWidget(parent)
                "Hold Ctrl when starting a drag to pan only time. A selected recording slice "
                "moves with the Start/End fields while new data loads in the background. "
                "Click to freeze/unfreeze the frame; double-click to seek. "
-               "Shift + left-click twice to measure duration between waterfall rows. "
+               "Shift + left-click to start measuring duration between waterfall rows; "
+               "left-click again to finish. "
                "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
@@ -753,7 +756,7 @@ QString WaterfallPlot::measurementText() const
         .arg(number(static_cast<double>(first) / sampleRate_)).arg(first)
         .arg(number(static_cast<double>(last) / sampleRate_)).arg(last)
         .arg(durationText(duration)).arg(frames)
-        .arg(measuring_ ? "\nShift-click to set end · Esc to clear" : "");
+        .arg(measuring_ ? "\nClick to set end · Esc to clear" : "");
 }
 void WaterfallPlot::rebuildImage()
 {
@@ -1024,7 +1027,8 @@ void WaterfallPlot::wheelEvent(QWheelEvent *event)
 void WaterfallPlot::mousePressEvent(QMouseEvent *event)
 {
     const auto row = rowAt(event->position());
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)) {
+    if (event->button() == Qt::LeftButton &&
+        (measuring_ || (event->modifiers() & Qt::ShiftModifier))) {
         if (row) {
             setFocus(Qt::MouseFocusReason);
             dragPosition_.reset();
@@ -1105,7 +1109,7 @@ void WaterfallPlot::mouseReleaseEvent(QMouseEvent *event)
 }
 void WaterfallPlot::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (event->modifiers() & Qt::ShiftModifier) {
+    if (measuring_ || (event->modifiers() & Qt::ShiftModifier)) {
         mousePressEvent(event);
         return;
     }
