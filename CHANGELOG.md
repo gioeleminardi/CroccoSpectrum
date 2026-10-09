@@ -6,6 +6,9 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add Settings → Waterfall rows to choose automatic display resolution or
+  128–4096 rows, saved across launches and sessions and applied to detail and exact overviews.
+  Honor explicit densities at large FFT sizes by allowing enough FFT work for the selected rows.
 - Add a saved Display option to adapt waterfall colors on zoom or keep the
   current automatic color limits fixed across zoom, pan, and minimap navigation.
 - Increase waterfall detail using physical viewport pixels and visible FFT bins,

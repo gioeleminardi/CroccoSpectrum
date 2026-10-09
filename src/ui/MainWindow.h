@@ -16,6 +16,7 @@ class QDockWidget;
 class QListWidget;
 class QTimer;
 class QMenu;
+class QActionGroup;
 
 namespace rf
 {
@@ -62,6 +63,7 @@ class MainWindow : public QMainWindow
     void requestPreview();
     void scheduleWaterfall();
     void requestWaterfall();
+    [[nodiscard]] int requestedWaterfallRows() const;
     void startMinimap();
     void beginMeasurement(QWidget *plot);
     void updateWaterfallSelection();
@@ -139,5 +141,6 @@ class MainWindow : public QMainWindow
     QTimer *previewTimer_, *saveTimer_;
     QTimer *waterfallTimer_;
     QMenu *recentFilesMenu_;
+    QActionGroup *waterfallRowsGroup_;
 };
 } // namespace rf

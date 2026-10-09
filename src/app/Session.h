@@ -13,6 +13,7 @@ struct ViewSettings {
     QString palette = "Baudline";
     bool autoRange = false;
     bool waterfallAutoRangeOnZoom = true;
+    int waterfallRows = 0; // 0: automatic physical display height.
     bool absoluteFrequency = false;
     int waveformMode = 0; // 0: I/Q, 1: magnitude, 2: I only.
     void validate() const;

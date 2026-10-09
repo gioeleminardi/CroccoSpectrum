@@ -2525,6 +2525,119 @@ class UiTests : public QObject
         QCOMPARE(restored.findChild<QComboBox *>("waterfallPalette")->currentText(),
                  QString("Baudline"));
     }
+    void waterfallRowsSettings()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.resize(1440, 980);
+        window.show();
+        auto *rowsMenu = window.findChild<QMenu *>("waterfallRowsMenu");
+        QVERIFY(rowsMenu);
+        const auto actionForRows = [rowsMenu](int rows) -> QAction * {
+            for (auto *action : rowsMenu->actions())
+                if (action->data().toInt() == rows)
+                    return action;
+            return nullptr;
+        };
+        QVERIFY(actionForRows(0)->isChecked());
+        // Selecting a density before loading must apply to the first refinement.
+        actionForRows(1024)->trigger();
+        window.openRecording(toneRecording(directory.filePath("rows.iq"), std::vector<int>(4096, 12)));
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && waterfall->snapshot() &&
+            waterfall->snapshot()->rowStarts.size() == 1024 && minimap->snapshot() &&
+            minimap->snapshot()->complete, 10000);
+        QCOMPARE(window.previewResult()->rowStarts.size(), std::size_t{128});
+        const auto preview = window.previewResult();
+        const auto overview = minimap->snapshot();
+        const auto range = window.selectedRange();
+        for (const auto rows : {128, 1024, 4096}) {
+            actionForRows(rows)->trigger();
+            QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->rowStarts.size(),
+                                      static_cast<std::size_t>(rows), 5000);
+            QCOMPARE(waterfall->viewport(), range);
+            QCOMPARE(window.selectedRange(), range);
+            QCOMPARE(window.previewResult(), preview);
+            QCOMPARE(minimap->snapshot(), overview);
+            QVERIFY(actionForRows(rows)->isChecked());
+            QVERIFY(!actionForRows(0)->isChecked());
+        }
+        // A short viewport cannot supply more rows than complete FFT windows.
+        waterfall->setViewport({256 * 512, 256 * 2560});
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
+        QCOMPARE(waterfall->snapshot()->rowStarts.size(), std::size_t{2048});
+        actionForRows(0)->trigger();
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->rowStarts.size(),
+            static_cast<std::size_t>(waterfall->pixelSize().height()), 5000);
+        QCOMPARE(window.selectedRange(), range);
+        QCOMPARE(minimap->snapshot(), overview);
+        // Explicit exact overviews use the same selected density.
+        waterfall->setViewport(range);
+        actionForRows(1024)->trigger();
+        findAction(window, "Exact waterfall overview + average")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult()->aggregated, 10000);
+        QCOMPARE(window.previewResult()->rowStarts.size(), std::size_t{1024});
+        QCOMPARE(waterfall->snapshot()->rowStarts.size(), std::size_t{1024});
+        window.close();
+        QCOMPARE(rf::readPreferences(preferences).view.waterfallRows, 1024);
+        rf::MainWindow restored(nullptr, preferences);
+        auto *restoredMenu = restored.findChild<QMenu *>("waterfallRowsMenu");
+        QVERIFY(restoredMenu);
+        for (auto *action : restoredMenu->actions())
+            QCOMPARE(action->isChecked(), action->data().toInt() == 1024);
+    }
+    void waterfallRowsWithLargeFft()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 65536;
+        saved.dsp.overlapPercent = 0;
+        saved.dsp.window = rf::Window::Rectangular;
+        rf::savePreferences(preferences, saved);
+        QFile file(directory.filePath("large-fft.iq"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.resize(1024LL * 65536 * 4));
+        QVERIFY(file.seek(2LL * 65536 * 4));
+        const auto burst = QByteArray::fromHex("00400000").repeated(65536);
+        QCOMPARE(file.write(burst), burst.size());
+        file.close();
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = file.fileName();
+        window.openRecording(descriptor);
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && waterfall->snapshot() &&
+            waterfall->snapshot()->rowStarts.size() == 128 && minimap->snapshot() &&
+            minimap->snapshot()->complete, 30000);
+        QCOMPARE(*std::max_element(waterfall->snapshot()->waterfall.begin(),
+                                  waterfall->snapshot()->waterfall.end()), 0.0);
+        const auto map = minimap->snapshot();
+        const auto range = waterfall->viewport();
+        auto *rowsMenu = window.findChild<QMenu *>("waterfallRowsMenu");
+        QVERIFY(rowsMenu);
+        for (const int count : {512, 1024, 128, 512}) {
+            for (auto *action : rowsMenu->actions())
+                if (action->data().toInt() == count)
+                    action->trigger();
+            QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->rowStarts.size(),
+                                      static_cast<std::size_t>(count), 10000);
+            QCOMPARE(waterfall->viewport(), range);
+            QCOMPARE(window.selectedRange(), range);
+            QCOMPARE(minimap->snapshot(), map);
+            if (count > 128)
+                QCOMPARE(*std::max_element(waterfall->snapshot()->waterfall.begin(),
+                                          waterfall->snapshot()->waterfall.end()), 0.25);
+        }
+    }
     void minimapSelectorAndLargeFrameIndices()
     {
         rf::WaterfallMinimap minimap;

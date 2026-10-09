@@ -123,9 +123,12 @@ change an export midway.
 - Preview FFT work: at most 128 windows / approximately 8 million input frames.
 - Initial waterfall previews: at most 128 × 1,024 cells. Explicit exact overview
   requests use the same physical-pixel grid bounds as viewport detail.
-- Waterfall viewport grids: physical plot pixels, at most 4,096 per axis and
-  4,194,304 double-valued cells (32 MiB). FFT work stays within approximately
-  eight million input frames. Small intervals scan every window into maxima;
+- Waterfall viewport grids: physical plot pixels by default, or the row count
+  chosen in Settings (128–4,096); exact overviews use the same choice. At most
+  4,096 per axis and 4,194,304 double-valued cells (32 MiB). Automatic resolution
+  limits FFT work to approximately eight million input frames. Explicit row
+  choices raise that budget to at least one FFT per requested row, subject to
+  the grid's memory bound; work remains cancellable. Small intervals scan every window into maxima;
   larger intervals are explicitly sampled. Frequency reduction uses the visible
   FFT bins, with exact bin-aligned raster bounds.
 - Minimap: 1,024 × 192 cells (1.5 MiB), scanning every required window; it does
@@ -137,7 +140,7 @@ change an export midway.
   separate 4 MiB minimap cache. Raster images and active FFT buffers are additional.
 
 Cache keys include source identity, full descriptor, DSP settings, and range. Waterfall keys also include the requested frequency
-bounds, pixel dimensions, and full-scan mode. Palette and color limits do not
+bounds, grid dimensions, explicit row density, and full-scan mode. Palette and color limits do not
 change these numerical cache keys.
 Identity checks size, inode/device, modification and change timestamps and path
 replacement. This is ordinary mutation detection, not a cryptographic guarantee

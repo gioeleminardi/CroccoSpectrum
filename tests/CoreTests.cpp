@@ -423,6 +423,7 @@ class CoreTests : public QObject
         session.recording.path = "source.iq";
         session.view.palette = "Baudline";
         session.view.waterfallAutoRangeOnZoom = false;
+        session.view.waterfallRows = 2048;
         session.range = {9007199254740993ULL, 9007199254745093ULL};
         session.bookmarks = {{session.range.begin, 4096, "Burst"}};
         const auto path = directory.filePath("session.json");
@@ -431,6 +432,7 @@ class CoreTests : public QObject
         QCOMPARE(restored.range.begin, session.range.begin);
         QCOMPARE(restored.view.palette, QString("Baudline"));
         QVERIFY(!restored.view.waterfallAutoRangeOnZoom);
+        QCOMPARE(restored.view.waterfallRows, 2048);
         QCOMPARE(restored.bookmarks[0].start, session.range.begin);
         const auto data = writeFile(directory.filePath("signal.sigmf-data"),
                                     QByteArray::fromHex("00400000").repeated(2048));
@@ -656,6 +658,15 @@ class CoreTests : public QObject
         view.remove("waterfall_auto_range_on_zoom");
         QVERIFY(rf::viewFromJson(view).waterfallAutoRangeOnZoom);
         view["waterfall_auto_range_on_zoom"] = "false";
+        QVERIFY_EXCEPTION_THROWN(rf::viewFromJson(view), std::runtime_error);
+        view = rf::viewToJson({});
+        view.remove("waterfall_rows");
+        QCOMPARE(rf::viewFromJson(view).waterfallRows, 0);
+        for (const auto invalidRows : {-1, 127, 8192}) {
+            view["waterfall_rows"] = invalidRows;
+            QVERIFY_EXCEPTION_THROWN(rf::viewFromJson(view), std::runtime_error);
+        }
+        view["waterfall_rows"] = 1024.5;
         QVERIFY_EXCEPTION_THROWN(rf::viewFromJson(view), std::runtime_error);
         rf::RecordingDescriptor descriptor;
         descriptor.path = "fixture";

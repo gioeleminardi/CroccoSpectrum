@@ -274,6 +274,15 @@ always spans at least one FFT window. Unprocessed minimap rows remain blue-gray;
 invalid completed rows use the existing magenta indication. Progress appears
 below the map. Navigation does not restart its background scan; new files and DSP
 settings do. Partial imports scan only the snapshot available when opened.
+**Settings → Waterfall rows** selects Automatic (display resolution), or 128,
+256, 512, 1024, 2048, or 4096 rows for the detailed view and exact overviews.
+The initial 128-row preview appears quickly and is then refined asynchronously.
+The actual count can be lower when fewer complete FFT windows are available or
+the memory limit applies. Explicit row choices allow enough FFT work to compute
+that density, including with large FFT sizes; higher counts can take longer.
+Automatic resolution keeps the fast FFT work limit. Increasing rows improves time detail; zooming into
+a shorter interval reveals individual windows. The choice is saved in preferences
+and sessions and does not change the analysis range or restart the minimap.
 Palette changes recolor both views without rerunning FFTs. Frequency navigation
 stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
 With **Automatic range** enabled, **Adapt waterfall colors on zoom** recalculates

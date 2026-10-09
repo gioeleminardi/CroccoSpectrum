@@ -264,12 +264,15 @@ std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
     result->columns = static_cast<int>(std::min<std::size_t>(
         std::clamp(request.columns, 1, 4096), endBin - firstBin));
     const auto windows = 1 + (range.size() - length) / settings.hop();
-    constexpr std::uint64_t workFrames = 8'388'608;
-    const auto workWindows = std::max<std::uint64_t>(1, workFrames / length);
-    const bool scan = request.exact || windows <= workWindows;
     // At most 32 MiB of double-valued cells, regardless of file or display size.
     const auto rowLimit = std::min<std::uint64_t>(
         std::clamp(request.rows, 1, 4096), 4'194'304 / static_cast<unsigned>(result->columns));
+    constexpr std::uint64_t workFrames = 8'388'608;
+    // Automatic detail keeps the fast preview budget. A chosen density must
+    // allow enough FFTs for its rows, including with large FFT sizes.
+    const auto workWindows = std::max<std::uint64_t>(
+        request.fixedRows ? rowLimit : 1, workFrames / length);
+    const bool scan = request.exact || windows <= workWindows;
     const auto rows = std::min(windows, scan ? rowLimit : std::min(rowLimit, workWindows));
     result->sampled = !scan;
     result->aggregated = scan && rows < windows;

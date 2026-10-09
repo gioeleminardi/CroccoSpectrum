@@ -3,6 +3,7 @@
 #include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -391,7 +392,7 @@ void MainWindow::buildMenus()
                 waterfall_->clearMeasurement();
                 const auto pixels = waterfall_->pixelSize();
                 generation_ = controller_.overview(recording_, range_, preferences_.dsp,
-                                                   pixels.width(), pixels.height());
+                                                   pixels.width(), requestedWaterfallRows());
                 setBusy(true, "Scanning every window for exact overview…");
             });
     connect(analysis->addAction("Exact waveform over selected interval"), &QAction::triggered, this,
@@ -433,6 +434,28 @@ void MainWindow::buildMenus()
     auto *next = view->addAction("Next interval");
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
+    auto *settings = menuBar()->addMenu("&Settings");
+    auto *rowsMenu = settings->addMenu("Waterfall rows");
+    rowsMenu->setObjectName("waterfallRowsMenu");
+    rowsMenu->setToolTipsVisible(true);
+    waterfallRowsGroup_ = new QActionGroup(this);
+    for (const int count : {0, 128, 256, 512, 1024, 2048, 4096}) {
+        auto *action = rowsMenu->addAction(count == 0 ? "Automatic (display resolution)"
+                                                     : QString::number(count));
+        action->setCheckable(true);
+        action->setData(count);
+        action->setToolTip("Requested rows; the actual count is limited by available FFT windows. "
+                           "More rows provide finer time detail and take longer to compute.");
+        waterfallRowsGroup_->addAction(action);
+    }
+    connect(waterfallRowsGroup_, &QActionGroup::triggered, this, [this](QAction *action) {
+        const auto rows = action->data().toInt();
+        if (preferences_.view.waterfallRows == rows)
+            return;
+        preferences_.view.waterfallRows = rows;
+        scheduleWaterfall();
+        saveTimer_->start();
+    });
     auto *help = menuBar()->addMenu("&Help");
     auto *updates = help->addAction("Check for updates…");
     updates->setObjectName("checkForUpdates");
@@ -1109,6 +1132,8 @@ void MainWindow::applyPreferences()
     palette_->setCurrentText(preferences_.view.palette);
     autoRange_->setChecked(preferences_.view.autoRange);
     waterfallAutoRangeOnZoom_->setChecked(preferences_.view.waterfallAutoRangeOnZoom);
+    for (auto *action : waterfallRowsGroup_->actions())
+        action->setChecked(action->data().toInt() == preferences_.view.waterfallRows);
     absoluteFrequency_->setChecked(preferences_.view.absoluteFrequency);
     waveformMode_->setCurrentIndex(preferences_.view.waveformMode);
     applying_ = false;
@@ -1217,8 +1242,14 @@ void MainWindow::requestWaterfall()
         return;
     const auto [left, right] = waterfall_->frequencyRange();
     const auto pixels = waterfall_->pixelSize();
-    WaterfallRequest request{waterfall_->viewport(), left, right, pixels.width(), pixels.height(), false};
+    WaterfallRequest request{waterfall_->viewport(), left, right, pixels.width(),
+                              requestedWaterfallRows(), false, preferences_.view.waterfallRows != 0};
     waterfallGeneration_ = waterfallController_.waterfall(recording_, preferences_.dsp, request);
+}
+int MainWindow::requestedWaterfallRows() const
+{
+    return preferences_.view.waterfallRows ? preferences_.view.waterfallRows
+                                          : std::max(1, waterfall_->pixelSize().height());
 }
 void MainWindow::startMinimap()
 {

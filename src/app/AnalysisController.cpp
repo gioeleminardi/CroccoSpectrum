@@ -238,9 +238,10 @@ void AnalysisController::execute(Job job)
                 emit previewReady(job.generation, overview);
         } else if (job.kind == Kind::Waterfall) {
             const auto key = previewKey(job) +
-                QString("/waterfall/%1/%2/%3/%4/%5")
+                QString("/waterfall/%1/%2/%3/%4/%5/%6")
                     .arg(job.waterfall.left, 0, 'g', 17).arg(job.waterfall.right, 0, 'g', 17)
-                    .arg(job.waterfall.columns).arg(job.waterfall.rows).arg(job.waterfall.exact);
+                    .arg(job.waterfall.columns).arg(job.waterfall.rows).arg(job.waterfall.exact)
+                    .arg(job.waterfall.fixedRows);
             job.recording->verifyUnchanged();
             for (auto entry = cache_.begin(); entry != cache_.end(); ++entry) {
                 if (entry->key == key) {

@@ -41,6 +41,18 @@ void ViewSettings::validate() const
         throw std::runtime_error("Unknown palette");
     if (waveformMode < 0 || waveformMode > 2)
         throw std::runtime_error("Invalid waveform mode");
+    switch (waterfallRows) {
+    case 0:
+    case 128:
+    case 256:
+    case 512:
+    case 1024:
+    case 2048:
+    case 4096:
+        break;
+    default:
+        throw std::runtime_error("Invalid waterfall row count");
+    }
 }
 
 QJsonObject dspToJson(const DspSettings &settings)
@@ -75,13 +87,14 @@ QJsonObject viewToJson(const ViewSettings &settings)
             {"palette", settings.palette},
             {"auto_range", settings.autoRange},
             {"waterfall_auto_range_on_zoom", settings.waterfallAutoRangeOnZoom},
+            {"waterfall_rows", settings.waterfallRows},
             {"absolute_frequency", settings.absoluteFrequency},
             {"waveform_mode", settings.waveformMode}};
 }
 
 ViewSettings viewFromJson(const QJsonObject &object)
 {
-    requireIntegers(object, {"waveform_mode"});
+    requireIntegers(object, {"waveform_mode", "waterfall_rows"});
     requireBooleans(object, {"auto_range", "waterfall_auto_range_on_zoom", "absolute_frequency"});
     for (const auto *field : {"color_min", "color_max"})
         if (object.contains(field) && !object[field].isDouble())
@@ -94,6 +107,7 @@ ViewSettings viewFromJson(const QJsonObject &object)
     settings.palette = object["palette"].toString(settings.palette);
     settings.autoRange = object["auto_range"].toBool();
     settings.waterfallAutoRangeOnZoom = object["waterfall_auto_range_on_zoom"].toBool(true);
+    settings.waterfallRows = object["waterfall_rows"].toInt(0);
     settings.absoluteFrequency = object["absolute_frequency"].toBool();
     settings.waveformMode = object["waveform_mode"].toInt(0);
     settings.validate();

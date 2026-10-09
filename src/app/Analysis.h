@@ -72,6 +72,7 @@ struct WaterfallRequest {
     double left = 0, right = 0; // Equal bounds request the full frequency band.
     int columns = 1024, rows = 512; // Physical display pixels; bounded by analysis.
     bool exact = false; // Full scan for the minimap; viewport work stays bounded.
+    bool fixedRows = false; // Explicit density allows one FFT window per requested row.
 };
 using WaterfallUpdate = std::function<void(std::shared_ptr<const PreviewResult>)>;
 std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
