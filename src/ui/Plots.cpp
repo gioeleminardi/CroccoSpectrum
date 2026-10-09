@@ -152,9 +152,6 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Shift + left-click to start measuring frequency width and mean spectral power; "
-               "left-click again to finish. "
-               "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
 {
@@ -634,13 +631,6 @@ WaterfallPlot::WaterfallPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 210);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Wheel to zoom frequency and time around the pointer. Drag to pan both axes. "
-               "Hold Ctrl when starting a drag to pan only time. A selected recording slice "
-               "moves with the Start/End fields while new data loads in the background. "
-               "Click to freeze/unfreeze the frame; double-click to seek. "
-               "Shift + left-click to start measuring duration between waterfall rows; "
-               "left-click again to finish. "
-               "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
                                bool resetFrequency)
@@ -1226,8 +1216,10 @@ void WaveformPlot::paintEvent(QPaintEvent *)
     painter.drawText(QRectF(0, plot.bottom() - 10, 68, 18), Qt::AlignRight, number(minimum));
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("%1 … %2 s · frames [%3, %4) · %5 invalid · %6 clipped components")
-                         .arg(number(static_cast<double>(result_->range.begin) / sampleRate_))
-                         .arg(number(static_cast<double>(result_->range.end) / sampleRate_))
+                         .arg(QString::number(static_cast<double>(result_->range.begin) / sampleRate_,
+                                              'f', 3))
+                         .arg(QString::number(static_cast<double>(result_->range.end) / sampleRate_,
+                                              'f', 3))
                          .arg(result_->range.begin)
                          .arg(result_->range.end)
                          .arg(result_->invalidSamples)

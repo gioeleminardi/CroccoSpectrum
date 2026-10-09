@@ -228,6 +228,9 @@ Open **Help → Keyboard shortcuts** or press **F1** for an at-a-glance cheatshe
 of all assigned shortcuts, plot gestures, and keyboard navigation. It can stay
 open while you work in the main window.
 
+Open **Help → Plot controls** for dedicated spectrum, waterfall, and waveform
+instructions. Plots show no hover tooltips; this guide can stay open while you work.
+
 | Action | Control |
 | --- | --- |
 | Zoom frequency | Mouse wheel over the spectrum or waterfall |

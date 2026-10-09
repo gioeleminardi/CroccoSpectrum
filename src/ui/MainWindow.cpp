@@ -457,6 +457,9 @@ void MainWindow::buildMenus()
     shortcuts->setObjectName("keyboardShortcuts");
     shortcuts->setShortcut(QKeySequence(Qt::Key_F1));
     connect(shortcuts, &QAction::triggered, this, &MainWindow::showKeyboardShortcuts);
+    auto *plotControls = help->addAction("Plot controls…");
+    plotControls->setObjectName("plotControls");
+    connect(plotControls, &QAction::triggered, this, &MainWindow::showPlotControls);
     connect(help->addAction("Measurement conventions"), &QAction::triggered, this, [this] {
         QMessageBox::information(
             this, "CroccoSpectrum conventions",
@@ -607,6 +610,64 @@ void MainWindow::showKeyboardShortcuts()
     layout->addWidget(buttons);
     const auto available = dialog->screen()->availableGeometry();
     dialog->resize(std::min(960, available.width() - 60), std::min(620, available.height() - 80));
+    dialog->show();
+}
+
+void MainWindow::showPlotControls()
+{
+    if (auto *existing = findChild<QDialog *>("plotControlsDialog")) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName("plotControlsDialog");
+    dialog->setWindowTitle("Plot controls");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *scroll = new QScrollArea(dialog);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto *content = new QWidget(scroll);
+    auto *sections = new QVBoxLayout(content);
+    const auto addSection = [content, sections](const QString &title, const QString &text) {
+        auto *group = new QGroupBox(title, content);
+        auto *groupLayout = new QVBoxLayout(group);
+        auto *label = new QLabel(text, group);
+        label->setTextFormat(Qt::PlainText);
+        label->setWordWrap(true);
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        groupLayout->addWidget(label);
+        sections->addWidget(group);
+    };
+    addSection("Spectrum / average spectrum",
+               "Mouse wheel: zoom frequency around the pointer. Left-button drag: pan frequency. "
+               "Hover: inspect frequency and power coordinates.\n\n"
+               "Shift + left-click: start measuring frequency width and mean spectral power. "
+               "Left-click again to finish. Shift-drag the band to move it or a marker to resize "
+               "it. Escape clears the measurement in the focused plot.");
+    addSection("Waterfall",
+               "Mouse wheel: zoom frequency and time around the pointer. Left-button drag: pan "
+               "both axes. Hold Ctrl when starting a drag to pan only time. A selected recording "
+               "slice moves with the Start/End fields while new data loads in the background; "
+               "when showing the whole recording, Ctrl-drag pans preview rows.\n\n"
+               "Hover: inspect the shared frame. Click to freeze/unfreeze the frame; double-click "
+               "to seek.\n\n"
+               "Shift + left-click: start measuring duration between waterfall rows. Left-click "
+               "again to finish. Shift-drag the band to move it or a marker to resize it. Escape "
+               "clears the measurement in the focused plot.");
+    addSection("Baseband waveform",
+               "Hover: inspect sample values and the shared frame. Click to freeze/unfreeze the "
+               "frame; double-click to seek.");
+    sections->addStretch();
+    scroll->setWidget(content);
+    layout->addWidget(scroll);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    const auto available = dialog->screen()->availableGeometry();
+    dialog->resize(std::min(660, available.width() - 60), std::min(620, available.height() - 80));
     dialog->show();
 }
 

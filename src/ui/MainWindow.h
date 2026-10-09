@@ -52,6 +52,7 @@ class MainWindow : public QMainWindow
     void openRecording(RecordingDescriptor descriptor, FrameRange range, const QString &sourcePath);
     void showAbout();
     void showKeyboardShortcuts();
+    void showPlotControls();
     void showUpdateMessage(const QString &message, const QUrl &releaseUrl = {});
     void buildControls();
     void connectWorker();
