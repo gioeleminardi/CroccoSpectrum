@@ -2,6 +2,7 @@
 #include "Plots.h"
 #include "app/AnalysisController.h"
 #include <QMainWindow>
+#include <QSet>
 #include <QUrl>
 class QComboBox;
 class QCheckBox;
@@ -116,6 +117,7 @@ class MainWindow : public QMainWindow
     bool frameFrozen_ = false;
     bool frameCursorVisible_ = false;
     bool busy_ = false;
+    QSet<AnalysisController *> processingWorkers_;
     bool applying_ = false;
     AnalysisController controller_;
     AnalysisController spectrumController_;

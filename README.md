@@ -283,6 +283,10 @@ that density, including with large FFT sizes; higher counts can take longer.
 Automatic resolution keeps the fast FFT work limit. Increasing rows improves time detail; zooming into
 a shorter interval reveals individual windows. The choice is saved in preferences
 and sessions and does not change the analysis range or restart the minimap.
+An animated spinner in the lower status bar remains visible while any background
+analysis, waterfall refinement, minimap scan, or export is processing.
+It disappears once those tasks finish or are cancelled. Hovering over frames
+updates the spectrum without triggering the spinner.
 Palette changes recolor both views without rerunning FFTs. Frequency navigation
 stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
 With **Automatic range** enabled, **Adapt waterfall colors on zoom** recalculates

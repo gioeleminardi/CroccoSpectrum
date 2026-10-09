@@ -60,6 +60,7 @@ class AnalysisController : public QObject
     void progressChanged(quint64 generation, double fraction);
     void finished(quint64 generation, QString message);
     void failed(quint64 generation, QString message);
+    void processingChanged(bool active); // Includes queued and executing work.
 
   private:
     enum class Kind { Open, Inspect, Preview, Average, Overview, Waveform, Waterfall, Samples, Csv, Png };
@@ -81,9 +82,11 @@ class AnalysisController : public QObject
     void execute(Job job);
     QString previewKey(const Job &job) const;
     void publishWaterfall(quint64 generation, std::shared_ptr<const PreviewResult> result);
+    void publishProcessing(bool active);
     std::mutex mutex_;
     std::condition_variable_any wake_;
     std::optional<Job> pending_;
+    bool executing_ = false;
     std::shared_ptr<std::atomic_bool> activeCancellation_;
     quint64 generation_ = 0;
     // Worker-only LRU: a total-byte quota, rather than entry count, prevents

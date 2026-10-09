@@ -142,6 +142,14 @@ change an export midway.
 Cache keys include source identity, full descriptor, DSP settings, and range. Waterfall keys also include the requested frequency
 bounds, grid dimensions, explicit row density, and full-scan mode. Palette and color limits do not
 change these numerical cache keys.
+
+Each controller reports activity from submission until both its executing job
+and pending request are gone, including cache hits, failures, and cancellation.
+Ordered notifications arrive on the controller's QObject thread. The status-bar
+spinner combines activity from the analysis, waterfall, and minimap controllers;
+one worker finishing does not hide it while another is still processing. The
+hover FFT controller is excluded so ordinary pointer movement stays quiet.
+
 Identity checks size, inode/device, modification and change timestamps and path
 replacement. This is ordinary mutation detection, not a cryptographic guarantee
 against arbitrary same-size edits with manipulated timestamps. Do not claim it

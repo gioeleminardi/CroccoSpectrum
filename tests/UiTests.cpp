@@ -29,6 +29,7 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QWheelEvent>
@@ -124,6 +125,8 @@ class WorkerSignals : public QObject
                 Qt::QueuedConnection);
         connect(&controller, &rf::AnalysisController::failed, this, &WorkerSignals::failed,
                 Qt::QueuedConnection);
+        connect(&controller, &rf::AnalysisController::processingChanged, this,
+                &WorkerSignals::processingChanged, Qt::QueuedConnection);
     }
   signals:
     void recordingOpened(quint64, std::shared_ptr<rf::Recording>, rf::FrameRange);
@@ -132,6 +135,7 @@ class WorkerSignals : public QObject
     void waveformReady(quint64, std::shared_ptr<const rf::WaveformResult>);
     void finished(quint64, QString);
     void failed(quint64, QString);
+    void processingChanged(bool);
 };
 
 class UiTests : public QObject
@@ -2838,6 +2842,122 @@ class UiTests : public QObject
         const auto result = qvariant_cast<std::shared_ptr<const rf::PreviewResult>>(ready.last().at(1));
         QCOMPARE(result->range, last);
         QVERIFY(result->complete);
+    }
+    void controllerProcessingLifecycle()
+    {
+        QTemporaryDir directory;
+        QFile file(directory.filePath("processing.iq"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.resize(4LL * 1024 * 1024 * 1024));
+        file.close();
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = file.fileName();
+        auto recording = std::make_shared<rf::Recording>(descriptor);
+        rf::AnalysisController controller;
+        WorkerSignals observed(controller);
+        QSignalSpy activity(&observed, &WorkerSignals::processingChanged);
+        QSignalSpy previews(&observed, &WorkerSignals::previewReady);
+        QSignalSpy failures(&observed, &WorkerSignals::failed);
+        rf::DspSettings settings;
+        controller.average(recording, {0, recording->frameCount()}, settings);
+        QTRY_COMPARE(activity.count(), 1);
+        QVERIFY(activity.at(0).at(0).toBool());
+        controller.preview(recording, {0, 8192}, settings);
+        QTRY_COMPARE(previews.count(), 1);
+        QTRY_COMPARE(activity.count(), 2);
+        QVERIFY(!activity.at(1).at(0).toBool()); // Replacement stays active until the latest job ends.
+        controller.preview(recording, {0, 8192}, settings); // Cache hits also return to idle.
+        QTRY_COMPARE(previews.count(), 2);
+        QTRY_COMPARE(activity.count(), 4);
+        QVERIFY(activity.at(2).at(0).toBool());
+        QVERIFY(!activity.at(3).at(0).toBool());
+        controller.preview(recording, {0, 1}, settings);
+        QTRY_COMPARE(failures.count(), 1);
+        QTRY_COMPARE(activity.count(), 6);
+        QVERIFY(activity.at(4).at(0).toBool());
+        QVERIFY(!activity.at(5).at(0).toBool());
+        controller.average(recording, {0, recording->frameCount()}, settings);
+        QTRY_COMPARE(activity.count(), 7);
+        controller.cancel();
+        QTRY_COMPARE(activity.count(), 8);
+        QVERIFY(!activity.at(7).at(0).toBool());
+        // Cancel immediately, whether the request is still queued or already executing.
+        controller.average(recording, {0, recording->frameCount()}, settings);
+        controller.cancel();
+        QTRY_COMPARE(activity.count(), 10);
+        QVERIFY(activity.at(8).at(0).toBool());
+        QVERIFY(!activity.at(9).at(0).toBool());
+    }
+    void backgroundProcessingSpinner()
+    {
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 65536;
+        saved.dsp.overlapPercent = 0;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *spinner = window.findChild<QWidget *>("backgroundProcessingSpinner");
+        QVERIFY(spinner);
+        auto *animation = spinner->findChild<QTimer *>();
+        QVERIFY(animation);
+        QVERIFY(!spinner->isVisible());
+        QVERIFY(!animation->isActive());
+        QFile file(directory.filePath("minimap.iq"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.resize(4LL * 1024 * 1024 * 1024));
+        file.close();
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = file.fileName();
+        window.openRecording(descriptor);
+        QTRY_VERIFY(spinner->isVisible());
+        QVERIFY(animation->isActive());
+        auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() && minimap->snapshot(), 10000);
+        QVERIFY(!minimap->snapshot()->complete);
+        QVERIFY(spinner->isVisible()); // The initial analysis finished, but the minimap is still scanning.
+        const auto firstFrame = spinner->grab().toImage();
+        QTest::qWait(170);
+        QVERIFY(spinner->grab().toImage() != firstFrame);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.statusBar()->grab().save(screenshots + "/processing-status-bar.png"));
+        }
+        // Replacing the source cancels old workers; the indicator clears after all of them stop.
+        QFile small(directory.filePath("small.iq"));
+        QVERIFY(small.open(QIODevice::WriteOnly));
+        QCOMPARE(small.write(QByteArray::fromHex("00400000").repeated(65536 * 4)), qint64{65536 * 4 * 4});
+        small.close();
+        descriptor.path = small.fileName();
+        window.openRecording(descriptor);
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() && minimap->snapshot() &&
+            minimap->snapshot()->complete && waterfall->snapshot() &&
+            waterfall->snapshot()->waterfallBand && !spinner->isVisible(), 10000);
+        QVERIFY(!animation->isActive());
+        // Catch even a brief spinner flash while hover FFTs update the spectrum.
+        class ShowCounter : public QObject {
+          public:
+            int shows = 0;
+            bool eventFilter(QObject *object, QEvent *event) override
+            {
+                if (event->type() == QEvent::Show)
+                    ++shows;
+                return QObject::eventFilter(object, event);
+            }
+        } counter;
+        spinner->installEventFilter(&counter);
+        const auto displayed = waterfall->snapshot();
+        QCOMPARE(displayed->rowStarts.size(), std::size_t{4});
+        for (std::size_t row = 1; row < displayed->rowStarts.size(); ++row) {
+            moveMouse(waterfall, rowPosition(*waterfall, row, displayed->rowStarts.size()));
+            QTRY_COMPARE(window.spectrumResult()->spectrumStart, displayed->rowStarts[row]);
+            QCOMPARE(counter.shows, 0);
+            QVERIFY(!spinner->isVisible());
+            QVERIFY(!animation->isActive());
+        }
     }
     void controllerCancellation()
     {

@@ -6,6 +6,9 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Show an animated status-bar spinner whenever background analysis, waterfall
+  refinement, minimap filling, or exports are queued or running. Pointer-driven
+  hover FFT updates do not trigger it.
 - Add Settings → Waterfall rows to choose automatic display resolution or
   128–4096 rows, saved across launches and sessions and applied to detail and exact overviews.
   Honor explicit densities at large FFT sizes by allowing enough FFT work for the selected rows.

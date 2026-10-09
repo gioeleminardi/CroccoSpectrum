@@ -30,6 +30,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPalette>
 #include <QPixmap>
 #include <QProgressBar>
@@ -59,6 +60,53 @@ namespace rf
 {
 namespace
 {
+class ProcessingSpinner : public QWidget
+{
+  public:
+    explicit ProcessingSpinner(QWidget *parent) : QWidget(parent), timer_(this)
+    {
+        setObjectName("backgroundProcessingSpinner");
+        setFixedSize(20, 20);
+        setAccessibleName("Background processing");
+        setToolTip("Background processing");
+        timer_.setInterval(80);
+        connect(&timer_, &QTimer::timeout, this, [this] {
+            angle_ = (angle_ + 30) % 360;
+            update();
+        });
+        hide();
+    }
+    void setActive(bool active)
+    {
+        setVisible(active);
+        if (active && !timer_.isActive())
+            timer_.start();
+        else if (!active) {
+            timer_.stop();
+            angle_ = 0;
+        }
+    }
+
+  protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF ring(3, 3, 14, 14);
+        auto faint = palette().color(QPalette::WindowText);
+        faint.setAlpha(40);
+        painter.setPen(QPen(faint, 2));
+        painter.drawEllipse(ring);
+        painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5,
+                            Qt::SolidLine, Qt::RoundCap));
+        painter.drawArc(ring, angle_ * 16, 120 * 16);
+    }
+
+  private:
+    QTimer timer_;
+    int angle_ = 0;
+};
+
 class DockWidget : public QDockWidget
 {
   public:
@@ -241,8 +289,19 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     cancel_->setObjectName("cancelAnalysis");
     cancel_->setEnabled(false);
     statusBar()->addWidget(cursorLabel_, 1);
+    auto *spinner = new ProcessingSpinner(this);
+    statusBar()->addPermanentWidget(spinner);
     statusBar()->addPermanentWidget(progress_);
     statusBar()->addPermanentWidget(cancel_);
+    for (auto *worker : {&controller_, &waterfallController_, &minimapController_})
+        connect(worker, &AnalysisController::processingChanged, this,
+                [this, spinner, worker](bool active) {
+                    if (active)
+                        processingWorkers_.insert(worker);
+                    else
+                        processingWorkers_.remove(worker);
+                    spinner->setActive(!processingWorkers_.isEmpty());
+                });
     connect(cancel_, &QPushButton::clicked, this, [this] {
         controller_.cancel();
         ++generation_;

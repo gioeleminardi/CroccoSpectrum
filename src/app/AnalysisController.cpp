@@ -30,6 +30,7 @@ AnalysisController::~AnalysisController()
 quint64 AnalysisController::submit(Job job)
 {
     const std::lock_guard lock(mutex_);
+    const bool wasProcessing = executing_ || pending_.has_value();
     if (activeCancellation_)
         activeCancellation_->store(true);
     if (pending_)
@@ -38,6 +39,8 @@ quint64 AnalysisController::submit(Job job)
     job.cancelled = std::make_shared<std::atomic_bool>(false);
     activeCancellation_ = job.cancelled;
     pending_ = std::move(job);
+    if (!wasProcessing)
+        publishProcessing(true);
     wake_.notify_one();
     return generation_;
 }
@@ -142,6 +145,8 @@ void AnalysisController::cancel()
     if (pending_) {
         pending_->cancelled->store(true);
         pending_.reset();
+        if (!executing_)
+            publishProcessing(false);
     }
 }
 
@@ -155,8 +160,15 @@ void AnalysisController::run(std::stop_token stop)
                 break;
             job = std::move(*pending_);
             pending_.reset();
+            executing_ = true;
         }
         execute(std::move(job));
+        {
+            const std::lock_guard lock(mutex_);
+            executing_ = false;
+            if (!pending_)
+                publishProcessing(false);
+        }
     }
 }
 
@@ -304,6 +316,14 @@ void AnalysisController::execute(Job job)
     } catch (const std::exception &error) {
         emit failed(job.generation, QString::fromUtf8(error.what()));
     }
+}
+
+void AnalysisController::publishProcessing(bool active)
+{
+    // State changes are queued under mutex_ so submission and worker completion
+    // cannot deliver idle after a newer busy state. Slots run outside the lock.
+    QMetaObject::invokeMethod(this, [this, active] { emit processingChanged(active); },
+                              Qt::QueuedConnection);
 }
 
 void AnalysisController::publishWaterfall(quint64 generation,
