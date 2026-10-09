@@ -93,7 +93,7 @@ class FakeReply : public QNetworkReply
 class FakeNetwork : public QNetworkAccessManager
 {
   public:
-    QByteArray body = response({release("v0.1.7")});
+    QByteArray body = response({release("v0.2.1")});
     int requests = 0;
     QPointer<FakeReply> reply;
 
@@ -208,7 +208,7 @@ class UpdateTests : public QObject
         QVERIFY(settings.lastAttempt.isValid());
         network.reply->complete();
         QCOMPARE(completed.count(), 1);
-        QCOMPARE(completed[0][0].toString(), QString("0.1.7"));
+        QCOMPARE(completed[0][0].toString(), QString("0.2.1"));
         QVERIFY(completed[0][2].toBool());
         QCOMPARE(changed.count(), 2);
     }

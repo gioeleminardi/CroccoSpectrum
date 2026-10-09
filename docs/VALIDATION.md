@@ -1,12 +1,16 @@
 # Validation evidence
 
 Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2, 0.1.3, 0.1.4, 0.1.5, and 0.1.6, plus unreleased updates as of 2026-10-09.
+0.1.2, 0.1.3, 0.1.4, 0.1.5, 0.1.6, and 0.2.0 as of 2026-10-09.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
-- Update notifications (unreleased): all five CTest suites pass on Fedora 44
+- CroccoSpectrum 0.2.0 version bump: Fedora 44 Debug build and all five CTest
+  suites pass with Qt 6.11.2. Both GUI and CLI `--version` report 0.2.0;
+  packaging metadata matches the CMake project version. The update-check
+  fixture advertises 0.2.1 so it remains newer than the application.
+- Update notifications (included in 0.2.0): all five CTest suites pass on Fedora 44
   Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK, and on
   Ubuntu 24.04 Debug / system Qt 6.4.2. Simulated replies cover numeric version
   ordering, draft/prerelease/malformed tags, incomplete or empty assets,
@@ -19,7 +23,7 @@ The environments and test coverage below define the scope of this evidence.
   AppImage and portable-folder GUI/CLI launches and TLS availability pass in
   clean network-disabled Ubuntu 24.04/26.04 and Fedora 44 containers. Package
   manifests, archive checksums, and matching OpenSSL source provisions verify.
-- CI artifact layout (unreleased): Ubuntu 24.04 container Release and Debug
+- CI artifact layout (included in 0.2.0): Ubuntu 24.04 container Release and Debug
   builds pass all four CTest suites. Release produces exactly one executable
   AppImage and one portable tarball with GUI/CLI launchers and bundled runtime
   dependencies; sources and checksums are stored separately. Both final packages

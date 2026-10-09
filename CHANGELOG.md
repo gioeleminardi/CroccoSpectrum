@@ -4,7 +4,7 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## Unreleased
+## 0.2.0 — 2026-10-09 — Update notifications and plot navigation
 
 - Add automatic stable-release checks and update notifications with a release
   page link for manual installation. Help actions check on demand or disable

@@ -1,7 +1,7 @@
 # Feature status
 
 Updated: 2026-10-09. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.1.6.
+Application: CroccoSpectrum 0.2.0.
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
