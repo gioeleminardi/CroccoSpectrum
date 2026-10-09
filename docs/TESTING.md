@@ -63,7 +63,11 @@ QT_QPA_PLATFORM=offscreen RF_SOAK_SECONDS=28800 build/release/rf-soak-test > bui
 
 The default duration is 60 seconds. The fixture is a temporary dense 400 MB file
 containing synthetic samples. Remove `QT_QPA_PLATFORM=offscreen` for a native
-session. The harness checks results and emits timing/RSS evidence; it is not a
+session. The harness waits for the initial minimap scan, then changes FFTs (including
+1,048,576), analysis ranges, palettes, and minimap viewports while background
+scans run. It checks viewport synchronization and unchanged analysis ranges,
+and reports minimap completion and viewport p95 latency alongside timing/RSS
+evidence. It is not a
 substitute for human desktop/input/docking inspection on each supported system.
 
 When validating recording workflows, independently cross-check sample decoding,

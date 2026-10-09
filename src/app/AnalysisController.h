@@ -41,7 +41,10 @@ class AnalysisController : public QObject
     quint64 inspect(RecordingDescriptor descriptor);
     quint64 preview(std::shared_ptr<Recording> recording, FrameRange range, DspSettings settings);
     quint64 average(std::shared_ptr<Recording> recording, FrameRange range, DspSettings settings);
-    quint64 overview(std::shared_ptr<Recording> recording, FrameRange range, DspSettings settings);
+    quint64 overview(std::shared_ptr<Recording> recording, FrameRange range, DspSettings settings,
+                     int columns = 1024, int rows = 128);
+    quint64 waterfall(std::shared_ptr<Recording> recording, DspSettings settings,
+                      WaterfallRequest request);
     quint64 waveform(std::shared_ptr<Recording> recording, FrameRange range);
     quint64 samples(std::shared_ptr<Recording> recording, FrameRange range, QString output);
     quint64 csv(CsvRequest request);
@@ -53,12 +56,13 @@ class AnalysisController : public QObject
     void previewReady(quint64 generation, std::shared_ptr<const rf::PreviewResult> result);
     void averageReady(quint64 generation, std::shared_ptr<const rf::AverageResult> result);
     void waveformReady(quint64 generation, std::shared_ptr<const rf::WaveformResult> result);
+    void waterfallReady(quint64 generation, std::shared_ptr<const rf::PreviewResult> result);
     void progressChanged(quint64 generation, double fraction);
     void finished(quint64 generation, QString message);
     void failed(quint64 generation, QString message);
 
   private:
-    enum class Kind { Open, Inspect, Preview, Average, Overview, Waveform, Samples, Csv, Png };
+    enum class Kind { Open, Inspect, Preview, Average, Overview, Waveform, Waterfall, Samples, Csv, Png };
     struct Job {
         Kind kind = Kind::Preview;
         quint64 generation = 0;
@@ -66,6 +70,7 @@ class AnalysisController : public QObject
         std::shared_ptr<Recording> recording;
         FrameRange range;
         DspSettings settings;
+        WaterfallRequest waterfall;
         QString output;
         std::optional<CsvRequest> csv;
         std::optional<PngRequest> png;
@@ -75,6 +80,7 @@ class AnalysisController : public QObject
     void run(std::stop_token stop);
     void execute(Job job);
     QString previewKey(const Job &job) const;
+    void publishWaterfall(quint64 generation, std::shared_ptr<const PreviewResult> result);
     std::mutex mutex_;
     std::condition_variable_any wake_;
     std::optional<Job> pending_;
@@ -88,6 +94,11 @@ class AnalysisController : public QObject
     };
     std::list<CacheEntry> cache_;
     std::size_t cacheBytes_ = 0;
+    // A single queued GUI notification coalesces progressive snapshots. A slow
+    // paint/event loop cannot accumulate file-sized result queues.
+    std::shared_ptr<const PreviewResult> latestWaterfall_;
+    quint64 waterfallGeneration_ = 0;
+    bool waterfallNotificationPending_ = false;
     std::jthread worker_;
 };
 } // namespace rf

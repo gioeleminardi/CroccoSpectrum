@@ -54,3 +54,28 @@ The reference system uses NVMe storage; a separate sustained sequential-read
 ceiling was not measured. Network/HDD blocked-I/O cancellation, native interaction
 p95, recorder-produced files, and long-duration stability were not measured in
 this run.
+
+## Waterfall upgrade regression checks — 2026-10-09
+
+Fedora 44 Release build, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10; offscreen rendering.
+The updated soak harness uses a dense 400 MB synthetic I/Q fixture, waits for
+its initial whole-recording minimap, and then changes FFTs, analysis ranges,
+colors, and independent waterfall viewports. FFTs include 1,048,576 points.
+
+A separate 10.198-second run completed 46 mixed cycles: first preview **12 ms**,
+initial minimap complete **1,179 ms**, viewport-result p95 **105 ms**, selection
+preview p95 **126 ms**, and peak process RSS **408.8 MiB**. The largest FFT and
+concurrent analysis workers make this workload different from the earlier
+60-second run above. Cache/grid limits bound retained data; active FFT buffers
+and allocator retention contribute additional process memory.
+
+The existing dense-file benchmark also passed tone/power checks for 400 MB and
+4 GB files. GUI initial preview/paint process times were **160 ms** and **143 ms**,
+including the intentional 100 ms settling delay. These are local regression
+measurements, not native-desktop latency or long-duration stability evidence.
+
+Reproduce the new interaction workload with:
+
+```sh
+QT_QPA_PLATFORM=offscreen RF_SOAK_SECONDS=10 build/release/rf-soak-test
+```

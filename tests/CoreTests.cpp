@@ -476,6 +476,103 @@ class CoreTests : public QObject
         QVERIFY(preview->sampled);
         QVERIFY(*std::max_element(preview->waterfall.begin(), preview->waterfall.end()) < 0.5625);
     }
+    void denseWaterfallAndProgressiveOverview()
+    {
+        QTemporaryDir directory;
+        QByteArray data(1024 * 256 * 4, char{0});
+        data.replace(255 * 256 * 4, 256 * 4, QByteArray::fromHex("00600000").repeated(256));
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("burst.iq"), data);
+        rf::Recording recording(descriptor);
+        rf::DspSettings settings;
+        settings.fftSize = 256;
+        settings.overlapPercent = 0;
+        settings.window = rf::Window::Rectangular;
+        rf::WaterfallRequest request{{0, recording.frameCount()}, 0, 0, 256, 512, false};
+        const auto detail = rf::analyzeWaterfall(recording, settings, request, {});
+        QCOMPARE(detail->rowStarts.size(), std::size_t{512});
+        QCOMPARE(detail->columns, 256);
+        QVERIFY(detail->aggregated && !detail->sampled && detail->complete);
+        QCOMPARE(*std::max_element(detail->waterfall.begin(), detail->waterfall.end()), 0.5625);
+        request.rows = 64;
+        request.exact = true;
+        std::vector<std::shared_ptr<const rf::PreviewResult>> updates;
+        const auto overview = rf::analyzeWaterfall(recording, settings, request, {},
+            [&updates](auto result) { updates.push_back(std::move(result)); });
+        QVERIFY(!updates.empty());
+        QVERIFY(!updates.front()->complete);
+        QCOMPARE(updates.front()->completedRows, std::size_t{0});
+        QVERIFY(std::all_of(updates.front()->waterfall.begin(), updates.front()->waterfall.end(),
+                             [](double power) { return std::isnan(power); }));
+        QCOMPARE(overview->completedRows, std::size_t{64});
+        QVERIFY(overview->complete);
+        QCOMPARE(*std::max_element(overview->waterfall.begin(), overview->waterfall.end()), 0.5625);
+        QVERIFY_EXCEPTION_THROWN(rf::analyzeWaterfall(recording, settings, request,
+                                                       [] { return true; }), rf::Cancelled);
+    }
+    void waterfallVisibleFrequencyBins()
+    {
+        QTemporaryDir directory;
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("dc.iq"),
+                                    QByteArray::fromHex("00400000").repeated(8192));
+        descriptor.sampleRate = 8192;
+        rf::Recording recording(descriptor);
+        rf::DspSettings settings;
+        settings.fftSize = 8192;
+        settings.window = rf::Window::Rectangular;
+        rf::WaterfallRequest request{{0, 8192}, 0, 0, 4096, 1, false};
+        const auto full = rf::analyzeWaterfall(recording, settings, request, {});
+        QCOMPARE(full->columns, 4096);
+        QCOMPARE(full->waterfall[2048], 0.25);
+        request.left = -2;
+        request.right = 2;
+        const auto detail = rf::analyzeWaterfall(recording, settings, request, {});
+        QVERIFY(detail->columns <= 5);
+        QCOMPARE(detail->waterfall[2], 0.25);
+        QCOMPARE(detail->waterfall[1], 0.0);
+        QCOMPARE(detail->waterfall[3], 0.0);
+        QCOMPARE(detail->waterfallBand->first, -2.0);
+        QCOMPARE(detail->waterfallBand->second, 2.0);
+        descriptor.format.kind = rf::SampleKind::Real;
+        rf::Recording real(descriptor);
+        request.range = {0, 8192};
+        request.left = 0;
+        request.right = 4096;
+        const auto oneSided = rf::analyzeWaterfall(real, settings, request, {});
+        QCOMPARE(oneSided->frequencies.front(), 0.0);
+        QCOMPARE(oneSided->waterfallBand->second, 4096.0);
+    }
+    void waterfallSamplingAndCaptureBounds()
+    {
+        QTemporaryDir directory;
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("zeros.iq"), QByteArray(256 * 8 * 4, char{0}));
+        descriptor.captures = {{0, {}, {}}, {128, {}, {}}};
+        rf::Recording recording(descriptor);
+        rf::DspSettings settings;
+        settings.fftSize = 256;
+        settings.overlapPercent = 0;
+        rf::WaterfallRequest request{{0, recording.frameCount()}, 0, 0, 256, 8, false};
+        const auto detail = rf::analyzeWaterfall(recording, settings, request, {});
+        QCOMPARE(detail->boundaryWindows, std::uint64_t{1});
+        QVERIFY(std::isnan(detail->waterfall[0]));
+        QCOMPARE(detail->waterfall[256], 0.0);
+        QFile sparse(directory.filePath("large.iq"));
+        QVERIFY(sparse.open(QIODevice::WriteOnly));
+        QVERIFY(sparse.resize(64LL * 1024 * 1024));
+        sparse.close();
+        descriptor.path = sparse.fileName();
+        descriptor.captures.clear();
+        rf::Recording large(descriptor);
+        request.range = {0, large.frameCount()};
+        request.rows = 512;
+        const auto sampled = rf::analyzeWaterfall(large, settings, request, {});
+        QVERIFY(sampled->sampled && !sampled->aggregated);
+        QCOMPARE(sampled->rowStarts.size(), std::size_t{512});
+        QCOMPARE(sampled->rowStarts.front(), std::uint64_t{0});
+        QCOMPARE(sampled->rowStarts.back(), large.frameCount() - 256);
+    }
     void exportTransactionsAndCancellation()
     {
         QTemporaryDir directory;

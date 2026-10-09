@@ -1816,13 +1816,13 @@ class UiTests : public QObject
         QCOMPARE(clicked.count(), 0);
         QCOMPARE(frequencies.count(), 0);
     }
-    void waterfallTimeSelectionPan_data()
+    void waterfallViewportPan_data()
     {
         QTest::addColumn<quint64>("length");
         QTest::newRow("slice") << quint64{2048};
         QTest::newRow("one-fft-window") << quint64{256};
     }
-    void waterfallTimeSelectionPan()
+    void waterfallViewportPan()
     {
         QFETCH(quint64, length);
         QTemporaryDir directory;
@@ -1855,24 +1855,26 @@ class UiTests : public QObject
         const auto preview = window.previewResult();
         const int height = waterfall->height() - 70;
         const QPoint center(150, 32 + height / 2);
-        QSignalSpy panActive(waterfall, &rf::WaterfallPlot::timeSelectionPanActiveChanged);
+        const auto analysisRange = window.selectedRange();
+        QSignalSpy views(waterfall, &rf::WaterfallPlot::viewportChanged);
         QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
         for (const int offset : {-height / 4, -height / 2}) {
             moveMouse(waterfall, center + QPoint(80, offset), Qt::LeftButton);
             const auto begin = 1024 + static_cast<quint64>(std::llround(-double(offset) / height * length));
-            QCOMPARE(window.selectedRange(), (rf::FrameRange{begin, begin + length}));
-            QCOMPARE(start->text(), QString::number(begin));
-            QCOMPARE(end->text(), QString::number(begin + length));
+            QCOMPARE(waterfall->viewport(), (rf::FrameRange{begin, begin + length}));
+            QCOMPARE(window.selectedRange(), analysisRange);
+            QCOMPARE(start->text(), QString::number(analysisRange.begin));
+            QCOMPARE(end->text(), QString::number(analysisRange.end));
             QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() &&
-                                        window.previewResult()->range == window.selectedRange(), 3000);
-            QCOMPARE(panActive.count(), 1); // Incoming previews preserve the held gesture.
+                                        waterfall->snapshot()->range == waterfall->viewport(), 3000);
+            QVERIFY(!views.empty());
             QCOMPARE(frequencies.count(), 0);
         }
-        QVERIFY(window.previewResult() != preview);
+        QCOMPARE(window.previewResult(), preview);
         const auto selected = window.selectedRange();
         QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::NoModifier,
                             center + QPoint(80, -height / 2));
-        QCOMPARE(panActive.count(), 2);
+        QVERIFY(!views.empty());
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
         QCOMPARE(window.previewResult()->range, selected);
         QCOMPARE(window.spectrumResult()->spectrumStart, selected.begin);
@@ -1885,13 +1887,14 @@ class UiTests : public QObject
             QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
             moveMouse(waterfall, center + QPoint(80, offset), Qt::LeftButton, Qt::ControlModifier);
             const auto begin = offset > 0 ? quint64{0} : quint64{8192} - length;
-            QCOMPARE(window.selectedRange(), (rf::FrameRange{begin, begin + length}));
-            QCOMPARE(start->text(), QString::number(begin));
-            QCOMPARE(end->text(), QString::number(begin + length));
+            QCOMPARE(waterfall->viewport(), (rf::FrameRange{begin, begin + length}));
+            QCOMPARE(window.selectedRange(), analysisRange);
+            QCOMPARE(start->text(), QString::number(analysisRange.begin));
+            QCOMPARE(end->text(), QString::number(analysisRange.end));
             QTest::mouseRelease(waterfall, Qt::LeftButton, Qt::ControlModifier,
                                 center + QPoint(80, offset));
             QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
-            QCOMPARE(window.previewResult()->range, window.selectedRange());
+            QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
         }
         const auto lastPreview = window.previewResult();
         QTest::mousePress(waterfall, Qt::LeftButton, Qt::ControlModifier, center);
@@ -2097,10 +2100,11 @@ class UiTests : public QObject
                 QCOMPARE(window.spectrumResult()->spectrumStart, std::uint64_t{0});
             }
             const auto preview = window.previewResult();
-            QTest::mouseMove(plot, rowPosition(*plot, preview->rowStarts.size() - 1,
-                                              preview->rowStarts.size()));
+            const auto displayed = plot->snapshot();
+            QTest::mouseMove(plot, rowPosition(*plot, displayed->rowStarts.size() - 1,
+                                              displayed->rowStarts.size()));
             QTRY_COMPARE_WITH_TIMEOUT(window.spectrumResult()->spectrumStart,
-                                      preview->rowStarts.back(), 10000);
+                                      displayed->rowStarts.back(), 10000);
             const auto result = window.spectrumResult();
             QVERIFY(result->spectrum.valid);
             const auto peak = std::max_element(result->spectrum.power.begin(),
@@ -2432,6 +2436,207 @@ class UiTests : public QObject
         rf::MainWindow restored(nullptr, directory.filePath("preferences.json"));
         QCOMPARE(restored.findChild<QComboBox *>("waterfallPalette")->currentText(),
                  QString("Baudline"));
+    }
+    void minimapSelectorAndLargeFrameIndices()
+    {
+        rf::WaterfallMinimap minimap;
+        minimap.resize(96, 1094);
+        minimap.show();
+        const std::uint64_t origin = 9007199254740993ULL;
+        minimap.setRecording({origin, origin + 65536}, 256);
+        minimap.setViewport({origin + 16384, origin + 32768});
+        QSignalSpy changes(&minimap, &rf::WaterfallMinimap::viewportChanged);
+        const auto drag = [&minimap](QPoint from, QPoint to) {
+            QTest::mousePress(&minimap, Qt::LeftButton, Qt::NoModifier, from);
+            moveMouse(&minimap, to, Qt::LeftButton);
+            QTest::mouseRelease(&minimap, Qt::LeftButton, Qt::NoModifier, to);
+        };
+        drag(QPoint(48, 416), QPoint(48, 480));
+        QCOMPARE(minimap.viewport(), (rf::FrameRange{origin + 20480, origin + 36864}));
+        const auto end = minimap.viewport().end;
+        drag(QPoint(48, qRound(minimap.selectorRect().top()) - 2), QPoint(48, 256));
+        QCOMPARE(minimap.viewport().begin, origin + 14336);
+        QCOMPARE(minimap.viewport().end, end);
+        const auto begin = minimap.viewport().begin;
+        drag(QPoint(48, qRound(minimap.selectorRect().bottom()) + 2), QPoint(48, 800));
+        QCOMPARE(minimap.viewport().begin, begin);
+        QCOMPARE(minimap.viewport().end, origin + 49152);
+        drag(QPoint(48, qRound(minimap.selectorRect().top()) - 2), QPoint(48, 2000));
+        QCOMPARE(minimap.viewport().size(), std::uint64_t{256});
+        drag(QPoint(48, qRound(minimap.selectorRect().bottom()) + 2), QPoint(48, -1000));
+        QCOMPARE(minimap.viewport().size(), std::uint64_t{256});
+        minimap.setViewport({origin + 16384, origin + 32768});
+        QTest::mouseClick(&minimap, Qt::LeftButton, Qt::NoModifier, QPoint(48, 900));
+        QCOMPARE(minimap.viewport().size(), std::uint64_t{16384});
+        QCOMPARE(minimap.viewport().begin, origin + 47360);
+        QVERIFY(changes.count() >= 5);
+    }
+    void waterfallMinimapIntegration()
+    {
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.resize(1440, 980);
+        window.show();
+        std::vector<int> bins(1024);
+        for (std::size_t row = 0; row < bins.size(); ++row)
+            bins[row] = 8 + static_cast<int>((row / 16) % 96);
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), bins),
+                             {0, 256 * 512});
+        auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *start = window.findChild<QLineEdit *>("selectionStart");
+        auto *end = window.findChild<QLineEdit *>("selectionEnd");
+        QVERIFY(minimap && waterfall);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() && minimap->snapshot() &&
+                                minimap->snapshot()->complete && waterfall->snapshot()->rowStarts.size() > 128,
+                                10000);
+        const auto analysisRange = window.selectedRange();
+        const auto rangeStart = start->text(), rangeEnd = end->text();
+        const auto map = minimap->mapRect();
+        const QPoint jump(48, qRound(map.top() + map.height() * 0.9));
+        QTest::mouseClick(minimap, Qt::LeftButton, Qt::NoModifier, jump);
+        QCOMPARE(waterfall->viewport(), minimap->viewport());
+        QCOMPARE(waterfall->viewport().size(), analysisRange.size());
+        QVERIFY(waterfall->viewport().begin > analysisRange.begin);
+        QCOMPARE(window.selectedRange(), analysisRange);
+        QCOMPARE(start->text(), rangeStart);
+        QCOMPARE(end->text(), rangeEnd);
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
+        const auto box = minimap->selectorRect();
+        QTest::mousePress(minimap, Qt::LeftButton, Qt::NoModifier, QPoint(48, qRound(box.top()) - 2));
+        moveMouse(minimap, QPoint(48, qRound(box.top() + box.height() / 2)), Qt::LeftButton);
+        QTest::mouseRelease(minimap, Qt::LeftButton, Qt::NoModifier,
+                           QPoint(48, qRound(box.top() + box.height() / 2)));
+        QVERIFY(waterfall->viewport().size() < analysisRange.size());
+        QCOMPARE(waterfall->viewport(), minimap->viewport());
+        QCOMPARE(window.selectedRange(), analysisRange);
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
+        moveMouse(waterfall, QPoint(100, 80));
+        QTRY_VERIFY_WITH_TIMEOUT(window.spectrumResult()->spectrumStart >= waterfall->viewport().begin, 5000);
+        const auto overview = minimap->snapshot();
+        const auto viewBeforeWheel = waterfall->viewport();
+        const QPoint center(200, waterfall->height() / 2);
+        QWheelEvent wheel(center, waterfall->mapToGlobal(center), {}, QPoint(0, 120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(waterfall, &wheel);
+        QVERIFY(waterfall->viewport().size() < viewBeforeWheel.size());
+        QCOMPARE(minimap->viewport(), waterfall->viewport());
+        QCOMPARE(minimap->snapshot(), overview); // Navigation never restarts the full scan.
+        QCOMPARE(start->text(), rangeStart);
+        QCOMPARE(end->text(), rangeEnd);
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(waterfall->snapshot()->waterfallBand &&
+            waterfall->snapshot()->waterfallBand->first <= waterfall->frequencyRange().first &&
+            waterfall->snapshot()->waterfallBand->second >= waterfall->frequencyRange().second, 5000);
+        auto *average = findAction(window, "Average time selection");
+        QVERIFY(average);
+        average->trigger();
+        minimap->setViewport(waterfall->viewport());
+        QTest::mouseClick(minimap, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(48, qRound(map.top() + map.height() * 0.35)));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() &&
+            window.findChild<QDockWidget *>("averageDock")->isVisible(), 5000);
+        QCOMPARE(window.selectedRange(), analysisRange);
+        QTRY_COMPARE_WITH_TIMEOUT(waterfall->snapshot()->range, waterfall->viewport(), 5000);
+        const auto viewportData = waterfall->snapshot();
+        const auto viewportBounds = waterfall->viewport();
+        findAction(window, "Exact waterfall overview + average")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult()->aggregated, 5000);
+        QCOMPARE(waterfall->viewport(), viewportBounds);
+        QCOMPARE(waterfall->snapshot(), viewportData);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/waterfall-minimap.png"));
+        }
+        const auto nativeDialogs = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        const auto restoreDialogs = qScopeGuard([nativeDialogs] {
+            QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, nativeDialogs);
+        });
+        const auto path = directory.filePath("waterfall.png");
+        bool handled = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QInputDialog *>();
+            if (!dialog)
+                return;
+            dialog->setTextValue("Waterfall");
+            QTimer::singleShot(0, &window, [&] {
+                auto *fileDialog = window.findChild<QFileDialog *>();
+                if (!fileDialog)
+                    return;
+                fileDialog->selectFile(path);
+                handled = true;
+                static_cast<QDialog *>(fileDialog)->accept();
+            });
+            dialog->accept();
+        });
+        const auto exported = waterfall->viewport();
+        findAction(window, "Export plot PNG…")->trigger();
+        QVERIFY(handled);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && QFileInfo::exists(path), 5000);
+        const auto metadata = QJsonDocument::fromJson(QImage(path).text("CroccoSpectrum").toUtf8()).object();
+        QCOMPARE(metadata["start"].toString(), QString::number(exported.begin));
+        QCOMPARE(metadata["end"].toString(), QString::number(exported.end));
+        QVERIFY(exported != analysisRange);
+        window.openRecording(toneRecording(directory.filePath("new.iq"), {16, 32}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && minimap->snapshot() &&
+            minimap->snapshot()->complete && minimap->snapshot()->range.end == 512, 5000);
+        QCOMPARE(minimap->viewport(), (rf::FrameRange{0, 512}));
+    }
+    void waterfallMeasurementSurvivesRefinement()
+    {
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        plot.show();
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 1024};
+        result->frequencies = {-1, 0};
+        result->columns = 2;
+        result->rowStarts = {0, 256, 512, 768};
+        result->waterfall.assign(8, 0.01);
+        plot.setPreview(result, 256);
+        plot.setRecordingExtent({0, 4096}, 256);
+        plot.setViewport({0, 1024});
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 1, 4));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, rowPosition(plot, 3, 4));
+        const auto measurement = plot.measurementRange();
+        QCOMPARE(*measurement, (rf::FrameRange{256, 768}));
+        auto dense = std::make_shared<rf::PreviewResult>(*result);
+        dense->rowStarts = {0, 128, 256, 384, 512, 640, 768, 896};
+        dense->waterfall.assign(16, 0.01);
+        plot.setDetail(dense);
+        QCOMPARE(plot.measurementRange(), measurement);
+        shiftDrag(&plot, rowPosition(plot, 4, 8), rowPosition(plot, 5, 8));
+        QCOMPARE(*plot.measurementRange(), (rf::FrameRange{384, 896}));
+        plot.setViewport({256, 1280});
+        QCOMPARE(*plot.measurementRange(), (rf::FrameRange{384, 896}));
+        QVERIFY(plot.measurementText().contains("Duration: 2 s"));
+    }
+    void waterfallDetailCancellation()
+    {
+        QTemporaryDir directory;
+        auto recording = std::make_shared<rf::Recording>(
+            toneRecording(directory.filePath("tones.iq"), std::vector<int>(512, 8)));
+        rf::DspSettings settings;
+        settings.fftSize = 256;
+        rf::AnalysisController controller;
+        QSignalSpy ready(&controller, &rf::AnalysisController::waterfallReady);
+        for (int index = 0; index < 20; ++index)
+            controller.waterfall(recording, settings,
+                                 {{static_cast<std::uint64_t>(index * 256),
+                                   static_cast<std::uint64_t>((index + 64) * 256)}, 0, 0, 256, 128, false});
+        const rf::FrameRange last{8192, 16384};
+        const auto generation = controller.waterfall(recording, settings, {last, 0, 0, 256, 128, false});
+        QTRY_VERIFY_WITH_TIMEOUT(!ready.empty() && ready.last().at(0).toULongLong() == generation, 5000);
+        const auto result = qvariant_cast<std::shared_ptr<const rf::PreviewResult>>(ready.last().at(1));
+        QCOMPARE(result->range, last);
+        QVERIFY(result->complete);
     }
     void controllerCancellation()
     {

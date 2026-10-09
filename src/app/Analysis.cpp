@@ -224,10 +224,121 @@ std::shared_ptr<PreviewResult> analyzePreview(const Recording &recording, FrameR
     return result;
 }
 
+std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
+                                               const DspSettings &settings,
+                                               WaterfallRequest request,
+                                               const CancelCheck &cancelled,
+                                               const WaterfallUpdate &update)
+{
+    const auto range = request.range;
+    recording.validateRange(range);
+    settings.validate(recording.descriptor().sampleRate);
+    const auto length = static_cast<std::uint64_t>(settings.fftSize);
+    if (range.size() < length)
+        throw std::runtime_error("Waterfall viewport is shorter than one FFT window");
+    SpectrumEngine engine(recording.descriptor().format.kind, recording.descriptor().sampleRate,
+                          settings);
+    const auto frequencies = engine.frequencies();
+    const double spacing = recording.descriptor().sampleRate / settings.fftSize;
+    const double fullRight = frequencies.back() +
+                            (recording.descriptor().format.kind == SampleKind::Complex ? spacing : 0);
+    const double left = request.left < request.right
+                            ? std::clamp(request.left, frequencies.front(), fullRight - spacing)
+                            : frequencies.front();
+    const double right = request.left < request.right
+                             ? std::clamp(request.right, left + spacing, fullRight)
+                             : fullRight;
+    const auto firstAbove = std::upper_bound(frequencies.begin(), frequencies.end(), left);
+    const auto firstBin = firstAbove == frequencies.begin() ? std::size_t{0}
+        : static_cast<std::size_t>(firstAbove - frequencies.begin() - 1);
+    const auto endBin = recording.descriptor().format.kind == SampleKind::Real && right == fullRight
+        ? frequencies.size()
+        : std::max(firstBin + 1, static_cast<std::size_t>(
+              std::lower_bound(frequencies.begin(), frequencies.end(), right) - frequencies.begin()));
+    auto result = std::make_shared<PreviewResult>();
+    result->range = range;
+    // Plots need full-band bounds and bin spacing, not a second million-bin spectrum.
+    result->frequencies = {frequencies.front(), frequencies.front() + spacing, frequencies.back()};
+    result->waterfallBand = std::pair{frequencies[firstBin],
+                                     endBin == frequencies.size() ? fullRight : frequencies[endBin]};
+    result->columns = static_cast<int>(std::min<std::size_t>(
+        std::clamp(request.columns, 1, 4096), endBin - firstBin));
+    const auto windows = 1 + (range.size() - length) / settings.hop();
+    constexpr std::uint64_t workFrames = 8'388'608;
+    const auto workWindows = std::max<std::uint64_t>(1, workFrames / length);
+    const bool scan = request.exact || windows <= workWindows;
+    // At most 32 MiB of double-valued cells, regardless of file or display size.
+    const auto rowLimit = std::min<std::uint64_t>(
+        std::clamp(request.rows, 1, 4096), 4'194'304 / static_cast<unsigned>(result->columns));
+    const auto rows = std::min(windows, scan ? rowLimit : std::min(rowLimit, workWindows));
+    result->sampled = !scan;
+    result->aggregated = scan && rows < windows;
+    result->complete = false;
+    result->waterfall.assign(static_cast<std::size_t>(rows) * static_cast<std::size_t>(result->columns),
+                             std::numeric_limits<double>::quiet_NaN());
+    for (std::uint64_t row = 0; row < rows; ++row) {
+        const auto index = scan ? interpolate(windows, row, rows)
+                                : (rows == 1 ? 0 : interpolate(windows - 1, row, rows - 1));
+        result->rowStarts.push_back(range.begin + index * settings.hop());
+    }
+    WindowReader reader(recording, range, length);
+    auto published = std::chrono::steady_clock::now();
+    if (update)
+        update(std::make_shared<const PreviewResult>(*result));
+    for (std::uint64_t row = 0; row < rows; ++row) {
+        const auto first = scan ? interpolate(windows, row, rows)
+                                : (result->rowStarts[static_cast<std::size_t>(row)] - range.begin) /
+                                      settings.hop();
+        const auto end = scan ? interpolate(windows, row + 1, rows) : first + 1;
+        for (auto index = first; index < end; ++index) {
+            checkpoint(cancelled);
+            const auto start = range.begin + index * settings.hop();
+            if (recording.descriptor().crossesCapture(start, length)) {
+                ++result->boundaryWindows;
+                continue;
+            }
+            const auto spectrum = scan ? engine.calculate(reader.window(start, length))
+                                       : engine.calculate(recording.read({start, start + length}));
+            if (!spectrum.valid) {
+                ++result->invalidWindows;
+                continue;
+            }
+            for (int column = 0; column < result->columns; ++column) {
+                const auto begin = firstBin + static_cast<std::size_t>(column) *
+                                                  (endBin - firstBin) /
+                                                  static_cast<std::size_t>(result->columns);
+                const auto finish = firstBin + static_cast<std::size_t>(column + 1) *
+                                                   (endBin - firstBin) /
+                                                   static_cast<std::size_t>(result->columns);
+                const double peak = *std::max_element(spectrum.power.begin() +
+                                                         static_cast<std::ptrdiff_t>(begin),
+                                                     spectrum.power.begin() +
+                                                         static_cast<std::ptrdiff_t>(finish));
+                auto &cell = result->waterfall[static_cast<std::size_t>(row) *
+                                                  static_cast<std::size_t>(result->columns) +
+                                              static_cast<std::size_t>(column)];
+                cell = std::isnan(cell) ? peak : std::max(cell, peak);
+            }
+        }
+        result->completedRows = static_cast<std::size_t>(row + 1);
+        const auto now = std::chrono::steady_clock::now();
+        if (update && now - published >= std::chrono::milliseconds(100)) {
+            checkpoint(cancelled);
+            update(std::make_shared<const PreviewResult>(*result));
+            published = now;
+        }
+    }
+    checkpoint(cancelled);
+    recording.verifyUnchanged();
+    result->complete = true;
+    return result;
+}
+
 std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameRange range,
                                               const DspSettings &settings,
                                               const CancelCheck &cancelled,
-                                              const Progress &progress, PreviewResult *overview)
+                                              const Progress &progress, PreviewResult *overview,
+                                              int overviewColumns, int maximumOverviewRows)
 {
     recording.validateRange(range);
     settings.validate(recording.descriptor().sampleRate);
@@ -255,8 +366,11 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
         overview->spectrumStart = range.begin;
         overview->frequencies = result->frequencies;
         overview->aggregated = true;
-        overview->columns = static_cast<int>(std::min<std::size_t>(1024, engine.binCount()));
-        overviewRows = std::min<std::uint64_t>(128, windows);
+        overview->columns = static_cast<int>(std::min<std::size_t>(
+            std::clamp(overviewColumns, 1, 4096), engine.binCount()));
+        overviewRows = std::min<std::uint64_t>(windows, std::min<std::uint64_t>(
+            std::clamp(maximumOverviewRows, 1, 4096),
+            4'194'304 / static_cast<unsigned>(overview->columns)));
         overview->waterfall.assign(static_cast<std::size_t>(overviewRows) *
                                        static_cast<std::size_t>(overview->columns),
                                    std::numeric_limits<double>::quiet_NaN());

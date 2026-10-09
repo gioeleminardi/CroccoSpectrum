@@ -6,6 +6,12 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Increase waterfall detail using physical viewport pixels and visible FFT bins,
+  with bounded asynchronous refinement and explicit sampling/aggregation labels.
+- Add a progressively populated whole-recording waterfall minimap with a movable
+  viewport box and independently resizable top/bottom handles. Waterfall pan and
+  zoom control the viewport independently of the analysis range; preserve frame
+  measurements and freeze across refinement, and export actual viewport metadata.
 - Add View → Dark theme to switch controls and dialogs between dark and light
   mode independently of the desktop theme. Save the choice across launches;
   analysis plots keep their existing colors without recomputing results.

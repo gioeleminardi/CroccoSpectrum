@@ -208,14 +208,18 @@ provide finer bins and cover longer time intervals.
 | View or operation | Coverage |
 | --- | --- |
 | **Spectrum** | Exact first complete FFT window in the selected interval |
-| **Waterfall preview** | Bounded selection of window starts; skipped windows are identified as a sampled preview |
+| **Waterfall viewport** | Pixel-sized frequency/time cells; bounded FFT work, explicitly labeled when sampled |
+| **Waterfall minimap** | Automatic background pass over every required window in the whole recording; temporal/frequency maxima |
 | **Average selected interval / entire recording** | Every eligible complete window; mean calculated in linear power |
 | **Exact waterfall overview + average** | Every required window; bounded temporal/frequency maxima and an exact average |
 | **Waveform preview** | Bounded initial region of the selection |
 | **Exact waveform** | Full selected interval, reduced to min/max envelopes |
 
-A sampled waterfall can miss short events. Use **Analysis → Exact waterfall
-overview + average** for a complete scan, then zoom into events for finer detail.
+A sampled waterfall can miss short events. The minimap scans the complete recording
+in the background and preserves short events through maximum aggregation. Use it
+to locate events and narrow the waterfall viewport for finer detail.
+**Analysis → Exact waterfall overview + average** remains available for an exact
+pass over the analysis interval with its numeric average.
 Invalid samples, capture-boundary windows, and incomplete trailing windows are
 counted rather than silently treated as valid measurements.
 
@@ -237,6 +241,7 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 | Pan frequency | Drag the spectrum or waterfall |
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
+| Move / resize the waterfall viewport | Drag the minimap box / its top or bottom handle |
 | Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
 | Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
@@ -254,16 +259,23 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 
 Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
 Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
-When the time selection shows a slice of the recording, Ctrl dragging moves that
-interval with its width fixed, stopping at the recording bounds. The Start and
-End frame fields update during the drag. Cached rows move immediately, while
-newly exposed data loads in the background during the gesture, preserving
-frequency zoom. Changing the interval clears measurements and frame freeze.
-When showing the whole recording, Ctrl dragging pans rows within the current
-preview. Ordinary dragging and wheel zoom also stay within the preview and
-preserve measurements. Zoom out to restore all its rows, or use the time
-shortcuts to change the analyzed interval. Frequency navigation stays linked
-to the spectra.
+Waterfall navigation changes only the visible time interval; the Start/End frame
+analysis range continues to control averages and sample exports. Cached pixels
+move immediately, and denser data loads asynchronously for the visible time and
+frequency bounds. Resolution follows the plot's physical pixels, within bounded
+FFT-work and memory limits. Changing the analysis interval or DSP settings clears
+measurements and frame freeze; viewport navigation preserves them.
+
+The minimap on the right covers the whole recording and full frequency band.
+Its box marks the visible time interval. Drag the box to move it, click elsewhere
+to center it there, or drag the top/bottom handles to change that boundary while
+keeping the opposite boundary fixed. The box stops at recording bounds and
+always spans at least one FFT window. Unprocessed minimap rows remain blue-gray;
+invalid completed rows use the existing magenta indication. Progress appears
+below the map. Navigation does not restart its background scan; new files and DSP
+settings do. Partial imports scan only the snapshot available when opened.
+Palette changes recolor both views without rerunning FFTs. Frequency navigation
+stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
 
 The frequency spectrum initially shows the FFT window starting at sample frame
 0. Hovering either time plot selects the corresponding waterfall row, highlights

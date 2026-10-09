@@ -5,7 +5,9 @@
 #include <QString>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace rf
 {
@@ -42,6 +44,11 @@ struct PreviewResult {
     int columns = 0;
     bool sampled = false;
     bool aggregated = false; // Exact temporal/frequency maxima over every window.
+    // Waterfall-only requests may cover a cropped frequency band and publish
+    // completed rows progressively. Empty optional bounds mean the full band.
+    std::optional<std::pair<double, double>> waterfallBand;
+    std::size_t completedRows = 0;
+    bool complete = true;
     std::uint64_t invalidWindows = 0;
     std::uint64_t boundaryWindows = 0;
     WaveformResult waveform;
@@ -60,6 +67,19 @@ struct AverageResult {
     double enbwHz = 0;
 };
 
+struct WaterfallRequest {
+    FrameRange range;
+    double left = 0, right = 0; // Equal bounds request the full frequency band.
+    int columns = 1024, rows = 512; // Physical display pixels; bounded by analysis.
+    bool exact = false; // Full scan for the minimap; viewport work stays bounded.
+};
+using WaterfallUpdate = std::function<void(std::shared_ptr<const PreviewResult>)>;
+std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
+                                               const DspSettings &settings,
+                                               WaterfallRequest request,
+                                               const CancelCheck &cancelled,
+                                               const WaterfallUpdate &update = {});
+
 std::shared_ptr<PreviewResult> analyzePreview(const Recording &recording, FrameRange range,
                                               const DspSettings &settings,
                                               const CancelCheck &cancelled);
@@ -67,7 +87,8 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
                                               const DspSettings &settings,
                                               const CancelCheck &cancelled,
                                               const Progress &progress = {},
-                                              PreviewResult *overview = nullptr);
+                                              PreviewResult *overview = nullptr,
+                                              int overviewColumns = 1024, int overviewRows = 128);
 std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, FrameRange range,
                                                 const CancelCheck &cancelled,
                                                 const Progress &progress = {});

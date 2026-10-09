@@ -6,6 +6,19 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Waterfall density and minimap (2026-10-09 working tree): all seven CTest suites
+  pass on Fedora 44 in Debug and Release with Qt 6.11.2 / FFTW 3.3.10, including
+  the independent numerical oracle. New core cases cover higher row/column
+  density, visible frequency bins, full-scan burst preservation, immutable
+  progressive snapshots, cancellation, sampled coverage, and capture boundaries.
+  GUI cases cover independent viewport/analysis ranges, selector movement and
+  both resize handles, bounds and minimum span, frame indices above 2^53,
+  measurements across refinement, stale-request rejection, hover outside the
+  analysis range, exact-overview coexistence, and exported viewport metadata.
+  Offscreen images were inspected at normal and 2× display scaling. Dense
+  400 MB / 4 GB benchmark smoke checks and a mixed navigation run including the
+  1,048,576-point FFT pass; measurements and scope are in BENCHMARKS.md.
+
 - Development/release channels (2026-10-09): all seven CTest suites pass in Fedora
   44 Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK. The
   container build produces `0.2.0-dev.184.g233be51` packages; final portable-folder

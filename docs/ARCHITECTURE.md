@@ -87,8 +87,12 @@ hop, scaling, detrending, and sidedness, instead of relying on library defaults.
 
 Each `AnalysisController` runs recording/DSP jobs on its own `std::jthread`.
 Submitting a new job atomically cancels that controller's running token and
-replaces its pending job. The main window uses a separate controller for
-one-window hover previews, so mouse movement does not cancel averages or exports.
+replaces its pending job. The main window uses separate controllers for one-window hover previews, waterfall
+viewport detail, and the whole-recording minimap. Navigation and hover do not cancel
+averages or exports, and minimap scanning continues through viewport changes.
+Progressive minimap snapshots are immutable copies, published about every 100 ms
+as rows complete. A mutex-protected latest snapshot and one queued notification
+coalesce GUI delivery, bounding the queue even while the GUI is occupied.
 The main window owns the shared frame cursor and freeze state for both time
 plots. Waveform sample buckets select the corresponding waterfall row start.
 An out-of-range waveform preview follows the selected frame using the hover
@@ -117,13 +121,24 @@ change an export midway.
 - Maximum individual recording read: 32 MiB.
 - Ordinary decoded read block: 262,144 frames; raised only for a larger FFT.
 - Preview FFT work: at most 128 windows / approximately 8 million input frames.
-- Waterfall snapshots: at most 128 × 1,024 double-valued cells.
+- Initial waterfall previews: at most 128 × 1,024 cells. Explicit exact overview
+  requests use the same physical-pixel grid bounds as viewport detail.
+- Waterfall viewport grids: physical plot pixels, at most 4,096 per axis and
+  4,194,304 double-valued cells (32 MiB). FFT work stays within approximately
+  eight million input frames. Small intervals scan every window into maxima;
+  larger intervals are explicitly sampled. Frequency reduction uses the visible
+  FFT bins, with exact bin-aligned raster bounds.
+- Minimap: 1,024 × 192 cells (1.5 MiB), scanning every required window; it does
+  not compute an implicit numeric average. Resizing does not restart this pass.
 - Waveform snapshots: at most 2,048 envelope buckets; every sample in a covered
   bucket contributes to its extrema.
 - Preview LRU: 64 MiB per controller, maintained only by its worker; the main
-  window's analysis and hover caches together retain at most 128 MiB.
+  window's analysis, hover, and viewport caches retain at most 192 MiB, plus a
+  separate 4 MiB minimap cache. Raster images and active FFT buffers are additional.
 
-Cache keys include source identity, full descriptor, DSP settings, and range.
+Cache keys include source identity, full descriptor, DSP settings, and range. Waterfall keys also include the requested frequency
+bounds, pixel dimensions, and full-scan mode. Palette and color limits do not
+change these numerical cache keys.
 Identity checks size, inode/device, modification and change timestamps and path
 replacement. This is ordinary mutation detection, not a cryptographic guarantee
 against arbitrary same-size edits with manipulated timestamps. Do not claim it
@@ -145,6 +160,14 @@ as measurement input. Exact waterfall overviews and averages share one pass;
 temporal/frequency maxima preserve events in covered windows but are not a
 replacement for numeric bins or zoomed analysis. Capture boundaries are never
 crossed by an accepted FFT window.
+
+Waterfall viewport bounds are 64-bit frame ranges separate from the analysis
+selection. Pixel mapping subtracts integer frame origins before conversion.
+Measurements retain frame endpoints across density refreshes and band drags
+preserve their frame span. Hover inspects the painted cell's representative FFT
+start; maximum-aggregated cells remain visual summaries, not numeric measurements.
+Retune/absolute-frequency labeling uses the actual waterfall viewport. PNG
+metadata distinguishes visible bounds from the cached raster's source bounds.
 
 ## Persistence and maintenance
 

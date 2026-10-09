@@ -18,7 +18,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Large recordings, bounded positional reads | Implemented | No whole-file allocation; 32 MiB maximum read call |
 | Partial / growing recording import | Implemented | Opt-in import checkbox / CLI --partial; complete frames at open; append-only prefix; reopen for more data; sessions retain snapshot bounds |
 | Positive/fractional sample rates | Implemented | Derived floating arithmetic must remain representable |
-| Default spectrum and waterfall | Implemented | Large waterfall views are explicitly sampled previews |
+| Default spectrum and waterfall | Implemented | Physical-pixel viewport detail; visible FFT-bin reduction; large views explicitly sampled |
+| Waterfall minimap | Implemented | Progressive exact whole-recording maxima; move/resize viewport independently of analysis range |
 | Spectrum hover crosshair | Implemented | Pointer frequency/power axis labels; zoom, absolute frequency and dBFS/Hz supported; exact FFT-bin readout retained |
 | Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
 | Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; local previews follow out-of-range frames |
