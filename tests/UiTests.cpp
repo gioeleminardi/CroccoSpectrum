@@ -1466,7 +1466,21 @@ class UiTests : public QObject
         QSignalSpy cursor(&plot, &rf::SpectrumPlot::cursorChanged);
         QTest::mouseMove(&plot, QPoint(76, 60));
         QTRY_VERIFY(!cursor.isEmpty());
-        QVERIFY(cursor.last().at(0).toString().contains("999999904.63256836 Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Bin 0 · 999999904.63256836 Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 999999905 Hz"));
+        const auto badge = QRect(76, plot.height() - 37,
+                                 plot.fontMetrics().horizontalAdvance("999.999905 MHz") + 12,
+                                 plot.fontMetrics().height() + 2);
+        const auto roundedLabel = plot.grab(badge).toImage();
+        // The fractional coordinate and its nearest whole Hz render the same badge.
+        plot.setView(view, rf::PowerScale::Spectrum, 1'000'000'000.367431640625);
+        QCOMPARE(plot.grab(badge).toImage(), roundedLabel);
+        view.absoluteFrequency = false;
+        plot.setView(view, rf::PowerScale::Spectrum, 0);
+        moveMouse(&plot, QPoint(76, 60));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: -95 Hz"));
+        moveMouse(&plot, QPoint(576, 60));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 191 Hz"));
     }
     void latestRequestAndPalette()
     {

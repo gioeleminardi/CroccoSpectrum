@@ -291,7 +291,7 @@ void SpectrumPlot::paintCrosshair(QPainter &painter, double minimum, double maxi
         painter.drawText(rect, Qt::AlignCenter, text);
     };
     const double labelHeight = painter.fontMetrics().height() + 2;
-    const auto frequencyLabel = frequencyText(frequency);
+    const auto frequencyLabel = frequencyText(std::round(frequency));
     const double labelWidth =
         std::min(plot.width(), painter.fontMetrics().horizontalAdvance(frequencyLabel) + 12.0);
     badge(QRectF(std::clamp(position.x() - labelWidth / 2, plot.left(), plot.right() - labelWidth),
@@ -502,8 +502,8 @@ void SpectrumPlot::updateHover(const QPointF &position)
                                frequency[index] + (view_.absoluteFrequency ? center_ : 0), 'g', 17))
                            .arg(number(powerToDb(power[index])))
                            .arg(powerUnit(scale_))
-                           .arg(QString::number(target + (view_.absoluteFrequency ? center_ : 0),
-                                                'g', 17))
+                           .arg(QString::number(
+                               std::round(target + (view_.absoluteFrequency ? center_ : 0)), 'f', 0))
                            .arg(number(level)));
     update();
 }
