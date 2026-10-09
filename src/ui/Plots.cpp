@@ -412,6 +412,9 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
                          : divisor == 1e6 ? "MHz"
                          : divisor == 1e3 ? "kHz"
                                           : "Hz";
+    // Keep ticks compact after panning, with enough precision for narrow zooms.
+    const double tickSpacing = (right_ - left_) / (4 * divisor);
+    const int decimals = std::max(0, static_cast<int>(std::ceil(-std::log10(tickSpacing))) + 1);
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const double x = plot.left() + fraction * plot.width();
@@ -425,8 +428,9 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
         const double labelX = std::clamp(x - 65, 0.0, static_cast<double>(width() - 130));
         painter.drawText(
             QRectF(labelX, plot.bottom() + 5, 130, 18), Qt::AlignCenter,
-            number((left_ + fraction * (right_ - left_) + (view_.absoluteFrequency ? center_ : 0)) /
-                   divisor));
+            QString::number((left_ + fraction * (right_ - left_) +
+                             (view_.absoluteFrequency ? center_ : 0)) / divisor,
+                            'f', decimals));
     }
     painter.drawText(
         QRectF(plot.left(), height() - 20, plot.width(), 18), Qt::AlignCenter,

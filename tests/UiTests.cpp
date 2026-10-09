@@ -2438,6 +2438,54 @@ class UiTests : public QObject
         QCOMPARE(rf::readPreferences(renamedPath).view.colorMin, -110.0);
         QCOMPARE(rf::readPreferences(legacyPath).dsp.fftSize, 8192);
     }
+    void spectrumFrequencyAxisRounding_data()
+    {
+        QTest::addColumn<double>("span");
+        QTest::addColumn<double>("center");
+        QTest::addColumn<double>("roundedLeft");
+        QTest::newRow("Hz") << 400.0 << 0.0 << -230.0;
+        QTest::newRow("kHz") << 4000.0 << 0.0 << -2300.0;
+        QTest::newRow("MHz") << 400'000.0 << 915'000'000.0 << -230'000.0;
+        QTest::newRow("GHz") << 4'000'000.0 << 2'400'000'000.0 << -2'300'000.0;
+        QTest::newRow("narrow-GHz") << 400.0 << 2'400'000'000.0 << -230.0;
+        QTest::newRow("sub-Hz") << 0.4 << 0.0 << -0.23;
+    }
+    void spectrumFrequencyAxisRounding()
+    {
+        QFETCH(double, span);
+        QFETCH(double, center);
+        QFETCH(double, roundedLeft);
+        for (const bool average : {false, true}) {
+            rf::SpectrumPlot plot;
+            plot.resize(600, 250);
+            auto result = std::make_shared<rf::PreviewResult>();
+            result->frequencies = {-span, 0, span};
+            result->spectrum.power = {0.25, 0.5, 0.25};
+            if (average) {
+                auto mean = std::make_shared<rf::AverageResult>();
+                mean->frequencies = result->frequencies;
+                mean->averagePower = result->spectrum.power;
+                mean->validWindows = 1;
+                plot.setAverage(mean, false);
+            } else
+                plot.setPreview(result);
+            rf::ViewSettings view;
+            view.absoluteFrequency = center != 0;
+            plot.setView(view, rf::PowerScale::Spectrum, center);
+            plot.setFrequencyRange(-span / 2, span / 2);
+            const QRect axis(0, plot.height() - 33, plot.width(), 18);
+            const auto original = plot.grab(axis).toImage();
+            QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(326, 100));
+            moveMouse(&plot, QPoint(363, 100), Qt::LeftButton);
+            QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(363, 100));
+            moveMouse(&plot, QPoint(10, 10));
+            const auto panned = plot.grab(axis).toImage();
+            QVERIFY(panned != original); // Narrow GHz ticks must still distinguish the pan.
+            // Fractional panning coordinates render as the nearest display values.
+            plot.setFrequencyRange(roundedLeft, roundedLeft + span);
+            QCOMPARE(plot.grab(axis).toImage(), panned);
+        }
+    }
     void frequencyCursorPrecision()
     {
         rf::SpectrumPlot plot;

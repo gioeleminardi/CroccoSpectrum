@@ -18,6 +18,7 @@
 #include <QSslSocket>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVersionNumber>
 #include <QtTest>
 #include <cstring>
 
@@ -94,7 +95,17 @@ class FakeReply : public QNetworkReply
 class FakeNetwork : public QNetworkAccessManager
 {
   public:
-    QByteArray body = QJsonDocument(release("v0.2.1")).toJson(QJsonDocument::Compact);
+    FakeNetwork()
+    {
+        // Keep the simulated release newer than the configured build version.
+        const auto current = QVersionNumber::fromString(RF_VERSION);
+        version = QVersionNumber(current.majorVersion(), current.minorVersion(),
+                                 current.microVersion() + 1)
+                      .toString();
+        body = QJsonDocument(release("v" + version)).toJson(QJsonDocument::Compact);
+    }
+    QString version;
+    QByteArray body;
     int requests = 0;
     QPointer<FakeReply> reply;
 
@@ -229,7 +240,7 @@ class UpdateTests : public QObject
         QVERIFY(settings.lastAttempt.isValid());
         network.reply->complete();
         QCOMPARE(completed.count(), 1);
-        QCOMPARE(completed[0][0].toString(), QString("0.2.1"));
+        QCOMPARE(completed[0][0].toString(), network.version);
         QVERIFY(completed[0][2].toBool());
         QCOMPARE(changed.count(), 2);
     }
@@ -276,7 +287,7 @@ class UpdateTests : public QObject
         QTRY_COMPARE(network.requests, 1);
         network.reply->complete();
         QCOMPARE(completed.count(), 1);
-        QCOMPARE(completed[0][0].toString(), QString("0.2.1"));
+        QCOMPARE(completed[0][0].toString(), network.version);
         QCOMPARE(completed[0][1].toUrl(), QUrl("https://gioeleminardi.github.io/CroccoSpectrum"));
         QVERIFY(!completed[0][2].toBool());
         QVERIFY(timer->interval() > 23 * 60 * 60 * 1000);

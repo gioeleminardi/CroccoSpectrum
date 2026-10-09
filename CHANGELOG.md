@@ -4,6 +4,12 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.3.1 — 2026-10-09 — Frequency-axis rounding
+
+- Round frequency-axis labels in the spectrum and average plots according to
+  tick spacing, keeping panned views readable while preserving precision at
+  narrow zoom levels.
+
 ## 0.3.0 — 2026-10-09 — Waterfall navigation and faster analysis
 
 - Parallelize independent FFT windows for exact minimaps, spectral averages,
