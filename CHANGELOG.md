@@ -4,6 +4,54 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.3.1 — 2026-10-09 — Frequency-axis rounding
+
+- Round frequency-axis labels in the spectrum and average plots according to
+  tick spacing, keeping panned views readable while preserving precision at
+  narrow zoom levels.
+- Include changelog notes for versions skipped since the latest published stable
+  release in stable and development GitHub release descriptions.
+
+## 0.3.0 — 2026-10-09 — Waterfall navigation and faster analysis
+
+- Parallelize independent FFT windows for exact minimaps, spectral averages,
+  exact overviews, and larger previews/waterfalls with a bounded worker count.
+  Preserve window-order reductions, cancellation, and progressive snapshots;
+  keep small jobs and memory-heavy FFTs serial when appropriate.
+- Show an animated status-bar spinner whenever background analysis, waterfall
+  refinement, minimap filling, or exports are queued or running. Pointer-driven
+  hover FFT updates do not trigger it.
+- Add Settings → Waterfall rows to choose automatic display resolution or
+  128–4096 rows, saved across launches and sessions and applied to detail and exact overviews.
+  Honor explicit densities at large FFT sizes by allowing enough FFT work for the selected rows.
+- Add a saved Display option to adapt waterfall colors on zoom or keep the
+  current automatic color limits fixed across zoom, pan, and minimap navigation.
+- Increase waterfall detail using physical viewport pixels and visible FFT bins,
+  with bounded asynchronous refinement and explicit sampling/aggregation labels.
+- Add a progressively populated whole-recording waterfall minimap with a movable
+  viewport box and independently resizable top/bottom handles. Waterfall pan and
+  zoom control the viewport independently of the analysis range; preserve frame
+  measurements and freeze across refinement, and export actual viewport metadata.
+- Add View → Dark theme to switch controls and dialogs between dark and light
+  mode independently of the desktop theme. Save the choice across launches;
+  analysis plots keep their existing colors without recomputing results.
+- Hide the Baseband waveform panel by default. Enable it from View → Baseband
+  waveform or run an Exact waveform analysis; saved workspace visibility is
+  preserved.
+- Add Help → Plot controls with spectrum, waterfall, and waveform gesture
+  instructions in a dialog that can stay open while working. Remove plot hover
+  tooltips and display waveform time-range labels to three decimal places.
+- Align the average spectrum plot with the waterfall and keep its label and
+  max-hold checkbox compact across window sizes and restored workspaces.
+- Fix maximized floating panels retaining the mouse grab after a dock drag,
+  keeping the rest of the application responsive.
+- Open the CroccoSpectrum website from update notifications, and defer browser
+  launch until the dialog is destroyed so Wayland can complete the request.
+  Show a copyable URL if the browser launch request fails.
+- Check for updates on every startup and announce an available version once per
+  app session, including versions announced on previous launches. Continue to
+  respect disabled automatic checks and GitHub retry limits.
+
 ## 0.2.0 — 2026-10-09 — Update notifications and plot navigation
 
 - Identify development builds with the planned release version, CI build number,

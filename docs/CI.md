@@ -75,11 +75,18 @@ workflow resumes them. Published assets and tags are preserved.
 ## Development builds and versions
 
 `CMakeLists.txt` is the source of the next release's numeric version. Keep feature
-notes under `## Unreleased` in `CHANGELOG.md`. Each successful push to `devel`
+notes under `## Unreleased` in `CHANGELOG.md`. If `Unreleased` is absent during
+release preparation, development publication uses the section matching the CMake
+version. The selected section must contain notes. Each successful push to `devel`
 publishes a prerelease such as `v0.2.0-dev.184.g233be51`, using the workflow run
 number and seven characters of the built commit. The GUI, CLI, exported metadata,
 package names, accompanying source archive, and manifests use the same version.
 There is no version bump commit for each push.
+
+Stable and development release descriptions also include intervening version
+sections since GitHub's latest published stable release. For example, publishing
+`0.3.1` after `0.2.0` includes the `0.3.0` notes. With no published stable release,
+earlier version sections are included too. Future versions are excluded.
 
 The website offers the latest stable release and latest complete development build
 separately. Development selection uses the build number, so a slower older build

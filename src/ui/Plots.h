@@ -83,6 +83,13 @@ class WaterfallPlot : public QWidget
     explicit WaterfallPlot(QWidget *parent = nullptr);
     void setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
                     bool resetFrequency = true);
+    void setDetail(std::shared_ptr<const PreviewResult> result);
+    void setRecordingExtent(FrameRange extent, std::uint64_t minimumSpan);
+    void setViewport(FrameRange range);
+    [[nodiscard]] FrameRange viewport() const { return viewport_.value_or(FrameRange{}); }
+    [[nodiscard]] std::pair<double, double> frequencyRange() const { return {left_, right_}; }
+    [[nodiscard]] QSize pixelSize() const;
+    [[nodiscard]] std::shared_ptr<const PreviewResult> snapshot() const { return result_; }
     void setTimeSelectionPanEnabled(bool enabled) { timeSelectionPanEnabled_ = enabled; }
     void setTimeSelectionRange(FrameRange range);
     void setView(ViewSettings view, PowerScale scale, double centerFrequency);
@@ -108,9 +115,13 @@ class WaterfallPlot : public QWidget
     void timeSelectionPanChanged(double fraction);
     void measurementActiveChanged(bool active);
     void measurementChanged();
+    void viewportChanged(rf::FrameRange range);
+    void detailRequested();
 
   protected:
+    bool event(QEvent *) override;
     void paintEvent(QPaintEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
     void wheelEvent(QWheelEvent *) override;
@@ -126,14 +137,21 @@ class WaterfallPlot : public QWidget
     double visibleTop() const;
     double rowY(std::size_t row) const;
     std::optional<std::size_t> rowAt(const QPointF &position) const;
+    double frameY(std::uint64_t frame) const;
+    double measurementY(std::uint64_t frame) const;
+    void rememberMeasurement();
     std::shared_ptr<const PreviewResult> result_;
     QImage image_;
+    std::optional<std::pair<double, double>> colorRange_;
     ViewSettings view_;
     PowerScale scale_ = PowerScale::Spectrum;
     int hoveredRow_ = -1;
     bool frameFrozen_ = false;
     std::optional<double> frequencyCursor_;
     std::optional<std::pair<std::size_t, std::size_t>> measurementRows_;
+    std::optional<std::pair<std::uint64_t, std::uint64_t>> measurementFrames_;
+    std::pair<std::uint64_t, std::uint64_t> measurementDragFrames_;
+    std::optional<std::uint64_t> cursorFrame_;
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;
     std::optional<QPointF> dragPosition_;
@@ -144,7 +162,42 @@ class WaterfallPlot : public QWidget
     double dragRowCount_ = 1;
     double dragLeft_ = 0, dragRight_ = 1, dragTop_ = 0, dragBottom_ = 1;
     double top_ = 0, bottom_ = 1;
+    FrameRange extent_, dragViewport_;
+    std::optional<FrameRange> viewport_;
+    std::uint64_t minimumSpan_ = 1;
     double sampleRate_ = 1, center_ = 0, left_ = 0, right_ = 1;
+};
+
+class WaterfallMinimap : public QWidget
+{
+    Q_OBJECT
+  public:
+    explicit WaterfallMinimap(QWidget *parent = nullptr);
+    void setRecording(FrameRange extent, std::uint64_t minimumSpan);
+    void setViewport(FrameRange range);
+    void setSnapshot(std::shared_ptr<const PreviewResult> result);
+    void setView(ViewSettings view);
+    void clear();
+    [[nodiscard]] FrameRange viewport() const { return viewport_; }
+    [[nodiscard]] std::shared_ptr<const PreviewResult> snapshot() const { return result_; }
+    [[nodiscard]] QRectF mapRect() const;
+    [[nodiscard]] QRectF selectorRect() const;
+  signals:
+    void viewportChanged(rf::FrameRange range);
+  protected:
+    void paintEvent(QPaintEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
+  private:
+    void rebuildImage();
+    std::uint64_t frameAt(double y) const;
+    FrameRange extent_, viewport_, dragViewport_;
+    std::uint64_t minimumSpan_ = 1, pressFrame_ = 0;
+    MeasurementDrag::Target target_ = MeasurementDrag::Target::None;
+    std::shared_ptr<const PreviewResult> result_;
+    ViewSettings view_;
+    QImage image_;
 };
 
 class WaveformPlot : public QWidget

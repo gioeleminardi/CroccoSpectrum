@@ -54,3 +54,69 @@ The reference system uses NVMe storage; a separate sustained sequential-read
 ceiling was not measured. Network/HDD blocked-I/O cancellation, native interaction
 p95, recorder-produced files, and long-duration stability were not measured in
 this run.
+
+## Waterfall upgrade regression checks — 2026-10-09
+
+Fedora 44 Release build, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10; offscreen rendering.
+The updated soak harness uses a dense 400 MB synthetic I/Q fixture, waits for
+its initial whole-recording minimap, and then changes FFTs, analysis ranges,
+colors, and independent waterfall viewports. FFTs include 1,048,576 points.
+
+A separate 10.198-second run completed 46 mixed cycles: first preview **12 ms**,
+initial minimap complete **1,179 ms**, viewport-result p95 **105 ms**, selection
+preview p95 **126 ms**, and peak process RSS **408.8 MiB**. The largest FFT and
+concurrent analysis workers make this workload different from the earlier
+60-second run above. Cache/grid limits bound retained data; active FFT buffers
+and allocator retention contribute additional process memory.
+
+The existing dense-file benchmark also passed tone/power checks for 400 MB and
+4 GB files. GUI initial preview/paint process times were **160 ms** and **143 ms**,
+including the intentional 100 ms settling delay. These are local regression
+measurements, not native-desktop latency or long-duration stability evidence.
+
+Reproduce the new interaction workload with:
+
+```sh
+QT_QPA_PLATFORM=offscreen RF_SOAK_SECONDS=10 build/release/rf-soak-test
+```
+
+## Parallel FFT windows — 2026-10-09
+
+Same Ryzen 9 9950X3D reference machine, local NVMe/Btrfs, Fedora 44. Release
+working tree based on `ac1bd26`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10. Input was
+the local `mega.dat`: 4,000,000,000 bytes / one billion signed int16 complex
+I/Q frames at 100 MS/s (10 seconds). Hann windows, 50% overlap, no DC removal
+or conjugation. Every measured pass reported zero disk input blocks: these are
+warm-cache computation measurements, excluding GUI painting and file-open latency.
+
+| Workload | Serial | Parallel |
+| --- | --- | --- |
+| Exact minimap, whole 4 GB, FFT 65,536, 192 columns × 1,024 rows | 22.22 s | 4.88 s; final-build follow-up 4.31 s |
+| Sampled viewport, whole file, FFT 65,536, 1,024 columns × 4,096 rows | 3.114 s | 0.655 s; final-build follow-up 0.641 s |
+| Automatic viewport, whole file, FFT 65,536, 1,024 columns × 128 actual rows | 0.104 s | 0.025 s |
+| Exact average, first 400 MB, FFT 4,096 | 1.197 s | 0.233 s |
+| Exact average, first 400 MB, FFT 65,536 | 2.245 s | 0.490 s |
+| Exact overview + average, first 400 MB, FFT 65,536, default 1,024 × 128 grid | 2.508 s | 0.484 s |
+
+A temporary headless C++ harness called `analyzeWaterfall` and `analyzeAverage`
+directly. Exact minimap calls included progressive immutable-snapshot copying.
+The original serial `Analysis.cpp` and the parallel implementation used the same
+recording/DSP code, compiler, and FFTW library. The machine-readable results and
+scope are in [fft-benchmarks.json](fft-benchmarks.json). These are individual local
+passes and follow-ups, not statistical latency guarantees or cold-storage tests.
+
+The automatic policy selected six workers for FFT 65,536 and seven for FFT 4,096.
+Final-build peak RSS was 106.7 MiB for the full exact minimap, 83.8 MiB for the
+4,096-row viewport, and 92–106.5 MiB for the prefix average/overview jobs. Parallel
+processing uses more memory and aggregate CPU time than the serial implementation;
+worker-local buffers and one bounded pending batch per worker keep storage
+independent of recording length. Short jobs stay serial, and the memory estimate
+also keeps the largest FFT serial. Original numerical calculations and window-order
+reductions are retained; no approximation or reduced overlap was introduced.
+
+A separate 10.154-second offscreen GUI mixed-operation run completed 45 cycles:
+first preview 16 ms, initial minimap complete 323 ms, viewport-result p95 104 ms,
+seek-result p95 127 ms, and peak RSS 517.5 MiB. This workload includes concurrent
+controllers, caches, and the 1,048,576-point FFT; its RSS is not the headless
+scan's worker-memory estimate. It is a short regression check, not evidence of
+native-desktop latency or long-duration stability.

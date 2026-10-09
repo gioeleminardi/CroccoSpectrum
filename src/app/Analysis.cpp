@@ -7,9 +7,14 @@
 #include <QJsonDocument>
 #include <QTextStream>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <exception>
 #include <limits>
+#include <mutex>
+#include <thread>
 
 namespace rf
 {
@@ -74,6 +79,134 @@ std::uint64_t interpolate(std::uint64_t span, std::uint64_t index, std::uint64_t
     // Exact integer interpolation without span*index overflowing at huge file
     // sizes. index <= denominator and the remainder product stays tiny here.
     return (span / denominator) * index + (span % denominator) * index / denominator;
+}
+
+struct WindowSpectrum {
+    SpectrumResult spectrum;
+    bool boundary = false;
+};
+
+// One bounded batch per worker, consumed in window order. Keeping reductions
+// on the caller preserves the online mean bit-for-bit and serializes callbacks.
+// Workers own their FFTW plans/read buffers and never call external callbacks.
+template <typename Start, typename Consume>
+void visitSpectra(const Recording &recording, FrameRange range, const DspSettings &settings,
+                  SpectrumEngine &engine, std::uint64_t count, bool contiguous,
+                  const Start &windowStart, const CancelCheck &cancelled, const Consume &consume)
+{
+    const auto length = static_cast<std::uint64_t>(settings.fftSize);
+    const auto batchSize = std::max<std::uint64_t>(1, 262144 / length);
+    const auto blockFrames = std::max<std::uint64_t>(262144, length);
+    // At most eight workers, half the advertised CPU threads, and roughly
+    // 128 MiB of worker storage. Large FFTs and short jobs use fewer workers.
+    const auto storagePerWorker = blockFrames * 64 + length * 40;
+    const auto workers = std::max<std::uint64_t>(1, std::min<std::uint64_t>(
+        {8, std::max(1U, std::thread::hardware_concurrency() / 2),
+         (128U * 1024U * 1024U) / storagePerWorker,
+         count / std::max<std::uint64_t>(1, 1'048'576 / length)}));
+    auto calculate = [&](SpectrumEngine &fft, WindowReader &reader, std::uint64_t index) {
+        WindowSpectrum result;
+        const auto start = windowStart(index);
+        result.boundary = recording.descriptor().crossesCapture(start, length);
+        result.spectrum.enbwHz = fft.enbwHz();
+        result.spectrum.valid = !result.boundary;
+        if (!result.boundary)
+            result.spectrum = contiguous ? fft.calculate(reader.window(start, length))
+                                         : fft.calculate(recording.read({start, start + length}));
+        return result;
+    };
+    if (workers == 1) {
+        WindowReader reader(recording, range, length);
+        for (std::uint64_t index = 0; index < count; ++index) {
+            checkpoint(cancelled);
+            consume(index, calculate(engine, reader, index));
+        }
+        return;
+    }
+    struct Slot {
+        std::vector<WindowSpectrum> results;
+        std::exception_ptr error;
+        bool ready = false;
+    };
+    std::vector<Slot> batchesReady(static_cast<std::size_t>(workers));
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::atomic_bool stopped = false;
+    std::vector<std::jthread> threads;
+    const auto batches = 1 + (count - 1) / batchSize;
+    try {
+        checkpoint(cancelled);
+        for (std::uint64_t worker = 0; worker < workers; ++worker) {
+            threads.emplace_back([&, worker] {
+                auto &slot = batchesReady[static_cast<std::size_t>(worker)];
+                try {
+                    SpectrumEngine fft(recording.descriptor().format.kind,
+                                       recording.descriptor().sampleRate, settings);
+                    WindowReader reader(recording, range, length);
+                    for (auto batch = worker; batch < batches; batch += workers) {
+                        std::unique_lock lock(mutex);
+                        changed.wait(lock, [&] { return stopped || !slot.ready; });
+                        if (stopped)
+                            return;
+                        lock.unlock();
+                        std::vector<WindowSpectrum> results;
+                        const auto first = batch * batchSize;
+                        const auto end = first + std::min(batchSize, count - first);
+                        results.reserve(static_cast<std::size_t>(end - first));
+                        for (auto index = first; index < end; ++index) {
+                            if (stopped)
+                                return;
+                            results.push_back(calculate(fft, reader, index));
+                        }
+                        lock.lock();
+                        slot.results = std::move(results);
+                        slot.ready = true;
+                        lock.unlock();
+                        changed.notify_all();
+                    }
+                } catch (...) {
+                    const std::lock_guard lock(mutex);
+                    slot.error = std::current_exception();
+                    slot.ready = true;
+                    changed.notify_all();
+                }
+            });
+        }
+        for (std::uint64_t batch = 0; batch < batches; ++batch) {
+            auto &slot = batchesReady[static_cast<std::size_t>(batch % workers)];
+            std::unique_lock lock(mutex);
+            while (!slot.ready) {
+                lock.unlock();
+                checkpoint(cancelled);
+                lock.lock();
+                changed.wait_for(lock, std::chrono::milliseconds(10), [&] { return slot.ready; });
+            }
+            if (slot.error)
+                std::rethrow_exception(slot.error);
+            auto results = std::move(slot.results);
+            slot.ready = false;
+            lock.unlock();
+            changed.notify_all();
+            for (std::size_t index = 0; index < results.size(); ++index) {
+                checkpoint(cancelled);
+                consume(batch * batchSize + index, std::move(results[index]));
+            }
+        }
+    } catch (...) {
+        {
+            const std::lock_guard lock(mutex);
+            stopped = true;
+        }
+        changed.notify_all();
+        // Join before destroying buffers, callbacks, or the recording reference.
+        threads.clear();
+        throw;
+    }
+    {
+        const std::lock_guard lock(mutex);
+        stopped = true;
+    }
+    changed.notify_all();
 }
 } // namespace
 
@@ -184,37 +317,34 @@ std::shared_ptr<PreviewResult> analyzePreview(const Recording &recording, FrameR
     result->columns = static_cast<int>(std::min<std::size_t>(1024, engine.binCount()));
     result->waterfall.reserve(static_cast<std::size_t>(rows) *
                               static_cast<std::size_t>(result->columns));
-    for (std::uint64_t row = 0; row < rows; ++row) {
-        checkpoint(cancelled);
-        const auto windowIndex = rows == 1 ? 0 : interpolate(windows - 1, row, rows - 1);
-        const auto start = range.begin + windowIndex * settings.hop();
-        result->rowStarts.push_back(start);
-        SpectrumResult spectrum;
-        spectrum.enbwHz = engine.enbwHz();
-        if (recording.descriptor().crossesCapture(start, length)) {
-            ++result->boundaryWindows;
-            spectrum.valid = false;
-        } else {
-            spectrum = engine.calculate(recording.read({start, start + length}));
-            if (!spectrum.valid)
+    auto windowStart = [&](std::uint64_t row) {
+        const auto index = rows == 1 ? 0 : interpolate(windows - 1, row, rows - 1);
+        return range.begin + index * settings.hop();
+    };
+    visitSpectra(recording, range, settings, engine, rows, false, windowStart, cancelled,
+        [&](std::uint64_t row, WindowSpectrum window) {
+            result->rowStarts.push_back(windowStart(row));
+            auto &spectrum = window.spectrum;
+            if (window.boundary)
+                ++result->boundaryWindows;
+            else if (!spectrum.valid)
                 ++result->invalidWindows;
-        }
-        for (int column = 0; column < result->columns; ++column) {
-            double peak = std::numeric_limits<double>::quiet_NaN();
-            if (spectrum.valid) {
-                const auto begin = static_cast<std::size_t>(column) * spectrum.power.size() /
-                                   static_cast<std::size_t>(result->columns);
-                const auto end = static_cast<std::size_t>(column + 1) * spectrum.power.size() /
-                                 static_cast<std::size_t>(result->columns);
-                peak =
-                    *std::max_element(spectrum.power.begin() + static_cast<std::ptrdiff_t>(begin),
-                                      spectrum.power.begin() + static_cast<std::ptrdiff_t>(end));
+            for (int column = 0; column < result->columns; ++column) {
+                double peak = std::numeric_limits<double>::quiet_NaN();
+                if (spectrum.valid) {
+                    const auto begin = static_cast<std::size_t>(column) * spectrum.power.size() /
+                                       static_cast<std::size_t>(result->columns);
+                    const auto end = static_cast<std::size_t>(column + 1) * spectrum.power.size() /
+                                     static_cast<std::size_t>(result->columns);
+                    peak =
+                        *std::max_element(spectrum.power.begin() + static_cast<std::ptrdiff_t>(begin),
+                                          spectrum.power.begin() + static_cast<std::ptrdiff_t>(end));
+                }
+                result->waterfall.push_back(peak);
             }
-            result->waterfall.push_back(peak);
-        }
-        if (row == 0)
-            result->spectrum = std::move(spectrum);
-    }
+            if (row == 0)
+                result->spectrum = std::move(spectrum);
+        });
     const FrameRange waveRange{range.begin,
                                range.begin + std::min<std::uint64_t>(range.size(), 131072)};
     result->waveform = *analyzeWaveform(recording, waveRange, cancelled);
@@ -224,10 +354,125 @@ std::shared_ptr<PreviewResult> analyzePreview(const Recording &recording, FrameR
     return result;
 }
 
+std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
+                                               const DspSettings &settings,
+                                               WaterfallRequest request,
+                                               const CancelCheck &cancelled,
+                                               const WaterfallUpdate &update)
+{
+    const auto range = request.range;
+    recording.validateRange(range);
+    settings.validate(recording.descriptor().sampleRate);
+    const auto length = static_cast<std::uint64_t>(settings.fftSize);
+    if (range.size() < length)
+        throw std::runtime_error("Waterfall viewport is shorter than one FFT window");
+    SpectrumEngine engine(recording.descriptor().format.kind, recording.descriptor().sampleRate,
+                          settings);
+    const auto frequencies = engine.frequencies();
+    const double spacing = recording.descriptor().sampleRate / settings.fftSize;
+    const double fullRight = frequencies.back() +
+                            (recording.descriptor().format.kind == SampleKind::Complex ? spacing : 0);
+    const double left = request.left < request.right
+                            ? std::clamp(request.left, frequencies.front(), fullRight - spacing)
+                            : frequencies.front();
+    const double right = request.left < request.right
+                             ? std::clamp(request.right, left + spacing, fullRight)
+                             : fullRight;
+    const auto firstAbove = std::upper_bound(frequencies.begin(), frequencies.end(), left);
+    const auto firstBin = firstAbove == frequencies.begin() ? std::size_t{0}
+        : static_cast<std::size_t>(firstAbove - frequencies.begin() - 1);
+    const auto endBin = recording.descriptor().format.kind == SampleKind::Real && right == fullRight
+        ? frequencies.size()
+        : std::max(firstBin + 1, static_cast<std::size_t>(
+              std::lower_bound(frequencies.begin(), frequencies.end(), right) - frequencies.begin()));
+    auto result = std::make_shared<PreviewResult>();
+    result->range = range;
+    // Plots need full-band bounds and bin spacing, not a second million-bin spectrum.
+    result->frequencies = {frequencies.front(), frequencies.front() + spacing, frequencies.back()};
+    result->waterfallBand = std::pair{frequencies[firstBin],
+                                     endBin == frequencies.size() ? fullRight : frequencies[endBin]};
+    result->columns = static_cast<int>(std::min<std::size_t>(
+        std::clamp(request.columns, 1, 4096), endBin - firstBin));
+    const auto windows = 1 + (range.size() - length) / settings.hop();
+    // At most 32 MiB of double-valued cells, regardless of file or display size.
+    const auto rowLimit = std::min<std::uint64_t>(
+        std::clamp(request.rows, 1, 4096), 4'194'304 / static_cast<unsigned>(result->columns));
+    constexpr std::uint64_t workFrames = 8'388'608;
+    // Automatic detail keeps the fast preview budget. A chosen density must
+    // allow enough FFTs for its rows, including with large FFT sizes.
+    const auto workWindows = std::max<std::uint64_t>(
+        request.fixedRows ? rowLimit : 1, workFrames / length);
+    const bool scan = request.exact || windows <= workWindows;
+    const auto rows = std::min(windows, scan ? rowLimit : std::min(rowLimit, workWindows));
+    result->sampled = !scan;
+    result->aggregated = scan && rows < windows;
+    result->complete = false;
+    result->waterfall.assign(static_cast<std::size_t>(rows) * static_cast<std::size_t>(result->columns),
+                             std::numeric_limits<double>::quiet_NaN());
+    for (std::uint64_t row = 0; row < rows; ++row) {
+        const auto index = scan ? interpolate(windows, row, rows)
+                                : (rows == 1 ? 0 : interpolate(windows - 1, row, rows - 1));
+        result->rowStarts.push_back(range.begin + index * settings.hop());
+    }
+    auto published = std::chrono::steady_clock::now();
+    if (update)
+        update(std::make_shared<const PreviewResult>(*result));
+    std::uint64_t row = 0;
+    const auto count = scan ? windows : rows;
+    visitSpectra(recording, range, settings, engine, count, scan,
+        [&](std::uint64_t index) {
+            return scan ? range.begin + index * settings.hop()
+                        : result->rowStarts[static_cast<std::size_t>(index)];
+        }, cancelled, [&](std::uint64_t index, WindowSpectrum window) {
+            if (scan) {
+                while (row + 1 < rows && index >= interpolate(windows, row + 1, rows))
+                    ++row;
+            } else
+                row = index;
+            if (window.boundary)
+                ++result->boundaryWindows;
+            else if (!window.spectrum.valid)
+                ++result->invalidWindows;
+            else {
+                const auto &power = window.spectrum.power;
+                for (int column = 0; column < result->columns; ++column) {
+                    const auto begin = firstBin + static_cast<std::size_t>(column) *
+                                                      (endBin - firstBin) /
+                                                      static_cast<std::size_t>(result->columns);
+                    const auto finish = firstBin + static_cast<std::size_t>(column + 1) *
+                                                       (endBin - firstBin) /
+                                                       static_cast<std::size_t>(result->columns);
+                    const double peak = *std::max_element(power.begin() +
+                                                             static_cast<std::ptrdiff_t>(begin),
+                                                         power.begin() +
+                                                             static_cast<std::ptrdiff_t>(finish));
+                    auto &cell = result->waterfall[static_cast<std::size_t>(row) *
+                                                      static_cast<std::size_t>(result->columns) +
+                                                  static_cast<std::size_t>(column)];
+                    cell = std::isnan(cell) ? peak : std::max(cell, peak);
+                }
+            }
+            if (!scan || index + 1 == interpolate(windows, row + 1, rows)) {
+                result->completedRows = static_cast<std::size_t>(row + 1);
+                const auto now = std::chrono::steady_clock::now();
+                if (update && now - published >= std::chrono::milliseconds(100)) {
+                    checkpoint(cancelled);
+                    update(std::make_shared<const PreviewResult>(*result));
+                    published = now;
+                }
+            }
+        });
+    checkpoint(cancelled);
+    recording.verifyUnchanged();
+    result->complete = true;
+    return result;
+}
+
 std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameRange range,
                                               const DspSettings &settings,
                                               const CancelCheck &cancelled,
-                                              const Progress &progress, PreviewResult *overview)
+                                              const Progress &progress, PreviewResult *overview,
+                                              int overviewColumns, int maximumOverviewRows)
 {
     recording.validateRange(range);
     settings.validate(recording.descriptor().sampleRate);
@@ -236,7 +481,6 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
         throw std::runtime_error("Selection is shorter than one complete FFT window");
     SpectrumEngine engine(recording.descriptor().format.kind, recording.descriptor().sampleRate,
                           settings);
-    WindowReader reader(recording, range, length);
     auto result = std::make_shared<AverageResult>();
     result->range = range;
     result->frequencies = engine.frequencies();
@@ -255,8 +499,11 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
         overview->spectrumStart = range.begin;
         overview->frequencies = result->frequencies;
         overview->aggregated = true;
-        overview->columns = static_cast<int>(std::min<std::size_t>(1024, engine.binCount()));
-        overviewRows = std::min<std::uint64_t>(128, windows);
+        overview->columns = static_cast<int>(std::min<std::size_t>(
+            std::clamp(overviewColumns, 1, 4096), engine.binCount()));
+        overviewRows = std::min<std::uint64_t>(windows, std::min<std::uint64_t>(
+            std::clamp(maximumOverviewRows, 1, 4096),
+            4'194'304 / static_cast<unsigned>(overview->columns)));
         overview->waterfall.assign(static_cast<std::size_t>(overviewRows) *
                                        static_cast<std::size_t>(overview->columns),
                                    std::numeric_limits<double>::quiet_NaN());
@@ -266,44 +513,44 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
         overview->spectrum.valid = false;
     }
     ProgressReporter reporter(progress);
-    for (std::uint64_t index = 0; index < windows; ++index) {
-        checkpoint(cancelled);
-        const auto start = range.begin + index * settings.hop();
-        if (overview && overviewRow + 1 < overviewRows &&
-            index >= interpolate(windows, overviewRow + 1, overviewRows))
-            ++overviewRow;
-        if (recording.descriptor().crossesCapture(start, length))
-            ++result->boundaryWindows;
-        else {
-            auto spectrum = engine.calculate(reader.window(start, length));
-            if (!spectrum.valid)
-                ++result->invalidWindows;
+    visitSpectra(recording, range, settings, engine, windows, true,
+        [&](std::uint64_t index) { return range.begin + index * settings.hop(); },
+        cancelled, [&](std::uint64_t index, WindowSpectrum window) {
+            if (overview && overviewRow + 1 < overviewRows &&
+                index >= interpolate(windows, overviewRow + 1, overviewRows))
+                ++overviewRow;
+            if (window.boundary)
+                ++result->boundaryWindows;
             else {
-                ++result->validWindows;
-                for (std::size_t bin = 0; bin < spectrum.power.size(); ++bin) {
-                    // Online arithmetic mean in linear power, not dB. This
-                    // avoids both file-sized storage and a sum that overflows.
-                    result->averagePower[bin] += (spectrum.power[bin] - result->averagePower[bin]) /
-                                                 static_cast<double>(result->validWindows);
-                    result->maxPower[bin] = std::max(result->maxPower[bin], spectrum.power[bin]);
-                    if (overview) {
-                        const auto column =
-                            ((bin + 1) * static_cast<std::size_t>(overview->columns) - 1) /
-                            spectrum.power.size();
-                        auto &cell =
-                            overview->waterfall[static_cast<std::size_t>(overviewRow) *
-                                                    static_cast<std::size_t>(overview->columns) +
-                                                column];
-                        cell = std::isnan(cell) ? spectrum.power[bin]
-                                                : std::max(cell, spectrum.power[bin]);
+                auto &spectrum = window.spectrum;
+                if (!spectrum.valid)
+                    ++result->invalidWindows;
+                else {
+                    ++result->validWindows;
+                    for (std::size_t bin = 0; bin < spectrum.power.size(); ++bin) {
+                        // Online arithmetic mean in linear power, not dB. This
+                        // avoids both file-sized storage and a sum that overflows.
+                        result->averagePower[bin] += (spectrum.power[bin] - result->averagePower[bin]) /
+                                                     static_cast<double>(result->validWindows);
+                        result->maxPower[bin] = std::max(result->maxPower[bin], spectrum.power[bin]);
+                        if (overview) {
+                            const auto column =
+                                ((bin + 1) * static_cast<std::size_t>(overview->columns) - 1) /
+                                spectrum.power.size();
+                            auto &cell =
+                                overview->waterfall[static_cast<std::size_t>(overviewRow) *
+                                                        static_cast<std::size_t>(overview->columns) +
+                                                    column];
+                            cell = std::isnan(cell) ? spectrum.power[bin]
+                                                    : std::max(cell, spectrum.power[bin]);
+                        }
                     }
                 }
+                if (overview && index == 0)
+                    overview->spectrum = std::move(spectrum);
             }
-            if (overview && index == 0)
-                overview->spectrum = std::move(spectrum);
-        }
-        reporter.report(static_cast<double>(index + 1) / static_cast<double>(windows));
-    }
+            reporter.report(static_cast<double>(index + 1) / static_cast<double>(windows));
+        });
     checkpoint(cancelled);
     recording.verifyUnchanged();
     if (result->validWindows == 0)

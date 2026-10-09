@@ -13,10 +13,12 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSslSocket>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVersionNumber>
 #include <QtTest>
 #include <cstring>
 
@@ -93,7 +95,17 @@ class FakeReply : public QNetworkReply
 class FakeNetwork : public QNetworkAccessManager
 {
   public:
-    QByteArray body = QJsonDocument(release("v0.2.1")).toJson(QJsonDocument::Compact);
+    FakeNetwork()
+    {
+        // Keep the simulated release newer than the configured build version.
+        const auto current = QVersionNumber::fromString(RF_VERSION);
+        version = QVersionNumber(current.majorVersion(), current.minorVersion(),
+                                 current.microVersion() + 1)
+                      .toString();
+        body = QJsonDocument(release("v" + version)).toJson(QJsonDocument::Compact);
+    }
+    QString version;
+    QByteArray body;
     int requests = 0;
     QPointer<FakeReply> reply;
 
@@ -111,7 +123,11 @@ class UpdateTests : public QObject
 {
     Q_OBJECT
   public slots:
-    void captureUrl(const QUrl &url) { openedUrl_ = url; }
+    void captureUrl(const QUrl &url)
+    {
+        openedUrl_ = url;
+        dialogDestroyedBeforeLaunch_ = !openingDialog_;
+    }
 
   private slots:
     void developmentBuildsRecognizeTheirFinalRelease()
@@ -135,7 +151,7 @@ class UpdateTests : public QObject
         QVERIFY(candidate);
         QCOMPARE(candidate->version, QString("0.1.10"));
         QCOMPARE(candidate->url,
-                 QUrl("https://github.com/gioeleminardi/CroccoSpectrum/releases/tag/0.1.10"));
+                 QUrl("https://gioeleminardi.github.io/CroccoSpectrum"));
         QVERIFY(!rf::newerRelease(response({release("v0.1.6"), release("0.1.5")}), "0.1.6"));
     }
     void rejectsUnavailableReleases()
@@ -224,7 +240,7 @@ class UpdateTests : public QObject
         QVERIFY(settings.lastAttempt.isValid());
         network.reply->complete();
         QCOMPARE(completed.count(), 1);
-        QCOMPARE(completed[0][0].toString(), QString("0.2.1"));
+        QCOMPARE(completed[0][0].toString(), network.version);
         QVERIFY(completed[0][2].toBool());
         QCOMPARE(changed.count(), 2);
     }
@@ -256,6 +272,57 @@ class UpdateTests : public QObject
         QCOMPARE(network.requests, 3);
         checker.setAutomaticChecking(false);
         QVERIFY(network.reply->aborted);
+    }
+    void startupChecksIgnoreRecentAttempts()
+    {
+        rf::UpdateSettings settings;
+        settings.lastAttempt = QDateTime::currentDateTimeUtc();
+        FakeNetwork network;
+        rf::UpdateChecker checker(settings, nullptr, &network);
+        QSignalSpy completed(&checker, &rf::UpdateChecker::finished);
+        checker.startAutomaticChecks();
+        auto *timer = checker.findChild<QTimer *>("automaticUpdateTimer");
+        QCOMPARE(timer->interval(), 5000);
+        timer->start(0);
+        QTRY_COMPARE(network.requests, 1);
+        network.reply->complete();
+        QCOMPARE(completed.count(), 1);
+        QCOMPARE(completed[0][0].toString(), network.version);
+        QCOMPARE(completed[0][1].toUrl(), QUrl("https://gioeleminardi.github.io/CroccoSpectrum"));
+        QVERIFY(!completed[0][2].toBool());
+        QVERIFY(timer->interval() > 23 * 60 * 60 * 1000);
+        checker.check(false);
+        QCOMPARE(network.requests, 1);
+
+        rf::UpdateChecker restarted(settings, nullptr, &network);
+        restarted.startAutomaticChecks();
+        auto *startupTimer = restarted.findChild<QTimer *>("automaticUpdateTimer");
+        QCOMPARE(startupTimer->interval(), 5000);
+        startupTimer->start(0);
+        QTRY_COMPARE(network.requests, 2);
+        network.reply->complete();
+    }
+    void startupChecksRespectOptOutAndRetryLimits()
+    {
+        rf::UpdateSettings settings;
+        settings.automatic = false;
+        FakeNetwork network;
+        rf::UpdateChecker checker(settings, nullptr, &network);
+        checker.startAutomaticChecks();
+        auto *timer = checker.findChild<QTimer *>("automaticUpdateTimer");
+        QVERIFY(!timer->isActive());
+        checker.check(false);
+        QCOMPARE(network.requests, 0);
+        settings.retryAfter = QDateTime::currentDateTimeUtc().addSecs(300);
+        checker.setAutomaticChecking(true);
+        QVERIFY(timer->isActive());
+        QVERIFY(timer->interval() > 290000);
+        checker.check(false);
+        QCOMPARE(network.requests, 0);
+        settings.retryAfter = {};
+        checker.check(false);
+        QCOMPARE(network.requests, 1);
+        network.reply->complete();
     }
     void noStableReleaseIsNotAnError()
     {
@@ -369,7 +436,7 @@ class UpdateTests : public QObject
         QVERIFY(window.findChild<QAction *>("checkForUpdates")->isEnabled());
         checker->failed("offline", false);
         QVERIFY(!window.findChild<QDialog *>("updateDialog"));
-        const QUrl url("https://github.com/gioeleminardi/CroccoSpectrum/releases/tag/v0.1.7");
+        const QUrl url("https://gioeleminardi.github.io/CroccoSpectrum");
         checker->finished("0.1.7", url, false);
         auto *dialog = window.findChild<QDialog *>("updateDialog");
         QVERIFY(dialog);
@@ -381,10 +448,12 @@ class UpdateTests : public QObject
             QVERIFY(dialog->grab().save(screenshots + "/update.png"));
         }
         QDesktopServices::setUrlHandler("https", this, "captureUrl");
+        const auto resetUrlHandler =
+            qScopeGuard([] { QDesktopServices::unsetUrlHandler("https"); });
+        openingDialog_ = dialog;
         dialog->findChild<QPushButton *>("openUpdateRelease")->click();
-        QDesktopServices::unsetUrlHandler("https");
-        QCOMPARE(openedUrl_, url);
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QTRY_COMPARE(openedUrl_, url);
+        QVERIFY(dialogDestroyedBeforeLaunch_);
         QVERIFY(!window.findChild<QDialog *>("updateDialog"));
         checker->finished("0.1.7", url, false);
         QVERIFY(!window.findChild<QDialog *>("updateDialog"));
@@ -400,7 +469,59 @@ class UpdateTests : public QObject
         rf::MainWindow restored(nullptr, path);
         QVERIFY(!restored.findChild<QAction *>("automaticUpdateChecks")->isChecked());
         restored.findChild<rf::UpdateChecker *>()->finished("0.1.7", url, false);
-        QVERIFY(!restored.findChild<QDialog *>("updateDialog"));
+        QVERIFY(restored.findChild<QDialog *>("updateDialog"));
+    }
+    void releasePageLaunchFailure()
+    {
+        if (QGuiApplication::platformName() != "offscreen")
+            QSKIP("The offscreen platform provides a browser launch failure without external apps");
+        QTemporaryDir directory;
+        rf::MainWindow window(nullptr, directory.filePath("preferences.json"));
+        const QUrl url("https://gioeleminardi.github.io/CroccoSpectrum");
+        window.findChild<rf::UpdateChecker *>()->finished("0.1.7", url, true);
+        QPointer<QDialog> original = window.findChild<QDialog *>("updateDialog");
+        QVERIFY(original);
+        original->findChild<QPushButton *>("openUpdateRelease")->click();
+        QTRY_VERIFY(!original);
+        QTRY_VERIFY(window.findChild<QDialog *>("updateDialog"));
+        auto *dialog = window.findChild<QDialog *>("updateDialog");
+        auto *label = dialog->findChild<QLabel *>();
+        QVERIFY(label->text().contains("Couldn't open the browser"));
+        QVERIFY(label->text().contains(url.toDisplayString()));
+        QVERIFY(label->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+        QVERIFY(dialog->findChild<QPushButton *>("openUpdateRelease"));
+        dialog->reject();
+        QTRY_VERIFY(!window.findChild<QDialog *>("updateDialog"));
+    }
+    void waylandReleasePageHandoff()
+    {
+        if (!QGuiApplication::platformName().startsWith("wayland"))
+            QSKIP("Requires a Wayland session to exercise Qt's asynchronous URL launch");
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QFile opener(directory.filePath("xdg-open"));
+        QVERIFY(opener.open(QIODevice::WriteOnly));
+        opener.write("#!/bin/sh\nprintf '%s\\n' \"$1\" > \"$0.url\"\n");
+        opener.close();
+        QVERIFY(opener.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto originalPath = qgetenv("PATH");
+        const auto restorePath = qScopeGuard([originalPath] { qputenv("PATH", originalPath); });
+        qputenv("PATH", directory.path().toUtf8());
+
+        rf::MainWindow window(nullptr, directory.filePath("preferences.json"));
+        window.show();
+        const QUrl url("https://gioeleminardi.github.io/CroccoSpectrum");
+        window.findChild<rf::UpdateChecker *>()->finished("0.1.7", url, true);
+        auto *dialog = window.findChild<QDialog *>("updateDialog");
+        QVERIFY(dialog);
+        dialog->activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(dialog));
+        dialog->findChild<QPushButton *>("openUpdateRelease")->click();
+        QTRY_VERIFY(!window.findChild<QDialog *>("updateDialog"));
+        QFile openedUrl(directory.filePath("xdg-open.url"));
+        QTRY_VERIFY_WITH_TIMEOUT(openedUrl.exists(), 5000);
+        QVERIFY(openedUrl.open(QIODevice::ReadOnly));
+        QCOMPARE(openedUrl.readAll().trimmed(), url.toEncoded());
     }
     void liveHttpsCheck()
     {
@@ -419,6 +540,8 @@ class UpdateTests : public QObject
 
   private:
     QUrl openedUrl_;
+    QPointer<QDialog> openingDialog_;
+    bool dialogDestroyedBeforeLaunch_ = false;
 };
 
 QTEST_MAIN(UpdateTests)

@@ -89,15 +89,17 @@ for artifact contents, retention, and runner setup.
 
 ### Update notifications
 
-The GUI checks GitHub for stable releases shortly after startup and at most once
-every 24 hours. A newer version is announced only after both Linux packages and
-their checksums are uploaded. The notification opens the release page; download
+The GUI checks GitHub for stable releases five seconds after each startup and
+every 24 hours while running. A newer version is announced only after both Linux
+packages and their checksums are uploaded. The notification opens the
+[CroccoSpectrum website](https://gioeleminardi.github.io/CroccoSpectrum); download
 and install the package yourself.
 
 Use **Help → Automatically check for updates** to disable background checks, or
 **Help → Check for updates…** to check manually. Automatic failures stay quiet;
 manual checks report connection errors and rate limits. Each version is announced
-automatically once. Checking sends a request to GitHub; recordings and sessions
+automatically once per app session until you install it. Startup checks respect
+GitHub's retry limits. Checking sends a request to GitHub; recordings and sessions
 are not included. The CLI, tests, screenshots, and smoke tests stay offline.
 
 ### Run an AppImage
@@ -206,14 +208,18 @@ provide finer bins and cover longer time intervals.
 | View or operation | Coverage |
 | --- | --- |
 | **Spectrum** | Exact first complete FFT window in the selected interval |
-| **Waterfall preview** | Bounded selection of window starts; skipped windows are identified as a sampled preview |
+| **Waterfall viewport** | Pixel-sized frequency/time cells; bounded FFT work, explicitly labeled when sampled |
+| **Waterfall minimap** | Automatic background pass over every required window in the whole recording; temporal/frequency maxima |
 | **Average selected interval / entire recording** | Every eligible complete window; mean calculated in linear power |
 | **Exact waterfall overview + average** | Every required window; bounded temporal/frequency maxima and an exact average |
 | **Waveform preview** | Bounded initial region of the selection |
 | **Exact waveform** | Full selected interval, reduced to min/max envelopes |
 
-A sampled waterfall can miss short events. Use **Analysis → Exact waterfall
-overview + average** for a complete scan, then zoom into events for finer detail.
+A sampled waterfall can miss short events. The minimap scans the complete recording
+in the background and preserves short events through maximum aggregation. Use it
+to locate events and narrow the waterfall viewport for finer detail.
+**Analysis → Exact waterfall overview + average** remains available for an exact
+pass over the analysis interval with its numeric average.
 Invalid samples, capture-boundary windows, and incomplete trailing windows are
 counted rather than silently treated as valid measurements.
 
@@ -226,12 +232,16 @@ Open **Help → Keyboard shortcuts** or press **F1** for an at-a-glance cheatshe
 of all assigned shortcuts, plot gestures, and keyboard navigation. It can stay
 open while you work in the main window.
 
+Open **Help → Plot controls** for dedicated spectrum, waterfall, and waveform
+instructions. Plots show no hover tooltips; this guide can stay open while you work.
+
 | Action | Control |
 | --- | --- |
 | Zoom frequency | Mouse wheel over the spectrum or waterfall |
 | Pan frequency | Drag the spectrum or waterfall |
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
+| Move / resize the waterfall viewport | Drag the minimap box / its top or bottom handle |
 | Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
 | Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
@@ -249,16 +259,41 @@ open while you work in the main window.
 
 Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
 Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
-When the time selection shows a slice of the recording, Ctrl dragging moves that
-interval with its width fixed, stopping at the recording bounds. The Start and
-End frame fields update during the drag. Cached rows move immediately, while
-newly exposed data loads in the background during the gesture, preserving
-frequency zoom. Changing the interval clears measurements and frame freeze.
-When showing the whole recording, Ctrl dragging pans rows within the current
-preview. Ordinary dragging and wheel zoom also stay within the preview and
-preserve measurements. Zoom out to restore all its rows, or use the time
-shortcuts to change the analyzed interval. Frequency navigation stays linked
-to the spectra.
+Waterfall navigation changes only the visible time interval; the Start/End frame
+analysis range continues to control averages and sample exports. Cached pixels
+move immediately, and denser data loads asynchronously for the visible time and
+frequency bounds. Resolution follows the plot's physical pixels, within bounded
+FFT-work and memory limits. Changing the analysis interval or DSP settings clears
+measurements and frame freeze; viewport navigation preserves them.
+
+The minimap on the right covers the whole recording and full frequency band.
+Its box marks the visible time interval. Drag the box to move it, click elsewhere
+to center it there, or drag the top/bottom handles to change that boundary while
+keeping the opposite boundary fixed. The box stops at recording bounds and
+always spans at least one FFT window. Unprocessed minimap rows remain blue-gray;
+invalid completed rows use the existing magenta indication. Progress appears
+below the map. Navigation does not restart its background scan; new files and DSP
+settings do. Partial imports scan only the snapshot available when opened.
+**Settings → Waterfall rows** selects Automatic (display resolution), or 128,
+256, 512, 1024, 2048, or 4096 rows for the detailed view and exact overviews.
+The initial 128-row preview appears quickly and is then refined asynchronously.
+The actual count can be lower when fewer complete FFT windows are available or
+the memory limit applies. Explicit row choices allow enough FFT work to compute
+that density, including with large FFT sizes; higher counts can take longer.
+Automatic resolution keeps the fast FFT work limit. Increasing rows improves time detail; zooming into
+a shorter interval reveals individual windows. The choice is saved in preferences
+and sessions and does not change the analysis range or restart the minimap.
+An animated spinner in the lower status bar remains visible while any background
+analysis, waterfall refinement, minimap scan, or export is processing.
+It disappears once those tasks finish or are cancelled. Hovering over frames
+updates the spectrum without triggering the spinner.
+Palette changes recolor both views without rerunning FFTs. Frequency navigation
+stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
+With **Automatic range** enabled, **Adapt waterfall colors on zoom** recalculates
+the color limits for the displayed data. Turn it off to freeze the current limits
+while zooming, panning, or navigating the minimap. A new recording, analysis range,
+or DSP setting establishes a new range. The choice is saved in preferences and
+sessions; with Automatic range off, the Minimum and Maximum fields set fixed limits.
 
 The frequency spectrum initially shows the FFT window starting at sample frame
 0. Hovering either time plot selects the corresponding waterfall row, highlights
@@ -276,6 +311,9 @@ shows a local preview at that frame. An Exact waveform keeps its full selection.
 
 Use **View** to show or hide analysis panels. Panels can be docked, floated, and
 resized; preferences and workspace layout are restored on the next launch.
+Enable **View → Dark theme** for dark controls and dialogs, or disable it for
+light mode, independently of the desktop theme. The choice is saved between
+launches; analysis plots keep their existing colors.
 Save a session to retain recording interpretation, analysis settings, selection,
 and bookmarks together.
 
@@ -401,6 +439,13 @@ and qualification scope is recorded in [Validation](docs/VALIDATION.md).
 
 ## Performance
 
+Large FFT scans automatically use bounded parallel workers. Short jobs stay
+serial, and large FFT buffers reduce the worker count. Ordered reductions retain
+the same numerical results. On a local 4 GB recording with 65,536-point FFTs and
+50% overlap, parallel processing reduced the exact minimap from 22.2 s to 4.3–4.9 s
+and a 4,096-row viewport from 3.1 s to 0.64–0.66 s in Release. These warm-cache
+computation timings exclude GUI painting; details are in [Benchmarks](docs/BENCHMARKS.md).
+
 Measured with dense synthetic int16 I/Q recordings at 100 MS/s on a Ryzen 9
 9950X3D workstation with NVMe storage:
 
@@ -411,7 +456,8 @@ Measured with dense synthetic int16 I/Q recordings at 100 MS/s on a Ryzen 9
 | Peak memory for those average passes | About 22.5 MiB RSS |
 | Initial GUI preview of a 40 GB file | 150 ms |
 
-Average timings use a warm file cache, Hann 4,096-point FFTs, and 50% overlap.
+These earlier baseline average timings use one worker, a warm file cache,
+Hann 4,096-point FFTs, and 50% overlap.
 The GUI measurement is offscreen, uses a warm cache, and includes a 100 ms layout
 settling delay. Initial previews read bounded regions rather than scanning the
 whole file. See [Benchmarks](docs/BENCHMARKS.md) for hardware, methodology, and

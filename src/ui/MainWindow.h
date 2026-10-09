@@ -2,6 +2,7 @@
 #include "Plots.h"
 #include "app/AnalysisController.h"
 #include <QMainWindow>
+#include <QSet>
 #include <QUrl>
 class QComboBox;
 class QCheckBox;
@@ -16,6 +17,7 @@ class QDockWidget;
 class QListWidget;
 class QTimer;
 class QMenu;
+class QActionGroup;
 
 namespace rf
 {
@@ -52,12 +54,18 @@ class MainWindow : public QMainWindow
     void openRecording(RecordingDescriptor descriptor, FrameRange range, const QString &sourcePath);
     void showAbout();
     void showKeyboardShortcuts();
+    void showPlotControls();
     void showUpdateMessage(const QString &message, const QUrl &releaseUrl = {});
     void buildControls();
     void connectWorker();
     void applyPreferences();
+    void applyTheme();
     void schedulePreview();
     void requestPreview();
+    void scheduleWaterfall();
+    void requestWaterfall();
+    [[nodiscard]] int requestedWaterfallRows() const;
+    void startMinimap();
     void beginMeasurement(QWidget *plot);
     void updateWaterfallSelection();
     [[nodiscard]] bool measurementActive() const;
@@ -68,6 +76,7 @@ class MainWindow : public QMainWindow
     void updateFrameCursors();
     void displaySpectrum(std::shared_ptr<const PreviewResult> result, bool resetZoom);
     void updateSpectrumView();
+    void updateWaterfallCoverage();
     void updateDsp();
     void updateView();
     void updateRanges();
@@ -102,25 +111,28 @@ class MainWindow : public QMainWindow
     std::shared_ptr<const AverageResult> average_;
     std::shared_ptr<const WaveformResult> waveformResult_;
     FrameRange range_;
-    std::optional<FrameRange> waterfallPanRange_;
-    bool preserveFrequencyOnPreview_ = false;
     quint64 generation_ = 0;
     quint64 spectrumGeneration_ = 0;
     std::optional<std::uint64_t> spectrumFrame_;
     bool frameFrozen_ = false;
     bool frameCursorVisible_ = false;
     bool busy_ = false;
+    QSet<AnalysisController *> processingWorkers_;
     bool applying_ = false;
     AnalysisController controller_;
     AnalysisController spectrumController_;
+    AnalysisController waterfallController_, minimapController_;
+    quint64 waterfallGeneration_ = 0, minimapGeneration_ = 0;
     UpdateChecker *updateChecker_;
+    QString notifiedUpdateVersion_;
     SpectrumPlot *spectrum_, *averagePlot_;
     WaterfallPlot *waterfall_;
+    WaterfallMinimap *minimap_;
     WaveformPlot *waveform_;
     QDockWidget *controlsDock_, *averageDock_, *waveformDock_, *bookmarksDock_;
     QComboBox *fft_, *window_, *scale_, *palette_, *waveformMode_;
     QSpinBox *overlap_;
-    QCheckBox *removeDc_, *conjugate_, *autoRange_, *absoluteFrequency_, *maxHold_;
+    QCheckBox *removeDc_, *conjugate_, *autoRange_, *waterfallAutoRangeOnZoom_, *absoluteFrequency_, *maxHold_;
     QDoubleSpinBox *colorMin_, *colorMax_;
     QLineEdit *start_, *end_, *seekTime_;
     QSlider *timeline_;
@@ -129,6 +141,8 @@ class MainWindow : public QMainWindow
     QProgressBar *progress_;
     QListWidget *bookmarksList_;
     QTimer *previewTimer_, *saveTimer_;
+    QTimer *waterfallTimer_;
     QMenu *recentFilesMenu_;
+    QActionGroup *waterfallRowsGroup_;
 };
 } // namespace rf

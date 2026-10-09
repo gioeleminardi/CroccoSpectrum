@@ -145,6 +145,50 @@ QRgb paletteColor(const QString &palette, double position)
                 blend(colors[index].green(), colors[index + 1].green()),
                 blend(colors[index].blue(), colors[index + 1].blue()));
 }
+double frameDifference(std::uint64_t frame, std::uint64_t origin)
+{
+    return frame >= origin ? static_cast<double>(frame - origin)
+                           : -static_cast<double>(origin - frame);
+}
+
+FrameRange shiftedViewport(FrameRange range, long double delta, FrameRange extent)
+{
+    if (delta < 0) {
+        const auto shift = static_cast<std::uint64_t>(
+            std::min(std::round(-delta), static_cast<long double>(range.begin - extent.begin)));
+        return {range.begin - shift, range.end - shift};
+    }
+    const auto shift = static_cast<std::uint64_t>(
+        std::min(std::round(delta), static_cast<long double>(extent.end - range.end)));
+    return {range.begin + shift, range.end + shift};
+}
+
+QImage waterfallImage(const PreviewResult &result, const ViewSettings &view,
+                      std::pair<double, double> limits)
+{
+    const auto [minimum, maximum] = limits;
+    std::array<QRgb, 4096> colors;
+    for (std::size_t index = 0; index < colors.size(); ++index)
+        colors[index] = paletteColor(view.palette, static_cast<double>(index) / (colors.size() - 1));
+    QImage image(result.columns, static_cast<int>(result.rowStarts.size()), QImage::Format_RGB32);
+    for (int row = 0; row < image.height(); ++row) {
+        auto *pixels = reinterpret_cast<QRgb *>(image.scanLine(row));
+        for (int column = 0; column < image.width(); ++column) {
+            const double power = result.waterfall[static_cast<std::size_t>(row * image.width() + column)];
+            if (!result.complete && static_cast<std::size_t>(row) >= result.completedRows)
+                pixels[column] = qRgb(30, 43, 58);
+            else if (std::isnan(power))
+                pixels[column] = qRgb(160, 30, 130);
+            else {
+                const double position = std::clamp((powerToDb(power) - minimum) / (maximum - minimum),
+                                                   0.0, 1.0);
+                // Use rounding to retain the existing palettes' cell colors.
+                pixels[column] = colors[static_cast<std::size_t>(std::round(position * (colors.size() - 1)))];
+            }
+        }
+    }
+    return image;
+}
 } // namespace
 
 SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
@@ -152,9 +196,6 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Shift + left-click to start measuring frequency width and mean spectral power; "
-               "left-click again to finish. "
-               "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
 {
@@ -371,6 +412,9 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
                          : divisor == 1e6 ? "MHz"
                          : divisor == 1e3 ? "kHz"
                                           : "Hz";
+    // Keep ticks compact after panning, with enough precision for narrow zooms.
+    const double tickSpacing = (right_ - left_) / (4 * divisor);
+    const int decimals = std::max(0, static_cast<int>(std::ceil(-std::log10(tickSpacing))) + 1);
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const double x = plot.left() + fraction * plot.width();
@@ -384,8 +428,9 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
         const double labelX = std::clamp(x - 65, 0.0, static_cast<double>(width() - 130));
         painter.drawText(
             QRectF(labelX, plot.bottom() + 5, 130, 18), Qt::AlignCenter,
-            number((left_ + fraction * (right_ - left_) + (view_.absoluteFrequency ? center_ : 0)) /
-                   divisor));
+            QString::number((left_ + fraction * (right_ - left_) +
+                             (view_.absoluteFrequency ? center_ : 0)) / divisor,
+                            'f', decimals));
     }
     painter.drawText(
         QRectF(plot.left(), height() - 20, plot.width(), 18), Qt::AlignCenter,
@@ -634,13 +679,6 @@ WaterfallPlot::WaterfallPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 210);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip("Wheel to zoom frequency and time around the pointer. Drag to pan both axes. "
-               "Hold Ctrl when starting a drag to pan only time. A selected recording slice "
-               "moves with the Start/End fields while new data loads in the background. "
-               "Click to freeze/unfreeze the frame; double-click to seek. "
-               "Shift + left-click to start measuring duration between waterfall rows; "
-               "left-click again to finish. "
-               "Shift-drag the band to move it or a marker to resize it. Escape clears it.");
 }
 void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, double sampleRate,
                                bool resetFrequency)
@@ -655,6 +693,8 @@ void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, doub
     const double bottomFraction = !resetFrequency && rows > 0 ? bottom_ / rows : 1;
     result_ = std::move(result);
     hoveredRow_ = -1;
+    if (resetFrequency)
+        colorRange_.reset();
     frameFrozen_ = false;
     sampleRate_ = sampleRate;
     const double newRows = result_ ? static_cast<double>(result_->rowStarts.size()) : 1;
@@ -672,6 +712,69 @@ void WaterfallPlot::setPreview(std::shared_ptr<const PreviewResult> result, doub
     rebuildImage();
     update();
 }
+void WaterfallPlot::setRecordingExtent(FrameRange extent, std::uint64_t minimumSpan)
+{
+    extent_ = extent;
+    minimumSpan_ = std::min(extent.size(), minimumSpan);
+}
+void WaterfallPlot::setViewport(FrameRange range)
+{
+    const auto span = std::clamp(range.size(), minimumSpan_, extent_.size());
+    const auto begin = std::clamp(range.begin, extent_.begin, extent_.end - span);
+    const FrameRange next{begin, begin + span};
+    if (viewport_ == next)
+        return;
+    viewport_ = next;
+    update();
+    emit viewportChanged(next);
+}
+QSize WaterfallPlot::pixelSize() const
+{
+    const auto plot = area(*this);
+    return {qRound(plot.width() * devicePixelRatioF()), qRound(plot.height() * devicePixelRatioF())};
+}
+void WaterfallPlot::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    emit detailRequested();
+}
+bool WaterfallPlot::event(QEvent *event)
+{
+    const bool handled = QWidget::event(event);
+    if (event->type() == QEvent::ScreenChangeInternal
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+        || event->type() == QEvent::DevicePixelRatioChange
+#endif
+    )
+        emit detailRequested();
+    return handled;
+}
+void WaterfallPlot::setDetail(std::shared_ptr<const PreviewResult> result)
+{
+    // Keep gesture indices stable until completion; the next request hits cache.
+    if (isMeasuring())
+        return;
+    result_ = std::move(result);
+    top_ = 0;
+    bottom_ = static_cast<double>(result_->rowStarts.size());
+    if (measurementFrames_) {
+        const auto index = [this](std::uint64_t frame) {
+            const auto row = std::upper_bound(result_->rowStarts.begin(), result_->rowStarts.end(), frame);
+            return row == result_->rowStarts.begin() ? std::size_t{0}
+                       : static_cast<std::size_t>(row - result_->rowStarts.begin() - 1);
+        };
+        measurementRows_ = std::pair{index(measurementFrames_->first), index(measurementFrames_->second)};
+    }
+    rebuildImage();
+    setFrameCursor(cursorFrame_, frameFrozen_);
+    update();
+}
+void WaterfallPlot::rememberMeasurement()
+{
+    if (measurementRows_)
+        measurementFrames_ = std::pair{result_->rowStarts[measurementRows_->first],
+                                      result_->rowStarts[measurementRows_->second]};
+}
 void WaterfallPlot::setTimeSelectionRange(FrameRange range)
 {
     timeSelectionRange_ = range;
@@ -679,17 +782,26 @@ void WaterfallPlot::setTimeSelectionRange(FrameRange range)
 }
 void WaterfallPlot::setView(ViewSettings view, PowerScale scale, double centerFrequency)
 {
+    if (view_.autoRange != view.autoRange || scale_ != scale)
+        colorRange_.reset();
+    const bool recolor = view_.colorMin != view.colorMin || view_.colorMax != view.colorMax ||
+                         view_.autoRange != view.autoRange || view_.palette != view.palette ||
+                         view_.waterfallAutoRangeOnZoom != view.waterfallAutoRangeOnZoom || scale_ != scale;
     view_ = std::move(view);
     scale_ = scale;
     center_ = centerFrequency;
-    rebuildImage();
+    if (recolor)
+        rebuildImage();
     update();
 }
 void WaterfallPlot::setFrequencyRange(double left, double right)
 {
     if (std::isfinite(left) && std::isfinite(right) && left < right) {
+        const bool changed = left_ != left || right_ != right;
         left_ = left;
         right_ = right;
+        if (changed)
+            emit detailRequested();
         update();
     }
 }
@@ -700,6 +812,7 @@ void WaterfallPlot::setFrequencyCursor(std::optional<double> frequency)
 }
 void WaterfallPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool frozen)
 {
+    cursorFrame_ = frame;
     frameFrozen_ = frozen;
     hoveredRow_ = -1;
     if (result_ && frame && *frame >= result_->range.begin && *frame < result_->range.end) {
@@ -717,15 +830,19 @@ void WaterfallPlot::clear()
     dragTimeSelection_ = false;
     timeSelectionRange_.reset();
     result_.reset();
+    viewport_.reset();
+    cursorFrame_.reset();
     hoveredRow_ = -1;
     frameFrozen_ = false;
     image_ = {};
+    colorRange_.reset();
     frequencyCursor_.reset();
     update();
 }
 void WaterfallPlot::clearMeasurement()
 {
     measurementRows_.reset();
+    measurementFrames_.reset();
     const bool active = isMeasuring();
     measuring_ = false;
     measurementDrag_ = {};
@@ -739,16 +856,16 @@ std::optional<FrameRange> WaterfallPlot::measurementRange() const
 {
     if (!measurementRows_)
         return {};
-    const auto first = result_->rowStarts[measurementRows_->first];
-    const auto last = result_->rowStarts[measurementRows_->second];
+    const auto first = measurementFrames_->first;
+    const auto last = measurementFrames_->second;
     return FrameRange{std::min(first, last), std::max(first, last)};
 }
 QString WaterfallPlot::measurementText() const
 {
     if (!measurementRows_)
         return {};
-    const auto first = result_->rowStarts[measurementRows_->first];
-    const auto last = result_->rowStarts[measurementRows_->second];
+    const auto first = measurementFrames_->first;
+    const auto last = measurementFrames_->second;
     // Subtract exact frame indices before conversion, even above 2^53.
     const auto frames = first < last ? last - first : first - last;
     const double duration = static_cast<double>(frames) / sampleRate_;
@@ -760,21 +877,10 @@ QString WaterfallPlot::measurementText() const
 }
 void WaterfallPlot::rebuildImage()
 {
-    if (!result_)
-        return;
-    const auto [minimum, maximum] = colorLimits(view_, result_->waterfall);
-    image_ =
-        QImage(result_->columns, static_cast<int>(result_->rowStarts.size()), QImage::Format_RGB32);
-    for (int row = 0; row < image_.height(); ++row) {
-        auto *pixels = reinterpret_cast<QRgb *>(image_.scanLine(row));
-        for (int column = 0; column < image_.width(); ++column) {
-            const double power =
-                result_->waterfall[static_cast<std::size_t>(row * image_.width() + column)];
-            pixels[column] = std::isnan(power)
-                                 ? qRgb(160, 30, 130)
-                                 : paletteColor(view_.palette,
-                                                (powerToDb(power) - minimum) / (maximum - minimum));
-        }
+    if (result_) {
+        if (!colorRange_ || !view_.autoRange || view_.waterfallAutoRangeOnZoom)
+            colorRange_ = colorLimits(view_, result_->waterfall);
+        image_ = waterfallImage(*result_, view_, *colorRange_);
     }
 }
 void WaterfallPlot::paintEvent(QPaintEvent *)
@@ -788,14 +894,21 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
     if (!result_ || image_.isNull())
         return;
     const auto plot = area(*this);
-    const double fullLeft = result_->frequencies.front();
-    const double fullRight = fullFrequencyRight();
+    const double fullLeft = result_->waterfallBand ? result_->waterfallBand->first
+                                                  : result_->frequencies.front();
+    const double fullRight = result_->waterfallBand ? result_->waterfallBand->second
+                                                   : fullFrequencyRight();
     const QRectF source((left_ - fullLeft) / (fullRight - fullLeft) * image_.width(), visibleTop(),
                         (right_ - left_) / (fullRight - fullLeft) * image_.width(),
-                        bottom_ - top_);
+                        viewport_ ? static_cast<double>(viewport_->size()) /
+                                        static_cast<double>(result_->range.size()) * image_.height()
+                                  : bottom_ - top_);
     painter.drawImage(plot, image_, source);
     if (hoveredRow_ >= 0) {
-        const double rowHeight = plot.height() / (bottom_ - top_);
+        const double rowHeight = viewport_
+            ? static_cast<double>(result_->range.size()) / static_cast<double>(viewport_->size()) *
+                  plot.height() / static_cast<double>(result_->rowStarts.size())
+            : plot.height() / (bottom_ - top_);
         painter.save();
         painter.setClipRect(plot);
         painter.fillRect(QRectF(plot.left(), rowY(static_cast<std::size_t>(hoveredRow_)) -
@@ -812,21 +925,23 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
         painter.restore();
     }
     painter.setPen(foreground);
-    const auto timeRange = timeSelectionRange_.value_or(result_->range);
+    const auto timeRange = viewport_.value_or(timeSelectionRange_.value_or(result_->range));
     const double timeScale = static_cast<double>(timeRange.end) / sampleRate_ < 0.1 ? 1000 : 1;
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const auto row = std::min(
             static_cast<std::size_t>(top_ + fraction * (bottom_ - top_)),
             result_->rowStarts.size() - 1);
-        const double time = static_cast<double>(timeRange.begin) / sampleRate_ +
+        const double time = viewport_
+            ? (static_cast<double>(viewport_->begin) + fraction * static_cast<double>(viewport_->size())) / sampleRate_
+            : static_cast<double>(timeRange.begin) / sampleRate_ +
                             static_cast<double>(result_->rowStarts[row] - result_->range.begin) /
                                 sampleRate_;
         painter.drawText(QRectF(0, plot.top() + fraction * plot.height() - 9, 68, 18),
                          Qt::AlignRight | Qt::AlignVCenter,
                          QString::number(time * timeScale, 'g', 5));
     }
-    const auto [minimum, maximum] = colorLimits(view_, result_->waterfall);
+    const auto [minimum, maximum] = *colorRange_;
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("Time (%6) · %1 rows · %2 … %3 %4 · %5")
                          .arg(result_->rowStarts.size())
@@ -842,8 +957,8 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
                          QPointF(legend.right(), legend.top() + y));
     }
     if (measurementRows_) {
-        const double startY = rowY(measurementRows_->first);
-        const double endY = rowY(measurementRows_->second);
+        const double startY = viewport_ ? measurementY(measurementFrames_->first) : rowY(measurementRows_->first);
+        const double endY = viewport_ ? measurementY(measurementFrames_->second) : rowY(measurementRows_->second);
         painter.save();
         painter.setClipRect(plot);
         painter.fillRect(
@@ -864,11 +979,21 @@ double WaterfallPlot::fullFrequencyRight() const
 double WaterfallPlot::rowY(std::size_t row) const
 {
     const auto plot = area(*this);
+    if (viewport_) {
+        const double offset = (static_cast<double>(row) + 0.5) /
+                                  static_cast<double>(result_->rowStarts.size()) *
+                                  static_cast<double>(result_->range.size());
+        return plot.top() + (frameDifference(result_->range.begin, viewport_->begin) + offset) /
+                               static_cast<double>(viewport_->size()) * plot.height();
+    }
     return plot.top() + (static_cast<double>(row) + 0.5 - visibleTop()) /
                            (bottom_ - top_) * plot.height();
 }
 double WaterfallPlot::visibleTop() const
 {
+    if (result_ && viewport_)
+        return frameDifference(viewport_->begin, result_->range.begin) /
+               static_cast<double>(result_->range.size()) * image_.height();
     if (!result_ || !timeSelectionRange_)
         return top_;
     const auto begin = timeSelectionRange_->begin;
@@ -884,11 +1009,34 @@ std::optional<std::size_t> WaterfallPlot::rowAt(const QPointF &position) const
     if (!result_ || result_->rowStarts.empty() || !area(*this).contains(position))
         return {};
     const auto plot = area(*this);
+    if (viewport_) {
+        const double fraction = (position.y() - plot.top()) / plot.height();
+        const double offset = frameDifference(viewport_->begin, result_->range.begin) +
+                              fraction * static_cast<double>(viewport_->size());
+        const double row = offset / static_cast<double>(result_->range.size()) *
+                           static_cast<double>(result_->rowStarts.size());
+        if (row < 0 || row > static_cast<double>(result_->rowStarts.size()))
+            return {};
+        return std::min(static_cast<std::size_t>(row), result_->rowStarts.size() - 1);
+    }
     const double row = visibleTop() + (position.y() - plot.top()) / plot.height() * (bottom_ - top_);
     if (row < 0 || row > static_cast<double>(result_->rowStarts.size()))
         return {};
     return std::min(static_cast<std::size_t>(row),
                     result_->rowStarts.size() - 1);
+}
+double WaterfallPlot::frameY(std::uint64_t frame) const
+{
+    const auto plot = area(*this);
+    return plot.top() + frameDifference(frame, viewport_->begin) /
+                           static_cast<double>(viewport_->size()) * plot.height();
+}
+double WaterfallPlot::measurementY(std::uint64_t frame) const
+{
+    const auto row = std::lower_bound(result_->rowStarts.begin(), result_->rowStarts.end(), frame);
+    if (row != result_->rowStarts.end() && *row == frame)
+        return rowY(static_cast<std::size_t>(row - result_->rowStarts.begin()));
+    return frameY(frame);
 }
 void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
 {
@@ -902,8 +1050,36 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
                                    std::clamp(event->position().y(), plot.top(), plot.bottom()));
             const auto selection = draggedMeasurement(measurementDrag_, *rowAt(position),
                                                        result_->rowStarts.size());
+            if (viewport_) {
+                auto frames = measurementDragFrames_;
+                const auto index = *rowAt(position);
+                const auto frame = result_->rowStarts[index];
+                if (measurementDrag_.target == MeasurementDrag::Target::Start)
+                    frames.first = frame;
+                else if (measurementDrag_.target == MeasurementDrag::Target::End)
+                    frames.second = frame;
+                else {
+                    const auto [first, last] = std::minmax(frames.first, frames.second);
+                    const auto pressFrame = result_->rowStarts[measurementDrag_.pressIndex];
+                    const long double delta = frame >= pressFrame
+                        ? static_cast<long double>(frame - pressFrame)
+                        : -static_cast<long double>(pressFrame - frame);
+                    const auto moved = shiftedViewport({first, last}, delta,
+                                                       {extent_.begin, extent_.end - minimumSpan_});
+                    frames = frames.first <= frames.second ? std::pair{moved.begin, moved.end}
+                                                          : std::pair{moved.end, moved.begin};
+                }
+                if (frames != *measurementFrames_) {
+                    measurementFrames_ = frames;
+                    measurementRows_ = selection;
+                    emit measurementChanged();
+                    update();
+                }
+                return;
+            }
             if (selection != *measurementRows_) {
                 measurementRows_ = selection;
+                rememberMeasurement();
                 emit measurementChanged();
                 update();
             }
@@ -914,6 +1090,7 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
     if (measuring_) {
         if (row) {
             measurementRows_->second = *row;
+            rememberMeasurement();
             emit measurementChanged();
             update();
         }
@@ -941,6 +1118,17 @@ void WaterfallPlot::mouseMoveEvent(QMouseEvent *event)
                     (event->position().x() - dragPosition_->x()) / plot.width() * span;
                 left_ = std::clamp(dragLeft_ - delta, fullLeft, fullRight - span);
                 right_ = left_ + span;
+            }
+            if (viewport_) {
+                const long double delta = -(event->position().y() - dragPosition_->y()) /
+                                          plot.height() * static_cast<long double>(dragViewport_.size());
+                setViewport(shiftedViewport(dragViewport_, delta, extent_));
+                if (!dragTimeOnly_)
+                    emit frequencyRangeChanged(left_, right_);
+                emit detailRequested();
+                setCursor(Qt::ClosedHandCursor);
+                event->accept();
+                return;
             }
             const double rows = dragBottom_ - dragTop_;
             const double rowDelta =
@@ -1013,6 +1201,23 @@ void WaterfallPlot::wheelEvent(QWheelEvent *event)
     left_ = std::clamp(anchor - fraction * span, frequency.front(), fullRight - span);
     right_ = left_ + span;
     const double rowFraction = (event->position().y() - plot.top()) / plot.height();
+    if (viewport_) {
+        const auto spanFrames = static_cast<std::uint64_t>(std::clamp(
+            std::round(static_cast<long double>(viewport_->size()) * factor),
+            static_cast<long double>(minimumSpan_), static_cast<long double>(extent_.size())));
+        const long double delta = rowFraction *
+            (static_cast<long double>(viewport_->size()) - spanFrames);
+        // Grow around the pointer, then clamp without converting absolute frames to double.
+        const auto baseBegin = std::min(viewport_->begin, extent_.end - spanFrames);
+        const auto next = shiftedViewport({baseBegin, baseBegin + spanFrames},
+            delta + static_cast<long double>(viewport_->begin - baseBegin), extent_);
+        setViewport(next);
+        emit frequencyRangeChanged(left_, right_);
+        emit detailRequested();
+        update();
+        event->accept();
+        return;
+    }
     const double rowAnchor = top_ + rowFraction * (bottom_ - top_);
     const double rowCount = static_cast<double>(result_->rowStarts.size());
     const double rows = std::clamp((bottom_ - top_) * factor, 1.0, rowCount);
@@ -1033,11 +1238,12 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
             setFocus(Qt::MouseFocusReason);
             dragPosition_.reset();
             if (measurementRows_ && !measuring_) {
-                const double start = rowY(measurementRows_->first);
-                const double end = rowY(measurementRows_->second);
+                const double start = viewport_ ? measurementY(measurementFrames_->first) : rowY(measurementRows_->first);
+                const double end = viewport_ ? measurementY(measurementFrames_->second) : rowY(measurementRows_->second);
                 const auto target = measurementTarget(event->position().y(), start, end);
                 if (target != MeasurementDrag::Target::None) {
                     measurementDrag_ = {target, *measurementRows_, event->position(), *row, false};
+                    measurementDragFrames_ = *measurementFrames_;
                     setCursor(target == MeasurementDrag::Target::Band ? Qt::SizeAllCursor
                                                                       : Qt::SizeVerCursor);
                     emit measurementActiveChanged(true);
@@ -1050,6 +1256,7 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
                 measurementRows_->second = *row;
             else
                 measurementRows_ = std::pair{*row, *row};
+            rememberMeasurement();
             measuring_ = !measuring_;
             emit measurementActiveChanged(measuring_);
             emit measurementChanged();
@@ -1064,7 +1271,8 @@ void WaterfallPlot::mousePressEvent(QMouseEvent *event)
         dragPosition_ = event->position();
         dragMoved_ = false;
         dragTimeOnly_ = event->modifiers().testFlag(Qt::ControlModifier);
-        dragTimeSelection_ = dragTimeOnly_ && timeSelectionPanEnabled_;
+        dragTimeSelection_ = !viewport_ && dragTimeOnly_ && timeSelectionPanEnabled_;
+        dragViewport_ = viewport_.value_or(FrameRange{});
         dragLeft_ = left_;
         dragRight_ = right_;
         dragTop_ = top_;
@@ -1100,6 +1308,7 @@ void WaterfallPlot::mouseReleaseEvent(QMouseEvent *event)
     unsetCursor();
     if (!drag.moved) {
         measurementRows_ = std::pair{drag.pressIndex, drag.pressIndex};
+        rememberMeasurement();
         measuring_ = true;
     } else
         emit measurementActiveChanged(false);
@@ -1129,6 +1338,181 @@ void WaterfallPlot::keyPressEvent(QKeyEvent *event)
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+WaterfallMinimap::WaterfallMinimap(QWidget *parent) : QWidget(parent)
+{
+    setFixedWidth(96);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
+    setAccessibleName("Waterfall minimap");
+    setAccessibleDescription("Drag the viewport box to move through time; drag its top or bottom edge to resize it.");
+}
+QRectF WaterfallMinimap::mapRect() const
+{
+    return QRectF(6, 32, width() - 12, std::max(1, height() - 70));
+}
+QRectF WaterfallMinimap::selectorRect() const
+{
+    if (extent_.size() == 0)
+        return {};
+    const auto plot = mapRect();
+    const double top = plot.top() + static_cast<double>(viewport_.begin - extent_.begin) /
+                                       static_cast<double>(extent_.size()) * plot.height();
+    const double bottom = plot.top() + static_cast<double>(viewport_.end - extent_.begin) /
+                                          static_cast<double>(extent_.size()) * plot.height();
+    return QRectF(plot.left(), top, plot.width(), bottom - top);
+}
+void WaterfallMinimap::setRecording(FrameRange extent, std::uint64_t minimumSpan)
+{
+    extent_ = extent;
+    minimumSpan_ = std::min(extent.size(), minimumSpan);
+    viewport_ = extent;
+    target_ = MeasurementDrag::Target::None;
+    result_.reset();
+    image_ = {};
+    update();
+}
+void WaterfallMinimap::setViewport(FrameRange range)
+{
+    viewport_ = range;
+    update();
+}
+void WaterfallMinimap::setSnapshot(std::shared_ptr<const PreviewResult> result)
+{
+    result_ = std::move(result);
+    rebuildImage();
+    update();
+}
+void WaterfallMinimap::setView(ViewSettings view)
+{
+    const bool recolor = view_.colorMin != view.colorMin || view_.colorMax != view.colorMax ||
+                         view_.autoRange != view.autoRange || view_.palette != view.palette;
+    view_ = std::move(view);
+    if (recolor)
+        rebuildImage();
+    update();
+}
+void WaterfallMinimap::clear()
+{
+    extent_ = {};
+    viewport_ = {};
+    target_ = MeasurementDrag::Target::None;
+    result_.reset();
+    image_ = {};
+    unsetCursor();
+    update();
+}
+void WaterfallMinimap::rebuildImage()
+{
+    if (result_)
+        image_ = waterfallImage(*result_, view_, colorLimits(view_, result_->waterfall));
+}
+std::uint64_t WaterfallMinimap::frameAt(double y) const
+{
+    const auto plot = mapRect();
+    const long double fraction = std::clamp((y - plot.top()) / plot.height(), 0.0, 1.0);
+    const auto offset = static_cast<std::uint64_t>(std::min(
+        std::round(fraction * extent_.size()), static_cast<long double>(extent_.size())));
+    return extent_.begin + offset;
+}
+void WaterfallMinimap::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.fillRect(rect(), background);
+    painter.setPen(foreground);
+    painter.drawText(QRectF(0, 4, width(), 24), Qt::AlignCenter, "MINIMAP");
+    const auto plot = mapRect();
+    painter.fillRect(plot, QColor(30, 43, 58));
+    if (!image_.isNull())
+        painter.drawImage(plot, image_);
+    if (extent_.size() == 0)
+        return;
+    const auto box = selectorRect();
+    painter.fillRect(box, QColor(142, 202, 230, 45));
+    painter.setPen(QPen(crosshairColor, 2));
+    painter.drawRect(box);
+    // Distinct handles remain usable even when the true box is subpixel tall.
+    const double middle = plot.center().x();
+    painter.drawLine(QPointF(middle - 10, box.top() - 2), QPointF(middle + 10, box.top() - 2));
+    painter.drawLine(QPointF(middle - 10, box.bottom() + 2), QPointF(middle + 10, box.bottom() + 2));
+    painter.setPen(foreground);
+    const auto text = !result_ ? QString("Waiting…")
+                     : result_->complete ? QString("Complete")
+                     : QString("%1%").arg(result_->completedRows * 100 / result_->rowStarts.size());
+    painter.drawText(QRectF(0, height() - 24, width(), 20), Qt::AlignCenter, text);
+}
+void WaterfallMinimap::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() != Qt::LeftButton || extent_.size() == 0 ||
+        !mapRect().adjusted(0, -6, 0, 6).contains(event->position()))
+        return;
+    setFocus(Qt::MouseFocusReason);
+    const auto box = selectorRect();
+    const double y = event->position().y();
+    const double topDistance = std::abs(y - (box.top() - 2));
+    const double bottomDistance = std::abs(y - (box.bottom() + 2));
+    if (std::min(topDistance, bottomDistance) <= 6)
+        target_ = topDistance < bottomDistance ? MeasurementDrag::Target::Start
+                                              : MeasurementDrag::Target::End;
+    else {
+        target_ = MeasurementDrag::Target::Band;
+        if (!box.contains(event->position())) {
+            const auto frame = frameAt(y);
+            const auto span = viewport_.size();
+            const auto begin = std::clamp(frame >= span / 2 ? frame - span / 2 : extent_.begin,
+                                          extent_.begin, extent_.end - span);
+            viewport_ = {begin, begin + span};
+            emit viewportChanged(viewport_);
+        }
+    }
+    pressFrame_ = frameAt(y);
+    dragViewport_ = viewport_;
+    setCursor(target_ == MeasurementDrag::Target::Band ? Qt::ClosedHandCursor : Qt::SizeVerCursor);
+    update();
+    event->accept();
+}
+void WaterfallMinimap::mouseMoveEvent(QMouseEvent *event)
+{
+    if (extent_.size() == 0)
+        return;
+    if (target_ == MeasurementDrag::Target::None) {
+        const auto box = selectorRect();
+        const double y = event->position().y();
+        if (std::min(std::abs(y - box.top() + 2), std::abs(y - box.bottom() - 2)) <= 6)
+            setCursor(Qt::SizeVerCursor);
+        else if (box.contains(event->position()))
+            setCursor(Qt::OpenHandCursor);
+        else
+            unsetCursor();
+        return;
+    }
+    const auto frame = frameAt(event->position().y());
+    FrameRange next = dragViewport_;
+    if (target_ == MeasurementDrag::Target::Start)
+        next.begin = std::clamp(frame, extent_.begin, dragViewport_.end - minimumSpan_);
+    else if (target_ == MeasurementDrag::Target::End)
+        next.end = std::clamp(frame, dragViewport_.begin + minimumSpan_, extent_.end);
+    else {
+        const long double delta = frame >= pressFrame_ ? static_cast<long double>(frame - pressFrame_)
+                                                       : -static_cast<long double>(pressFrame_ - frame);
+        next = shiftedViewport(dragViewport_, delta, extent_);
+    }
+    if (next != viewport_) {
+        viewport_ = next;
+        update();
+        emit viewportChanged(next);
+    }
+    event->accept();
+}
+void WaterfallMinimap::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && target_ != MeasurementDrag::Target::None) {
+        mouseMoveEvent(event);
+        target_ = MeasurementDrag::Target::None;
+        unsetCursor();
+        event->accept();
+    }
 }
 
 WaveformPlot::WaveformPlot(QWidget *parent) : QWidget(parent)
@@ -1226,8 +1610,10 @@ void WaveformPlot::paintEvent(QPaintEvent *)
     painter.drawText(QRectF(0, plot.bottom() - 10, 68, 18), Qt::AlignRight, number(minimum));
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("%1 … %2 s · frames [%3, %4) · %5 invalid · %6 clipped components")
-                         .arg(number(static_cast<double>(result_->range.begin) / sampleRate_))
-                         .arg(number(static_cast<double>(result_->range.end) / sampleRate_))
+                         .arg(QString::number(static_cast<double>(result_->range.begin) / sampleRate_,
+                                              'f', 3))
+                         .arg(QString::number(static_cast<double>(result_->range.end) / sampleRate_,
+                                              'f', 3))
                          .arg(result_->range.begin)
                          .arg(result_->range.end)
                          .arg(result_->invalidSamples)

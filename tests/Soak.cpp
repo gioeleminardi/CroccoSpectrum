@@ -57,6 +57,18 @@ int main(int argc, char **argv)
         return 1;
     }
     const auto firstMilliseconds = first.elapsed();
+    auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+    auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+    if (!minimap || !waterfall)
+        return 2;
+    QElapsedTimer overviewDeadline;
+    overviewDeadline.start();
+    while ((!minimap->snapshot() || !minimap->snapshot()->complete) && error.isEmpty() &&
+           overviewDeadline.elapsed() < 30000)
+        QTest::qWait(1);
+    if (!error.isEmpty() || !minimap->snapshot() || !minimap->snapshot()->complete)
+        return 1;
+    const auto minimapMilliseconds = first.elapsed();
     auto *fft = window.findChild<QComboBox *>("fftSize");
     auto *start = window.findChild<QLineEdit *>("selectionStart");
     auto *end = window.findChild<QLineEdit *>("selectionEnd");
@@ -68,17 +80,19 @@ int main(int argc, char **argv)
     if (!average)
         return 2;
     auto *color = window.findChild<QDoubleSpinBox *>("colorMinimum");
-    std::vector<qint64> latencies;
+    std::vector<qint64> latencies, viewportLatencies;
     QElapsedTimer elapsed;
     elapsed.start();
     std::uint64_t cycles = 0;
-    const int lengths[] = {4096, 16384, 65536, 1024};
+    int maximumFft = 0;
+    const int lengths[] = {4096, 16384, 65536, 1024, 1048576};
     while (elapsed.elapsed() < static_cast<qint64>(seconds) * 1000) {
-        const auto length = lengths[cycles % 4];
+        const auto length = lengths[cycles % 5];
+        maximumFft = std::max(maximumFft, length);
         fft->setCurrentIndex(fft->findData(length));
         const auto begin = (cycles % 12) * 1'000'000;
         start->setText(QString::number(begin));
-        end->setText(QString::number(begin + 262144));
+        end->setText(QString::number(begin + static_cast<std::uint64_t>(std::max(262144, length))));
         QElapsedTimer latency;
         latency.start();
         select->click();
@@ -93,6 +107,23 @@ int main(int argc, char **argv)
         color->setValue(cycles % 2 ? -90 : -100);
         if (window.previewResult() != before)
             return 1; // View edits cannot mutate DSP results.
+        // Navigate independently while the current DSP's whole-recording scan
+        // is running; require detail for the final viewport and an unchanged
+        // analysis interval. Include the maximum FFT in the mixed workload.
+        const auto selectedRange = window.selectedRange();
+        const auto map = minimap->mapRect();
+        QElapsedTimer viewportLatency;
+        viewportLatency.start();
+        QTest::mouseClick(minimap, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(48, qRound(map.top() + map.height() * 0.75)));
+        while (error.isEmpty() && viewportLatency.elapsed() < 10000 &&
+               (!waterfall->snapshot() || waterfall->snapshot()->range != waterfall->viewport()))
+            QTest::qWait(1);
+        if (!error.isEmpty() || !waterfall->snapshot() ||
+            waterfall->snapshot()->range != waterfall->viewport() ||
+            window.selectedRange() != selectedRange || minimap->viewport() != waterfall->viewport())
+            return 1;
+        viewportLatencies.push_back(viewportLatency.elapsed());
         if (cycles % 8 == 0) {
             average->trigger();
             QTest::qWait(2);
@@ -106,12 +137,16 @@ int main(int argc, char **argv)
     }
     window.close();
     std::sort(latencies.begin(), latencies.end());
+    std::sort(viewportLatencies.begin(), viewportLatencies.end());
     struct rusage usage{};
     getrusage(RUSAGE_SELF, &usage);
     const QJsonObject result{{"seconds", elapsed.elapsed() / 1000.0},
                              {"cycles", QString::number(cycles)},
                              {"first_preview_ms", firstMilliseconds},
                              {"seek_p95_ms", latencies[(latencies.size() - 1) * 95 / 100]},
+                             {"minimap_complete_ms", minimapMilliseconds},
+                             {"viewport_p95_ms", viewportLatencies[(viewportLatencies.size() - 1) * 95 / 100]},
+                             {"maximum_fft", maximumFft},
                              {"peak_rss_kib", static_cast<qint64>(usage.ru_maxrss)},
                              {"fixture_bytes", "400000000"}};
     std::cout << QJsonDocument(result).toJson(QJsonDocument::Compact).constData() << '\n';

@@ -6,6 +6,37 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Parallel FFT scans (2026-10-09 working tree): all seven Fedora 44 Debug and
+  Release CTest suites pass, including 167 independent NumPy/SciPy checks.
+  Real and complex FP64 fixtures compare every average/max-hold bin and exact
+  waterfall/overview cell bit-for-bit against ordered serial calculations,
+  including nonzero range starts, uneven row grouping, overlap, DC removal,
+  conjugation, PSD, invalid samples, capture boundaries, and trailing frames.
+  Additional cases cover sampled frequency crops, large-FFT initial previews,
+  callback thread ownership, immutable progressive snapshots, cancellation,
+  and joining workers after source read failures. Ubuntu 24.04 GCC 13.3
+  ASAN/UBSAN core, UI, and numerical-reference suites pass with Qt 6.11.2
+  (`detect_leaks=0`). TSAN core and eight focused UI integration/cancellation
+  cases pass with instrumented Qt 6.11.2 and no suppressions. The full TSAN UI
+  run passed its 70 test cases but reported a race inside Qt's
+  QFileInfoGatherer/QObject connection machinery during a file-dialog export;
+  that full run is not a sanitizer pass. A 10-second offscreen mixed navigation
+  run including the 1,048,576-point FFT also passes. Local performance evidence
+  is recorded in BENCHMARKS.md; no portable packages were rebuilt for this change.
+
+- Waterfall density and minimap (2026-10-09 working tree): all seven CTest suites
+  pass on Fedora 44 in Debug and Release with Qt 6.11.2 / FFTW 3.3.10, including
+  the independent numerical oracle. New core cases cover higher row/column
+  density, visible frequency bins, full-scan burst preservation, immutable
+  progressive snapshots, cancellation, sampled coverage, and capture boundaries.
+  GUI cases cover independent viewport/analysis ranges, selector movement and
+  both resize handles, bounds and minimum span, frame indices above 2^53,
+  measurements across refinement, stale-request rejection, hover outside the
+  analysis range, exact-overview coexistence, and exported viewport metadata.
+  Offscreen images were inspected at normal and 2× display scaling. Dense
+  400 MB / 4 GB benchmark smoke checks and a mixed navigation run including the
+  1,048,576-point FFT pass; measurements and scope are in BENCHMARKS.md.
+
 - Development/release channels (2026-10-09): all seven CTest suites pass in Fedora
   44 Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK. The
   container build produces `0.2.0-dev.184.g233be51` packages; final portable-folder

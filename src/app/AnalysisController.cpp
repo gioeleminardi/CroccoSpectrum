@@ -30,6 +30,7 @@ AnalysisController::~AnalysisController()
 quint64 AnalysisController::submit(Job job)
 {
     const std::lock_guard lock(mutex_);
+    const bool wasProcessing = executing_ || pending_.has_value();
     if (activeCancellation_)
         activeCancellation_->store(true);
     if (pending_)
@@ -38,6 +39,8 @@ quint64 AnalysisController::submit(Job job)
     job.cancelled = std::make_shared<std::atomic_bool>(false);
     activeCancellation_ = job.cancelled;
     pending_ = std::move(job);
+    if (!wasProcessing)
+        publishProcessing(true);
     wake_.notify_one();
     return generation_;
 }
@@ -87,11 +90,24 @@ quint64 AnalysisController::waveform(std::shared_ptr<Recording> recording, Frame
     job.range = range;
     return submit(std::move(job));
 }
+quint64 AnalysisController::waterfall(std::shared_ptr<Recording> recording, DspSettings settings,
+                                      WaterfallRequest request)
+{
+    Job job;
+    job.kind = Kind::Waterfall;
+    job.recording = std::move(recording);
+    job.settings = settings;
+    job.range = request.range;
+    job.waterfall = request;
+    return submit(std::move(job));
+}
 quint64 AnalysisController::overview(std::shared_ptr<Recording> recording, FrameRange range,
-                                     DspSettings settings)
+                                     DspSettings settings, int columns, int rows)
 {
     Job job;
     job.kind = Kind::Overview;
+    job.waterfall.columns = columns;
+    job.waterfall.rows = rows;
     job.recording = std::move(recording);
     job.range = range;
     job.settings = settings;
@@ -129,6 +145,8 @@ void AnalysisController::cancel()
     if (pending_) {
         pending_->cancelled->store(true);
         pending_.reset();
+        if (!executing_)
+            publishProcessing(false);
     }
 }
 
@@ -142,8 +160,15 @@ void AnalysisController::run(std::stop_token stop)
                 break;
             job = std::move(*pending_);
             pending_.reset();
+            executing_ = true;
         }
         execute(std::move(job));
+        {
+            const std::lock_guard lock(mutex_);
+            executing_ = false;
+            if (!pending_)
+                publishProcessing(false);
+        }
     }
 }
 
@@ -216,12 +241,49 @@ void AnalysisController::execute(Job job)
             auto overview =
                 job.kind == Kind::Overview ? std::make_shared<PreviewResult>() : nullptr;
             const auto result = analyzeAverage(*job.recording, job.range, job.settings, cancelled,
-                                               progress, overview.get());
+                                               progress, overview.get(), job.waterfall.columns,
+                                               job.waterfall.rows);
             if (cancelled())
                 throw Cancelled();
             emit averageReady(job.generation, result);
             if (overview)
                 emit previewReady(job.generation, overview);
+        } else if (job.kind == Kind::Waterfall) {
+            const auto key = previewKey(job) +
+                QString("/waterfall/%1/%2/%3/%4/%5/%6")
+                    .arg(job.waterfall.left, 0, 'g', 17).arg(job.waterfall.right, 0, 'g', 17)
+                    .arg(job.waterfall.columns).arg(job.waterfall.rows).arg(job.waterfall.exact)
+                    .arg(job.waterfall.fixedRows);
+            job.recording->verifyUnchanged();
+            for (auto entry = cache_.begin(); entry != cache_.end(); ++entry) {
+                if (entry->key == key) {
+                    const auto result = entry->result;
+                    cache_.splice(cache_.begin(), cache_, entry);
+                    if (cancelled())
+                        throw Cancelled();
+                    publishWaterfall(job.generation, result);
+                    return;
+                }
+            }
+            const auto updates = job.waterfall.exact
+                ? WaterfallUpdate([this, generation = job.generation](auto result) {
+                      publishWaterfall(generation, std::move(result));
+                  })
+                : WaterfallUpdate{};
+            const auto result = analyzeWaterfall(*job.recording, job.settings, job.waterfall,
+                                                cancelled, updates);
+            const std::size_t cacheBudget = (job.waterfall.exact ? 4U : 64U) * 1024U * 1024U;
+            while (!cache_.empty() && cacheBytes_ + result->memoryBytes() > cacheBudget) {
+                cacheBytes_ -= cache_.back().result->memoryBytes();
+                cache_.pop_back();
+            }
+            if (result->memoryBytes() <= cacheBudget) {
+                cache_.push_front({key, result});
+                cacheBytes_ += result->memoryBytes();
+            }
+            if (cancelled())
+                throw Cancelled();
+            publishWaterfall(job.generation, result);
         } else if (job.kind == Kind::Waveform) {
             const auto result = analyzeWaveform(*job.recording, job.range, cancelled, progress);
             if (cancelled())
@@ -254,5 +316,35 @@ void AnalysisController::execute(Job job)
     } catch (const std::exception &error) {
         emit failed(job.generation, QString::fromUtf8(error.what()));
     }
+}
+
+void AnalysisController::publishProcessing(bool active)
+{
+    // State changes are queued under mutex_ so submission and worker completion
+    // cannot deliver idle after a newer busy state. Slots run outside the lock.
+    QMetaObject::invokeMethod(this, [this, active] { emit processingChanged(active); },
+                              Qt::QueuedConnection);
+}
+
+void AnalysisController::publishWaterfall(quint64 generation,
+                                          std::shared_ptr<const PreviewResult> result)
+{
+    const std::lock_guard lock(mutex_);
+    latestWaterfall_ = std::move(result);
+    waterfallGeneration_ = generation;
+    if (waterfallNotificationPending_)
+        return;
+    waterfallNotificationPending_ = true;
+    QMetaObject::invokeMethod(this, [this] {
+        std::shared_ptr<const PreviewResult> snapshot;
+        quint64 snapshotGeneration;
+        {
+            const std::lock_guard snapshotLock(mutex_);
+            snapshot = std::move(latestWaterfall_);
+            snapshotGeneration = waterfallGeneration_;
+            waterfallNotificationPending_ = false;
+        }
+        emit waterfallReady(snapshotGeneration, std::move(snapshot));
+    }, Qt::QueuedConnection);
 }
 } // namespace rf

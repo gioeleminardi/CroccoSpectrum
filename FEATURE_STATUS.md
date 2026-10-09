@@ -18,7 +18,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Large recordings, bounded positional reads | Implemented | No whole-file allocation; 32 MiB maximum read call |
 | Partial / growing recording import | Implemented | Opt-in import checkbox / CLI --partial; complete frames at open; append-only prefix; reopen for more data; sessions retain snapshot bounds |
 | Positive/fractional sample rates | Implemented | Derived floating arithmetic must remain representable |
-| Default spectrum and waterfall | Implemented | Large waterfall views are explicitly sampled previews |
+| Default spectrum and waterfall | Implemented | Physical-pixel viewport detail; visible FFT-bin reduction; large views explicitly sampled |
+| Waterfall minimap | Implemented | Progressive exact whole-recording maxima; move/resize viewport independently of analysis range |
 | Spectrum hover crosshair | Implemented | Pointer frequency/power axis labels; zoom, absolute frequency and dBFS/Hz supported; exact FFT-bin readout retained |
 | Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
 | Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; local previews follow out-of-range frames |
@@ -30,6 +31,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Exact selected/whole-file spectral average | Implemented | Linear mean; invalid/boundary windows counted |
 | Interval max hold | Implemented | Separate result from average |
 | Full exact waterfall overview | Implemented | Explicit full pass; bounded temporal/frequency maxima plus average |
+| Parallel FFT scans | Implemented | Automatic bounded workers for averages, exact overviews/minimaps and larger previews/waterfalls; ordered reductions; short jobs stay serial |
 | Waveform and exact min/max envelopes | Implemented | Full-selection scan is an explicit command |
 | Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work; Baudline spans black to #00F9AB |
 | Docked/floating analysis panels | Implemented | Qt docking, persisted workspace |
@@ -39,7 +41,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Optional capture UTC and retune-aware frequency axes | Implemented | Unknown/gapped UTC is not inferred; mixed-frequency aggregates remain baseband |
 | Preferences and reproducible sessions | Implemented | Versioned, atomic JSON; indices stored as decimal strings |
 | Recent files | Implemented | File → Open recent; ten recordings/sessions; persistent history; metadata source paths retained; clear history |
-| Update notifications | Implemented | Stable GitHub releases with complete Linux packages/checksums; daily automatic checks with opt-out; manual Help action; browser download/install; quiet automatic failures |
+| Update notifications | Implemented | Stable GitHub releases with complete Linux packages/checksums; checks on each startup and daily while running with opt-out; notification once per app session; manual Help action; website download/install; quiet automatic failures |
 | SigMF core recording import | Implemented subset | Single stream; required extensions and embedded later headers rejected |
 | Bookmarks/notes | Implemented | Persist in sessions |
 | Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw + sidecar; cancellable worker writes; refuses overwrite |

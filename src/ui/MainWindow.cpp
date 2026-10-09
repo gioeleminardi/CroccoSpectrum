@@ -3,6 +3,8 @@
 #include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
+#include <QActionGroup>
+#include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -18,6 +20,7 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
 #include <QJsonDocument>
@@ -27,6 +30,8 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPalette>
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
@@ -55,6 +60,53 @@ namespace rf
 {
 namespace
 {
+class ProcessingSpinner : public QWidget
+{
+  public:
+    explicit ProcessingSpinner(QWidget *parent) : QWidget(parent), timer_(this)
+    {
+        setObjectName("backgroundProcessingSpinner");
+        setFixedSize(20, 20);
+        setAccessibleName("Background processing");
+        setToolTip("Background processing");
+        timer_.setInterval(80);
+        connect(&timer_, &QTimer::timeout, this, [this] {
+            angle_ = (angle_ + 30) % 360;
+            update();
+        });
+        hide();
+    }
+    void setActive(bool active)
+    {
+        setVisible(active);
+        if (active && !timer_.isActive())
+            timer_.start();
+        else if (!active) {
+            timer_.stop();
+            angle_ = 0;
+        }
+    }
+
+  protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF ring(3, 3, 14, 14);
+        auto faint = palette().color(QPalette::WindowText);
+        faint.setAlpha(40);
+        painter.setPen(QPen(faint, 2));
+        painter.drawEllipse(ring);
+        painter.setPen(QPen(palette().color(QPalette::Highlight), 2.5,
+                            Qt::SolidLine, Qt::RoundCap));
+        painter.drawArc(ring, angle_ * 16, 120 * 16);
+    }
+
+  private:
+    QTimer timer_;
+    int angle_ = 0;
+};
+
 class DockWidget : public QDockWidget
 {
   public:
@@ -126,9 +178,14 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                 preferencesPath_.clear();
         }
     }
+    applyTheme();
     previewTimer_ = new QTimer(this);
     previewTimer_->setSingleShot(true);
     previewTimer_->setInterval(100);
+    waterfallTimer_ = new QTimer(this);
+    waterfallTimer_->setSingleShot(true);
+    waterfallTimer_->setInterval(100);
+    connect(waterfallTimer_, &QTimer::timeout, this, &MainWindow::requestWaterfall);
     saveTimer_ = new QTimer(this);
     saveTimer_->setSingleShot(true);
     saveTimer_->setInterval(400);
@@ -140,8 +197,31 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     waterfall_ = new WaterfallPlot(this);
     waterfall_->setObjectName("waterfallPlot");
     auto *central = new QSplitter(Qt::Vertical, this);
-    central->addWidget(spectrum_);
-    central->addWidget(waterfall_);
+    minimap_ = new WaterfallMinimap(this);
+    minimap_->setObjectName("waterfallMinimap");
+    for (auto *plot : {static_cast<QWidget *>(spectrum_), static_cast<QWidget *>(waterfall_)}) {
+        auto *container = new QWidget(this);
+        auto *layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        layout->addWidget(plot, 1);
+        if (plot == waterfall_)
+            layout->addWidget(minimap_);
+        else {
+            auto *gutter = new QWidget(container);
+            gutter->setFixedWidth(minimap_->width());
+            gutter->setStyleSheet("background: #101923");
+            layout->addWidget(gutter);
+        }
+        central->addWidget(container);
+    }
+    connect(minimap_, &WaterfallMinimap::viewportChanged, waterfall_, &WaterfallPlot::setViewport);
+    connect(waterfall_, &WaterfallPlot::viewportChanged, this, [this](FrameRange range) {
+        minimap_->setViewport(range);
+        scheduleWaterfall();
+        updateView();
+    });
+    connect(waterfall_, &WaterfallPlot::detailRequested, this, &MainWindow::scheduleWaterfall);
     central->setStretchFactor(0, 2);
     central->setStretchFactor(1, 3);
     setCentralWidget(central);
@@ -165,6 +245,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     averageDock_->hide();
     waveformDock_ =
         dock(this, "Baseband waveform", "waveformDock", waveform_, Qt::BottomDockWidgetArea);
+    waveformDock_->hide();
     bookmarksList_ = new QListWidget(this);
     bookmarksDock_ = dock(this, "Bookmarks / SigMF annotations", "bookmarksDock", bookmarksList_,
                           Qt::RightDockWidgetArea);
@@ -180,13 +261,14 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
                             "No newer stable release with complete Linux packages is available.");
                     return;
                 }
-                if (!manual && preferences_.updates.lastNotifiedVersion == version)
+                if (!manual && notifiedUpdateVersion_ == version)
                     return;
                 showUpdateMessage(
                     QString("CroccoSpectrum %1 is available. You're running %2.\n\n"
                             "Open the release page to download and install the update.")
                         .arg(version, RF_VERSION),
                     url);
+                notifiedUpdateVersion_ = version;
                 preferences_.updates.lastNotifiedVersion = version;
                 persistPreferences();
             });
@@ -207,8 +289,19 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     cancel_->setObjectName("cancelAnalysis");
     cancel_->setEnabled(false);
     statusBar()->addWidget(cursorLabel_, 1);
+    auto *spinner = new ProcessingSpinner(this);
+    statusBar()->addPermanentWidget(spinner);
     statusBar()->addPermanentWidget(progress_);
     statusBar()->addPermanentWidget(cancel_);
+    for (auto *worker : {&controller_, &waterfallController_, &minimapController_})
+        connect(worker, &AnalysisController::processingChanged, this,
+                [this, spinner, worker](bool active) {
+                    if (active)
+                        processingWorkers_.insert(worker);
+                    else
+                        processingWorkers_.remove(worker);
+                    spinner->setActive(!processingWorkers_.isEmpty());
+                });
     connect(cancel_, &QPushButton::clicked, this, [this] {
         controller_.cancel();
         ++generation_;
@@ -232,62 +325,11 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     connect(waterfall_, &WaterfallPlot::measurementActiveChanged, this, [this](bool active) {
         if (active)
             beginMeasurement(waterfall_);
+        else
+            scheduleWaterfall();
     });
     connect(waterfall_, &WaterfallPlot::measurementChanged, this,
             &MainWindow::updateWaterfallSelection);
-    connect(waterfall_, &WaterfallPlot::timeSelectionPanActiveChanged, this, [this](bool active) {
-        if (!recording_)
-            return;
-        if (active) {
-            waterfallPanRange_ = range_;
-            previewTimer_->stop();
-            controller_.cancel();
-            ++generation_;
-            spectrumController_.cancel();
-            ++spectrumGeneration_;
-            setBusy(false);
-        } else if (waterfallPanRange_) {
-            waterfallPanRange_.reset();
-            previewTimer_->stop();
-            if (!busy_ && (!preview_ || preview_->range != range_)) {
-                preserveFrequencyOnPreview_ = true;
-                requestPreview();
-            } else if (!busy_)
-                preserveFrequencyOnPreview_ = false;
-        }
-    });
-    connect(waterfall_, &WaterfallPlot::timeSelectionPanChanged, this, [this](double fraction) {
-        if (!recording_ || !waterfallPanRange_)
-            return;
-        const auto original = *waterfallPanRange_;
-        const auto available = fraction < 0 ? original.begin
-                                           : recording_->frameCount() - original.end;
-        // Subtract integer frame counts before converting, including beyond 2^53.
-        const auto delta = static_cast<std::uint64_t>(std::min(
-            std::round(std::abs(static_cast<long double>(fraction)) * original.size()),
-            static_cast<long double>(available)));
-        const auto begin = fraction < 0 ? original.begin - delta : original.begin + delta;
-        const FrameRange next{begin, begin + original.size()};
-        if (next == range_)
-            return;
-        if (range_ == original) {
-            spectrum_->clearMeasurement();
-            averagePlot_->clear();
-            waterfall_->clearMeasurement();
-            average_.reset();
-            averageLabel_->setText("No current interval result");
-            frameFrozen_ = false;
-            frameCursorVisible_ = false;
-            updateFrameCursors();
-        }
-        range_ = next;
-        updateRanges();
-        waterfall_->setTimeSelectionRange(range_);
-        preserveFrequencyOnPreview_ = true;
-        // Throttle previews without restarting the timer or cancelling work on every move.
-        if (!busy_ && !previewTimer_->isActive())
-            previewTimer_->start();
-    });
     connect(spectrum_, &SpectrumPlot::frequencyRangeChanged, averagePlot_,
             &SpectrumPlot::setFrequencyRange);
     connect(averagePlot_, &SpectrumPlot::frequencyRangeChanged, spectrum_,
@@ -404,8 +446,12 @@ void MainWindow::buildMenus()
                 if (!recording_)
                     return;
                 previewTimer_->stop();
-                clearMeasurements();
-                generation_ = controller_.overview(recording_, range_, preferences_.dsp);
+                spectrum_->clearMeasurement();
+                averagePlot_->clearMeasurement();
+                waterfall_->clearMeasurement();
+                const auto pixels = waterfall_->pixelSize();
+                generation_ = controller_.overview(recording_, range_, preferences_.dsp,
+                                                   pixels.width(), requestedWaterfallRows());
                 setBusy(true, "Scanning every window for exact overview…");
             });
     connect(analysis->addAction("Exact waveform over selected interval"), &QAction::triggered, this,
@@ -414,6 +460,16 @@ void MainWindow::buildMenus()
     mark->setShortcut(QKeySequence("Ctrl+B"));
     connect(mark, &QAction::triggered, this, &MainWindow::addBookmark);
     auto *view = menuBar()->addMenu("&View");
+    auto *darkTheme = view->addAction("Dark theme");
+    darkTheme->setObjectName("darkTheme");
+    darkTheme->setCheckable(true);
+    darkTheme->setChecked(preferences_.darkTheme);
+    connect(darkTheme, &QAction::toggled, this, [this](bool enabled) {
+        preferences_.darkTheme = enabled;
+        applyTheme();
+        persistPreferences();
+    });
+    view->addSeparator();
     for (auto *panel : {controlsDock_, averageDock_, waveformDock_, bookmarksDock_})
         view->addAction(panel->toggleViewAction());
     auto *reset = view->addAction("Reset frequency zoom");
@@ -437,6 +493,28 @@ void MainWindow::buildMenus()
     auto *next = view->addAction("Next interval");
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
+    auto *settings = menuBar()->addMenu("&Settings");
+    auto *rowsMenu = settings->addMenu("Waterfall rows");
+    rowsMenu->setObjectName("waterfallRowsMenu");
+    rowsMenu->setToolTipsVisible(true);
+    waterfallRowsGroup_ = new QActionGroup(this);
+    for (const int count : {0, 128, 256, 512, 1024, 2048, 4096}) {
+        auto *action = rowsMenu->addAction(count == 0 ? "Automatic (display resolution)"
+                                                     : QString::number(count));
+        action->setCheckable(true);
+        action->setData(count);
+        action->setToolTip("Requested rows; the actual count is limited by available FFT windows. "
+                           "More rows provide finer time detail and take longer to compute.");
+        waterfallRowsGroup_->addAction(action);
+    }
+    connect(waterfallRowsGroup_, &QActionGroup::triggered, this, [this](QAction *action) {
+        const auto rows = action->data().toInt();
+        if (preferences_.view.waterfallRows == rows)
+            return;
+        preferences_.view.waterfallRows = rows;
+        scheduleWaterfall();
+        saveTimer_->start();
+    });
     auto *help = menuBar()->addMenu("&Help");
     auto *updates = help->addAction("Check for updates…");
     updates->setObjectName("checkForUpdates");
@@ -456,6 +534,9 @@ void MainWindow::buildMenus()
     shortcuts->setObjectName("keyboardShortcuts");
     shortcuts->setShortcut(QKeySequence(Qt::Key_F1));
     connect(shortcuts, &QAction::triggered, this, &MainWindow::showKeyboardShortcuts);
+    auto *plotControls = help->addAction("Plot controls…");
+    plotControls->setObjectName("plotControls");
+    connect(plotControls, &QAction::triggered, this, &MainWindow::showPlotControls);
     connect(help->addAction("Measurement conventions"), &QAction::triggered, this, [this] {
         QMessageBox::information(
             this, "CroccoSpectrum conventions",
@@ -469,8 +550,8 @@ void MainWindow::buildMenus()
             "every required sample/window.\n\n"
             "Wheel: frequency zoom in spectra; frequency/time zoom in waterfall. "
             "Drag: frequency pan in spectra; frequency/time pan in waterfall. "
-            "Ctrl + drag waterfall: pan the selected time slice, or preview rows for the whole "
-            "recording. Hover waterfall/waveform: "
+            "Ctrl + drag waterfall: pan only the visible time range. Drag the minimap box "
+            "to navigate; drag its top/bottom edges to resize the viewport. Hover waterfall/waveform: "
             "inspect the shared frame. Click either plot to freeze/unfreeze it. Double-click: "
             "seek. CSV records analysis settings; sessions preserve interpretation and bookmarks.");
     });
@@ -491,6 +572,7 @@ void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUr
     auto *label = new QLabel(message, dialog);
     label->setTextFormat(Qt::PlainText);
     label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(label);
     auto *buttons = new QDialogButtonBox(dialog);
     auto *dismiss = buttons->addButton("Dismiss", QDialogButtonBox::RejectRole);
@@ -498,8 +580,18 @@ void MainWindow::showUpdateMessage(const QString &message, const QUrl &releaseUr
     if (!releaseUrl.isEmpty()) {
         auto *open = buttons->addButton("Open release page", QDialogButtonBox::AcceptRole);
         open->setObjectName("openUpdateRelease");
-        connect(open, &QPushButton::clicked, dialog, [dialog, releaseUrl] {
-            QDesktopServices::openUrl(releaseUrl);
+        connect(open, &QPushButton::clicked, dialog, [this, dialog, releaseUrl] {
+            // Wayland's URL opener waits for an activation token from the focus window.
+            // Destroy the dialog first so its deletion cannot cancel that pending launch.
+            connect(dialog, &QObject::destroyed, this,
+                    [this, releaseUrl] {
+                        if (!QDesktopServices::openUrl(releaseUrl))
+                            showUpdateMessage("Couldn't open the browser. Open this release URL "
+                                              "manually, or try again:\n\n" +
+                                                  releaseUrl.toDisplayString(),
+                                              releaseUrl);
+                    },
+                    Qt::QueuedConnection);
             dialog->accept();
         });
     }
@@ -571,7 +663,8 @@ void MainWindow::showKeyboardShortcuts()
     addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; frequency and time in waterfall");
     addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum; frequency and time in waterfall");
     addRow(plotForm, "Ctrl + left-button drag",
-           "Pan the time selection; pan preview rows when showing the whole recording");
+           "Pan only the waterfall time viewport");
+    addRow(plotForm, "Minimap box / top and bottom edges", "Move / resize the waterfall viewport");
     addRow(plotForm, "Hover", "Inspect coordinates; follow the frame in waterfall / waveform");
     addRow(plotForm, "Left-click", "Freeze / unfreeze the frame in waterfall / waveform");
     addRow(plotForm, "Double-click", "Seek to a frame in waterfall / waveform");
@@ -595,6 +688,65 @@ void MainWindow::showKeyboardShortcuts()
     layout->addWidget(buttons);
     const auto available = dialog->screen()->availableGeometry();
     dialog->resize(std::min(960, available.width() - 60), std::min(620, available.height() - 80));
+    dialog->show();
+}
+
+void MainWindow::showPlotControls()
+{
+    if (auto *existing = findChild<QDialog *>("plotControlsDialog")) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName("plotControlsDialog");
+    dialog->setWindowTitle("Plot controls");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *scroll = new QScrollArea(dialog);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto *content = new QWidget(scroll);
+    auto *sections = new QVBoxLayout(content);
+    const auto addSection = [content, sections](const QString &title, const QString &text) {
+        auto *group = new QGroupBox(title, content);
+        auto *groupLayout = new QVBoxLayout(group);
+        auto *label = new QLabel(text, group);
+        label->setTextFormat(Qt::PlainText);
+        label->setWordWrap(true);
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        groupLayout->addWidget(label);
+        sections->addWidget(group);
+    };
+    addSection("Spectrum / average spectrum",
+               "Mouse wheel: zoom frequency around the pointer. Left-button drag: pan frequency. "
+               "Hover: inspect frequency and power coordinates.\n\n"
+               "Shift + left-click: start measuring frequency width and mean spectral power. "
+               "Left-click again to finish. Shift-drag the band to move it or a marker to resize "
+               "it. Escape clears the measurement in the focused plot.");
+    addSection("Waterfall",
+               "Mouse wheel: zoom frequency and time around the pointer. Left-button drag: pan "
+               "both axes. Hold Ctrl when starting a drag to pan only time. These gestures change "
+               "the waterfall viewport independently of the analysis Start/End fields. "
+               "The minimap shows the whole recording: drag its box to move through time, "
+               "or drag the top/bottom handles to change the visible time span.\n\n"
+               "Hover: inspect the shared frame. Click to freeze/unfreeze the frame; double-click "
+               "to seek.\n\n"
+               "Shift + left-click: start measuring duration between waterfall rows. Left-click "
+               "again to finish. Shift-drag the band to move it or a marker to resize it. Escape "
+               "clears the measurement in the focused plot.");
+    addSection("Baseband waveform",
+               "Hover: inspect sample values and the shared frame. Click to freeze/unfreeze the "
+               "frame; double-click to seek.");
+    sections->addStretch();
+    scroll->setWidget(content);
+    layout->addWidget(scroll);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    const auto available = dialog->screen()->availableGeometry();
+    dialog->resize(std::min(660, available.width() - 60), std::min(620, available.height() - 80));
     dialog->show();
 }
 
@@ -704,6 +856,12 @@ void MainWindow::buildControls()
     palette_->setObjectName("waterfallPalette");
     palette_->addItems({"Viridis", "Inferno", "Grayscale", "Turbo", "Baudline"});
     autoRange_ = new QCheckBox("Automatic range (80 dB span)", this);
+    autoRange_->setObjectName("automaticRange");
+    waterfallAutoRangeOnZoom_ = new QCheckBox("Adapt waterfall colors on zoom", this);
+    waterfallAutoRangeOnZoom_->setObjectName("waterfallAutoRangeOnZoom");
+    waterfallAutoRangeOnZoom_->setToolTip(
+        "With Automatic range enabled, recalculate the waterfall color limits as you zoom or pan. "
+        "Turn off to keep the current limits until the recording, analysis range, or DSP settings change.");
     absoluteFrequency_ = new QCheckBox("Absolute frequency", this);
     absoluteFrequency_->setObjectName("absoluteFrequency");
     waveformMode_ = new QComboBox(this);
@@ -712,6 +870,7 @@ void MainWindow::buildControls()
     colorForm->addRow("Maximum", colorMax_);
     colorForm->addRow("Palette", palette_);
     colorForm->addRow(autoRange_);
+    colorForm->addRow(waterfallAutoRangeOnZoom_);
     colorForm->addRow(absoluteFrequency_);
     colorForm->addRow("Waveform", waveformMode_);
     layout->addWidget(colors);
@@ -815,7 +974,7 @@ void MainWindow::buildControls()
         connect(check, &QCheckBox::toggled, this, &MainWindow::updateDsp);
     for (auto *combo : {palette_, waveformMode_})
         connect(combo, &QComboBox::currentIndexChanged, this, &MainWindow::updateView);
-    for (auto *check : {autoRange_, absoluteFrequency_})
+    for (auto *check : {autoRange_, waterfallAutoRangeOnZoom_, absoluteFrequency_})
         connect(check, &QCheckBox::toggled, this, &MainWindow::updateView);
     for (auto *spin : {colorMin_, colorMax_})
         connect(spin, &QDoubleSpinBox::valueChanged, this, &MainWindow::updateView);
@@ -870,6 +1029,7 @@ void MainWindow::connectWorker()
                     bookmarksList_->addItem(
                         QString("%1 · frame %2").arg(mark.label).arg(mark.start));
                 updateDsp();
+                startMinimap();
                 saveTimer_->start();
             });
     connect(&controller_, &AnalysisController::previewReady, this,
@@ -880,21 +1040,34 @@ void MainWindow::connectWorker()
                 ++spectrumGeneration_;
                 preview_ = std::move(result);
                 spectrumFrame_ = preview_->spectrumStart;
-                const bool preserveFrequency = preserveFrequencyOnPreview_ || waterfallPanRange_;
-                waterfall_->setPreview(preview_, recording_->descriptor().sampleRate,
-                                       !preserveFrequency);
+                const bool preserveFrequency = preview_->aggregated;
+                waterfall_->setRecordingExtent({0, recording_->frameCount()},
+                                                static_cast<std::uint64_t>(preferences_.dsp.fftSize));
+                // An explicit analysis overview belongs to the analysis range.
+                // Keep a separately navigated waterfall viewport and its data.
+                if (!preview_->aggregated || !waterfall_->snapshot() ||
+                    waterfall_->viewport() == preview_->range) {
+                    if (preview_->aggregated) {
+                        waterfallTimer_->stop();
+                        waterfallController_.cancel();
+                        ++waterfallGeneration_;
+                    }
+                    waterfall_->setPreview(preview_, recording_->descriptor().sampleRate,
+                                           !preserveFrequency);
+                }
+                if (waterfall_->viewport().size() == 0)
+                    waterfall_->setViewport(range_);
+                if (!preview_->aggregated)
+                    scheduleWaterfall();
                 waveformResult_ = std::make_shared<WaveformResult>(preview_->waveform);
                 waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
                                        recording_->descriptor().format.kind);
                 displaySpectrum(preview_, !preserveFrequency);
-                preserveFrequencyOnPreview_ = preserveFrequency && preview_->range != range_;
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
                     "ENBW shown in CSV/numeric results",
                     QString("ENBW: %1 Hz").arg(number(preview_->spectrum.enbwHz))));
                 setBusy(false, "Preview ready");
-                if (preserveFrequencyOnPreview_ && !previewTimer_->isActive())
-                    previewTimer_->start();
                 emit analysisDisplayed();
             });
     connect(&spectrumController_, &AnalysisController::previewReady, this,
@@ -907,6 +1080,26 @@ void MainWindow::connectWorker()
                 if (generation == spectrumGeneration_)
                     reportError(message);
             });
+    connect(&waterfallController_, &AnalysisController::waterfallReady, this,
+            [this](quint64 generation, std::shared_ptr<const PreviewResult> result) {
+                if (generation != waterfallGeneration_ || !recording_)
+                    return;
+                waterfall_->setDetail(std::move(result));
+                updateFrameCursors();
+                updateWaterfallCoverage();
+                updateView();
+            });
+    connect(&minimapController_, &AnalysisController::waterfallReady, this,
+            [this](quint64 generation, std::shared_ptr<const PreviewResult> result) {
+                if (generation == minimapGeneration_ && recording_)
+                    minimap_->setSnapshot(std::move(result));
+            });
+    for (auto *worker : {&waterfallController_, &minimapController_})
+        connect(worker, &AnalysisController::failed, this,
+                [this, worker](quint64 generation, const QString &message) {
+                    if (generation == (worker == &waterfallController_ ? waterfallGeneration_ : minimapGeneration_))
+                        reportError(message);
+                });
     connect(&controller_, &AnalysisController::averageReady, this,
             [this](quint64 generation, std::shared_ptr<const AverageResult> result) {
                 if (generation != generation_)
@@ -958,6 +1151,32 @@ void MainWindow::connectWorker()
             });
 }
 
+void MainWindow::applyTheme()
+{
+    const bool dark = preferences_.darkTheme;
+    // Build both palettes explicitly so the desktop theme cannot prevent an override.
+    QPalette palette(QColor(dark ? "#202b36" : "#efefef"));
+    const QColor text(dark ? "#e5edf3" : "#202020");
+    const QColor muted(dark ? "#87949f" : "#767676");
+    for (auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText,
+                      QPalette::ToolTipText})
+        palette.setColor(role, text);
+    for (auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
+        palette.setColor(QPalette::Disabled, role, muted);
+    palette.setColor(QPalette::Base, QColor(dark ? "#101923" : "#ffffff"));
+    palette.setColor(QPalette::AlternateBase, QColor(dark ? "#2a3643" : "#f5f5f5"));
+    palette.setColor(QPalette::ToolTipBase, palette.color(QPalette::Window));
+    palette.setColor(QPalette::PlaceholderText, muted);
+    palette.setColor(QPalette::Highlight, QColor(dark ? "#51d3be" : "#16836e"));
+    palette.setColor(QPalette::HighlightedText, QColor(dark ? "#101923" : "#ffffff"));
+    palette.setColor(QPalette::Disabled, QPalette::Highlight,
+                     QColor(dark ? "#394957" : "#d5d5d5"));
+    palette.setColor(QPalette::Disabled, QPalette::HighlightedText, muted);
+    palette.setColor(QPalette::Link, QColor(dark ? "#70dccc" : "#006b58"));
+    palette.setColor(QPalette::LinkVisited, QColor(dark ? "#c2a3e8" : "#6b3f99"));
+    QApplication::setPalette(palette);
+}
+
 void MainWindow::applyPreferences()
 {
     applying_ = true;
@@ -971,6 +1190,9 @@ void MainWindow::applyPreferences()
     colorMax_->setValue(preferences_.view.colorMax);
     palette_->setCurrentText(preferences_.view.palette);
     autoRange_->setChecked(preferences_.view.autoRange);
+    waterfallAutoRangeOnZoom_->setChecked(preferences_.view.waterfallAutoRangeOnZoom);
+    for (auto *action : waterfallRowsGroup_->actions())
+        action->setChecked(action->data().toInt() == preferences_.view.waterfallRows);
     absoluteFrequency_->setChecked(preferences_.view.absoluteFrequency);
     waveformMode_->setCurrentIndex(preferences_.view.waveformMode);
     applying_ = false;
@@ -1007,6 +1229,9 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
         descriptor.validate();
         preferences_.dsp.validate(descriptor.sampleRate);
         previewTimer_->stop();
+        minimapController_.cancel();
+        ++minimapGeneration_;
+        minimap_->clear();
         clearMeasurements();
         recording_.reset();
         openingPath_ = QFileInfo(sourcePath).absoluteFilePath();
@@ -1019,8 +1244,9 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
 
 void MainWindow::clearMeasurements()
 {
-    waterfallPanRange_.reset();
-    preserveFrequencyOnPreview_ = false;
+    waterfallTimer_->stop();
+    waterfallController_.cancel();
+    ++waterfallGeneration_;
     spectrumController_.cancel();
     ++spectrumGeneration_;
     spectrumFrame_.reset();
@@ -1056,6 +1282,48 @@ void MainWindow::requestPreview()
         return;
     generation_ = controller_.preview(recording_, range_, preferences_.dsp);
     setBusy(true, "Computing preview…");
+}
+
+void MainWindow::scheduleWaterfall()
+{
+    if (!recording_ || waterfall_->viewport().size() == 0 || !waterfall_->snapshot())
+        return;
+    // Invalidate queued work immediately. Throttle without restarting the timer
+    // so a continuous gesture still obtains fresh data every bounded interval.
+    waterfallController_.cancel();
+    ++waterfallGeneration_;
+    if (!waterfallTimer_->isActive())
+        waterfallTimer_->start();
+}
+void MainWindow::requestWaterfall()
+{
+    if (!recording_ || !waterfall_->snapshot() || waterfall_->isMeasuring())
+        return;
+    const auto [left, right] = waterfall_->frequencyRange();
+    const auto pixels = waterfall_->pixelSize();
+    WaterfallRequest request{waterfall_->viewport(), left, right, pixels.width(),
+                              requestedWaterfallRows(), false, preferences_.view.waterfallRows != 0};
+    waterfallGeneration_ = waterfallController_.waterfall(recording_, preferences_.dsp, request);
+}
+int MainWindow::requestedWaterfallRows() const
+{
+    return preferences_.view.waterfallRows ? preferences_.view.waterfallRows
+                                          : std::max(1, waterfall_->pixelSize().height());
+}
+void MainWindow::startMinimap()
+{
+    minimapController_.cancel();
+    ++minimapGeneration_;
+    if (!recording_ || recording_->frameCount() < static_cast<std::uint64_t>(preferences_.dsp.fftSize))
+        return;
+    const FrameRange extent{0, recording_->frameCount()};
+    minimap_->setRecording(extent, static_cast<std::uint64_t>(preferences_.dsp.fftSize));
+    const auto viewport = waterfall_->viewport();
+    minimap_->setViewport(viewport.size() ? viewport : range_);
+    // A small fixed grid bounds progressive copying. Resizing the UI stretches
+    // this overview without restarting a full recording scan.
+    WaterfallRequest request{extent, 0, 0, 192, 1024, true};
+    minimapGeneration_ = minimapController_.waterfall(recording_, preferences_.dsp, request);
 }
 
 bool MainWindow::measurementActive() const
@@ -1131,8 +1399,13 @@ void MainWindow::selectFrame(quint64 frame)
     if (!recording_ || !preview_)
         return;
     // Waveform sample buckets snap to the waterfall row containing their time.
-    const auto row = std::upper_bound(preview_->rowStarts.begin(), preview_->rowStarts.end(), frame);
-    frame = row == preview_->rowStarts.begin() ? preview_->rowStarts.front() : *(row - 1);
+    const auto displayed = waterfall_->snapshot();
+    if (displayed && frame >= displayed->range.begin && frame < displayed->range.end) {
+        const auto row = std::upper_bound(displayed->rowStarts.begin(), displayed->rowStarts.end(), frame);
+        frame = row == displayed->rowStarts.begin() ? displayed->rowStarts.front() : *(row - 1);
+    }
+    frame = std::min<std::uint64_t>(frame, recording_->frameCount() -
+                                           static_cast<std::uint64_t>(preferences_.dsp.fftSize));
     frameCursorVisible_ = true;
     if (spectrumFrame_ == frame) {
         updateFrameCursors();
@@ -1169,17 +1442,25 @@ void MainWindow::displaySpectrum(std::shared_ptr<const PreviewResult> result, bo
                                recording_->descriptor().format.kind);
     }
     updateFrameCursors();
+    updateWaterfallCoverage();
+    updateSpectrumView();
+}
+
+void MainWindow::updateWaterfallCoverage()
+{
+    const auto displayed = waterfall_->snapshot();
+    if (!displayed || !spectrumPreview_)
+        return;
     coverageLabel_->setText(
         QString("%1 waterfall · %2 rows\n%3 invalid windows · %4 capture-boundary "
                 "windows\nSpectrum begins at frame %5")
-            .arg(preview_->aggregated ? "Exact maximum-aggregated"
-                 : preview_->sampled  ? "Sampled preview"
+            .arg(displayed->aggregated ? "Exact maximum-aggregated"
+                 : displayed->sampled  ? "Sampled preview"
                                       : "Every window shown")
-            .arg(preview_->rowStarts.size())
-            .arg(preview_->invalidWindows)
-            .arg(preview_->boundaryWindows)
+            .arg(displayed->rowStarts.size())
+            .arg(displayed->invalidWindows)
+            .arg(displayed->boundaryWindows)
             .arg(spectrumPreview_->spectrumStart));
-    updateSpectrumView();
 }
 
 void MainWindow::updateDsp()
@@ -1210,6 +1491,7 @@ void MainWindow::updateDsp()
             .arg(number(static_cast<double>(settings.hop()) / rate)));
     if (changed) {
         schedulePreview();
+        startMinimap();
         updateView();
         saveTimer_->start();
     }
@@ -1241,6 +1523,8 @@ void MainWindow::updateView()
     view.colorMax = colorMax_->value();
     view.palette = palette_->currentText();
     view.autoRange = autoRange_->isChecked();
+    view.waterfallAutoRangeOnZoom = waterfallAutoRangeOnZoom_->isChecked();
+    waterfallAutoRangeOnZoom_->setEnabled(view.autoRange);
     view.absoluteFrequency = absoluteFrequency_->isChecked();
     view.waveformMode = waveformMode_->currentIndex();
     try {
@@ -1268,9 +1552,11 @@ void MainWindow::updateView()
     // A selected waterfall/average may span retunes. Those aggregates are
     // baseband; applying the first capture's frequency to every row would
     // manufacture incorrect absolute RF coordinates.
-    const auto center = uniformCenter(range_);
+    const auto viewport = waterfall_->viewport();
+    const auto center = uniformCenter(viewport.size() ? viewport : range_);
     effective.absoluteFrequency = view.absoluteFrequency && center.has_value();
     waterfall_->setView(effective, preferences_.dsp.scale, center.value_or(0));
+    minimap_->setView(view);
     const auto averageCenter = uniformCenter(average_ ? average_->range : range_);
     effective.absoluteFrequency = view.absoluteFrequency && averageCenter.has_value();
     averagePlot_->setView(effective, preferences_.dsp.scale, averageCenter.value_or(0));
@@ -1284,7 +1570,6 @@ void MainWindow::updateRanges()
     start_->setText(QString::number(range_.begin));
     end_->setText(QString::number(range_.end));
     if (recording_) {
-        waterfall_->setTimeSelectionPanEnabled(range_.size() < recording_->frameCount());
         const QSignalBlocker blocker(timeline_);
         timeline_->setValue(static_cast<int>(static_cast<long double>(range_.begin) /
                                              recording_->frameCount() * 100000));
@@ -1448,6 +1733,8 @@ void MainWindow::exportPng()
     auto range = choice == "Average spectrum"              ? average_->range
                  : choice == "Waveform" && waveformResult_ ? waveformResult_->range
                                                            : range_;
+    if (choice == "Waterfall")
+        range = waterfall_->viewport();
     if (choice == "Spectrum")
         range = {spectrumPreview_->spectrumStart,
                  spectrumPreview_->spectrumStart +
@@ -1455,6 +1742,7 @@ void MainWindow::exportPng()
     PngRequest request;
     request.image = plot->grab().toImage();
     request.output = path;
+    const auto displayed = choice == "Waterfall" ? waterfall_->snapshot() : preview_;
     request.metadata = {{"application_version", RF_VERSION},
                         {"plot", choice},
                         {"recording", recordingToJson(recording_->descriptor())},
@@ -1464,11 +1752,20 @@ void MainWindow::exportPng()
                         {"dsp", dspToJson(preferences_.dsp)},
                         {"view", viewToJson(preferences_.view)},
                         {"unit", powerUnit(preferences_.dsp.scale)},
-                        {"sampled_preview", choice != "Spectrum" && preview_->sampled},
-                        {"exact_overview", choice != "Spectrum" && preview_->aggregated},
+                        {"sampled_preview", choice != "Spectrum" && displayed->sampled},
+                        {"exact_overview", choice != "Spectrum" && displayed->aggregated},
                         {"waveform_complete", waveformResult_ && waveformResult_->complete},
                         {"coverage_label", coverageLabel_->text()},
                         {"average_coverage", average_ ? averageLabel_->text() : QString()}};
+    if (choice == "Waterfall") {
+        const auto [left, right] = waterfall_->frequencyRange();
+        request.metadata.insert("frequency_left_hz", left);
+        request.metadata.insert("frequency_right_hz", right);
+        request.metadata.insert("waterfall_data_start", QString::number(displayed->range.begin));
+        request.metadata.insert("waterfall_data_end", QString::number(displayed->range.end));
+        request.metadata.insert("waterfall_columns", displayed->columns);
+        request.metadata.insert("waterfall_rows", static_cast<int>(displayed->rowStarts.size()));
+    }
     generation_ = controller_.png(std::move(request));
     setBusy(true, "Encoding PNG…");
 }
@@ -1584,6 +1881,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
     previewTimer_->stop();
     controller_.cancel();
     spectrumController_.cancel();
+    waterfallTimer_->stop();
+    waterfallController_.cancel();
+    minimapController_.cancel();
+    ++waterfallGeneration_;
+    ++minimapGeneration_;
     ++spectrumGeneration_;
     persistPreferences();
     event->accept();
