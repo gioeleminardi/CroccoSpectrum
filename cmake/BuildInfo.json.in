@@ -1,0 +1,9 @@
+{
+  "application": "CroccoSpectrum",
+  "base_version": "@PROJECT_VERSION@",
+  "version": "@RF_VERSION@",
+  "channel": "@RF_BUILD_CHANNEL@",
+  "commit": "@RF_BUILD_COMMIT@",
+  "build_number": "@RF_BUILD_NUMBER@",
+  "built_at": "@RF_BUILD_DATE@"
+}

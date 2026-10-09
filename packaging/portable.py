@@ -21,15 +21,15 @@ parser.add_argument("--qt", type=pathlib.Path, required=True)
 parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("dist"))
 args = parser.parse_args()
 source = pathlib.Path(__file__).resolve().parent.parent
-pins = json.loads((source / "packaging/dependencies.json").read_text())
-version = pins["application"]
+build_info = json.loads((args.build / "BUILD-INFO.json").read_text())
+version = build_info["version"]
 destination = args.output.resolve() / f"croccospectrum-{version}-x86_64"
 if destination.exists():
     raise SystemExit(f"Refusing to replace {destination}; remove the old generated bundle explicitly")
 destination.mkdir(parents=True)
 lib = destination / "lib"
 lib.mkdir()
-manifest = {"application_name": "CroccoSpectrum", "application_version": version, "architecture": "x86_64", "build_os": pathlib.Path("/etc/os-release").read_text(), "files": []}
+manifest = {"application_name": "CroccoSpectrum", "application_version": version, "build": build_info, "architecture": "x86_64", "build_os": pathlib.Path("/etc/os-release").read_text(), "files": []}
 pending = []
 
 
@@ -43,6 +43,7 @@ for name in ["croccospectrum", "croccospectrum-cli"]:
     binary = (args.build / name).resolve()
     copy(binary, destination / "bin" / name)
     pending.append(binary)
+copy(args.build / "BUILD-INFO.json", destination / "BUILD-INFO.json")
 
 plugin_groups = ["platforms", "imageformats", "platforminputcontexts", "xcbglintegrations", "wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration", "tls"]
 for group in plugin_groups:

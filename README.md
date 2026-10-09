@@ -68,8 +68,14 @@ supported formats, and verification results.
 
 Open [Releases](https://github.com/gioeleminardi/CroccoSpectrum/releases) and
 download the AppImage or portable tarball from **Assets**. New releases and
-pre-releases receive packages, accompanying sources, and checksums automatically
-after their build and verification workflow succeeds.
+development prereleases are published with packages, accompanying sources,
+checksums, and build information after their verification workflow succeeds.
+
+The [download website](https://gioeleminardi.github.io/CroccoSpectrum/#download)
+offers the stable release and latest successful development build separately.
+Development versions such as `0.2.0-dev.184.g233be51` identify the planned release,
+CI run, and source commit. They are intended for beta testing. See [release workflow](docs/CI.md#publish-a-stable-release)
+for development and stable publication instructions.
 
 ### Download a CI build
 
@@ -451,6 +457,11 @@ ctest --preset release
 ./build/release/croccospectrum
 ```
 
+Source builds show a development version with the commit ID, and `.dirty` for
+modified checkouts. `CMakeLists.txt` holds the next planned release version;
+feature notes remain under `Unreleased` until release preparation. The build
+directory's `BUILD-INFO.json` records the exact build identity.
+
 <details>
 <summary><strong>Build portable release packages</strong></summary>
 
@@ -474,16 +485,17 @@ The bundler records dependency versions, notices, and SHA-256 hashes, and refuse
 to replace an existing generated bundle. Before distribution:
 
 1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-0.2.0-x86_64` there to collect
+   `packaging/sources.py --bundle dist/croccospectrum-VERSION-x86_64` there to collect
    the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-0.2.0-x86_64` to refresh
+2. Run `packaging/finalize.py --bundle dist/croccospectrum-VERSION-x86_64` to refresh
    documentation, manifests, and binary/source archives.
 3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-0.2.0-x86_64 OUTPUT.AppImage`.
+   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-VERSION-x86_64 OUTPUT.AppImage`.
    Supply the pinned tool and the verified runtime at
    `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
    it explicitly.
 
+Replace `VERSION` with the generated version in `build/ubuntu24/BUILD-INFO.json`.
 Source archives and license provisions accompany distributed binaries. See
 [Third-party components](docs/THIRD_PARTY.md) for the complete provisions.
 

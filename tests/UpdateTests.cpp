@@ -93,7 +93,7 @@ class FakeReply : public QNetworkReply
 class FakeNetwork : public QNetworkAccessManager
 {
   public:
-    QByteArray body = response({release("v0.2.1")});
+    QByteArray body = QJsonDocument(release("v0.2.1")).toJson(QJsonDocument::Compact);
     int requests = 0;
     QPointer<FakeReply> reply;
 
@@ -114,6 +114,20 @@ class UpdateTests : public QObject
     void captureUrl(const QUrl &url) { openedUrl_ = url; }
 
   private slots:
+    void developmentBuildsRecognizeTheirFinalRelease()
+    {
+        const auto json = QJsonDocument(release("v0.2.0")).toJson(QJsonDocument::Compact);
+        for (const auto &version : {"0.2.0-dev.184.g233be51", "0.2.0-dev.local.g233be51.dirty",
+                                    "0.2.0-dev.local.gunknown"}) {
+            const auto candidate = rf::newerRelease(json, version);
+            QVERIFY(candidate);
+            QCOMPARE(candidate->version, QString("0.2.0"));
+        }
+        QVERIFY(!rf::newerRelease(json, "0.2.0"));
+        QVERIFY(!rf::newerRelease(json, "0.3.0-dev.185.g233be51"));
+        QVERIFY(rf::newerRelease(json, "0.1.7-dev.183.g233be51"));
+        QVERIFY_EXCEPTION_THROWN(rf::newerRelease(json, "0.2.0-invalid"), std::runtime_error);
+    }
     void selectsHighestNumericVersion()
     {
         const auto candidate = rf::newerRelease(
@@ -202,6 +216,8 @@ class UpdateTests : public QObject
         checker.check(); // A manual request can join an automatic request.
         QCOMPARE(network.requests, 1);
         QCOMPARE(network.reply->request().url().scheme(), QString("https"));
+        QCOMPARE(network.reply->request().url().path(),
+                 QString("/repos/gioeleminardi/CroccoSpectrum/releases/latest"));
         QCOMPARE(
             network.reply->request().attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),
             static_cast<int>(QNetworkRequest::SameOriginRedirectPolicy));
@@ -240,6 +256,21 @@ class UpdateTests : public QObject
         QCOMPARE(network.requests, 3);
         checker.setAutomaticChecking(false);
         QVERIFY(network.reply->aborted);
+    }
+    void noStableReleaseIsNotAnError()
+    {
+        rf::UpdateSettings settings;
+        FakeNetwork network;
+        rf::UpdateChecker checker(settings, nullptr, &network);
+        QSignalSpy completed(&checker, &rf::UpdateChecker::finished);
+        QSignalSpy failed(&checker, &rf::UpdateChecker::failed);
+        checker.check();
+        network.reply->status(404);
+        network.reply->networkError(QNetworkReply::ContentNotFoundError);
+        network.reply->complete();
+        QCOMPARE(completed.count(), 1);
+        QVERIFY(completed[0][0].toString().isEmpty());
+        QVERIFY(failed.isEmpty());
     }
     void failures_data()
     {

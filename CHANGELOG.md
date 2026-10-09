@@ -6,6 +6,12 @@ This file records release history and behavior changes. See
 
 ## 0.2.0 — 2026-10-09 — Update notifications and plot navigation
 
+- Identify development builds with the planned release version, CI build number,
+  and source commit in the application, exports, packages, and build manifests.
+  Publish verified `devel` pushes as distinct GitHub prereleases and stable tags
+  as releases after all packages, sources, and checksums are ready. Offer stable
+  and development downloads separately on the website; development applications
+  recognize the corresponding final stable release as an update.
 - Add automatic stable-release checks and update notifications with a release
   page link for manual installation. Help actions check on demand or disable
   automatic checks; incomplete release uploads, offline failures, and rate

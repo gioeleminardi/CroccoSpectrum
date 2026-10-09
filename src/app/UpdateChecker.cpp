@@ -60,13 +60,26 @@ std::optional<UpdateRelease> newerRelease(const QByteArray &json, const QString 
 {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(json, &error);
-    if (error.error != QJsonParseError::NoError || !document.isArray())
-        throw std::runtime_error("GitHub returned an invalid release list");
+    if (error.error != QJsonParseError::NoError ||
+        (!document.isArray() && !document.isObject()))
+        throw std::runtime_error("GitHub returned invalid release metadata");
     auto newest = releaseVersion(currentVersion);
+    bool development = false;
+    if (newest.isNull()) {
+        static const QRegularExpression pattern(
+            "^(\\d+\\.\\d+\\.\\d+)-dev\\.(?:local|[1-9][0-9]*)\\.g(?:[0-9a-f]{7}|unknown)"
+            "(?:\\.dirty)?$");
+        const auto match = pattern.match(currentVersion);
+        if (match.hasMatch()) {
+            newest = releaseVersion(match.captured(1));
+            development = true;
+        }
+    }
     if (newest.isNull())
         throw std::runtime_error("The installed application version cannot be compared");
     std::optional<UpdateRelease> result;
-    for (const auto value : document.array()) {
+    const auto releases = document.isObject() ? QJsonArray{document.object()} : document.array();
+    for (const auto value : releases) {
         const auto release = value.toObject();
         if (!release["draft"].isBool() || !release["prerelease"].isBool())
             throw std::runtime_error("GitHub returned invalid release metadata");
@@ -74,7 +87,7 @@ std::optional<UpdateRelease> newerRelease(const QByteArray &json, const QString 
             continue;
         const auto tag = release["tag_name"].toString();
         const auto version = releaseVersion(tag);
-        if (version.isNull() || version <= newest)
+        if (version.isNull() || version < newest || (version == newest && !development))
             continue;
         if (!release["assets"].isArray())
             throw std::runtime_error("GitHub returned an invalid release asset list");
@@ -91,6 +104,7 @@ std::optional<UpdateRelease> newerRelease(const QByteArray &json, const QString 
             !assets.contains(appimage + ".sha256") || !assets.contains(portable + ".sha256"))
             continue;
         newest = version;
+        development = false;
         // Construct the URL from a validated tag rather than trusting a remote link.
         result = UpdateRelease{
             version.toString(),
@@ -182,7 +196,7 @@ void UpdateChecker::check(bool manual)
     response_.clear();
     requestError_.clear();
     QNetworkRequest request(
-        QUrl("https://api.github.com/repos/gioeleminardi/CroccoSpectrum/releases?per_page=100"));
+        QUrl("https://api.github.com/repos/gioeleminardi/CroccoSpectrum/releases/latest"));
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setRawHeader("User-Agent", "CroccoSpectrum/" RF_VERSION);
     request.setRawHeader("X-GitHub-Api-Version", "2026-03-10");
@@ -218,16 +232,17 @@ void UpdateChecker::finishRequest()
         settings_.retryAfter = retryTime(reply);
         emit settingsChanged();
         error = "GitHub refused the update check; try again later";
-    } else if (error.isEmpty() && status != 200)
+    } else if (error.isEmpty() && status != 200 && status != 404)
         error = status ? QString("GitHub returned HTTP %1").arg(status) : reply->errorString();
-    else if (error.isEmpty() && reply->error() != QNetworkReply::NoError)
+    else if (error.isEmpty() && status != 404 && reply->error() != QNetworkReply::NoError)
         error = reply->errorString();
     else if (error.isEmpty() && response_.size() > maximumResponse)
         error = "GitHub returned an oversized release list";
     std::optional<UpdateRelease> release;
     if (error.isEmpty()) {
         try {
-            release = newerRelease(response_, RF_VERSION);
+            // GitHub returns 404 when no stable release has been published yet.
+            release = newerRelease(status == 404 ? QByteArray("[]") : response_, RF_VERSION);
         } catch (const std::exception &exception) {
             error = QString::fromUtf8(exception.what());
         }

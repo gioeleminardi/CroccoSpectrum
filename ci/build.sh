@@ -6,6 +6,11 @@ cd "$(dirname "$0")/.."
 mode=${1:?Usage: bash ci/build.sh release|debug|asan}
 case "$mode" in release|debug|asan) ;; *) exit 2 ;; esac
 engine=${RF_CI_ENGINE:-docker}
+commit=${RF_CI_COMMIT:-$(git rev-parse HEAD)}
+dirty=OFF
+if [[ ${RF_BUILD_NUMBER:-local} == local && -n $(git status --porcelain) ]]; then
+    dirty=ON
+fi
 output="$PWD/dist/ci/$mode"
 rm -rf "$output/packages" "$output/sources" "$output/reports/checksums"
 mkdir -p "$output/reports" "$output/packages"
@@ -27,7 +32,12 @@ trap 'exit 143' TERM
 "$engine" build --no-cache -t "croccospectrum-ci:$mode" -f packaging/Containerfile . \
     2>&1 | tee "$output/reports/container-build.log"
 builder=$("$engine" create -w /workspace -e LANG=C.UTF-8 \
-    -e RF_CI_COMMIT="${RF_CI_COMMIT:-$(git rev-parse HEAD)}" \
+    -e RF_CI_COMMIT="$commit" \
+    -e RF_BUILD_CHANNEL="${RF_BUILD_CHANNEL:-development}" \
+    -e RF_BUILD_NUMBER="${RF_BUILD_NUMBER:-local}" \
+    -e RF_BUILD_DIRTY="$dirty" \
+    -e RF_BUILD_DATE="${RF_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
+    -e RF_CI_RUN_URL="${RF_CI_RUN_URL:-}" \
     -e RF_CI_JOBS="${RF_CI_JOBS:-2}" "croccospectrum-ci:$mode" sleep infinity)
 containers+=("$builder")
 "$engine" start "$builder" >/dev/null

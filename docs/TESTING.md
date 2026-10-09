@@ -14,10 +14,14 @@ The metadata stress test uses only Python's standard library.
 
 ASAN/UBSAN require the runtime matching the compiler. Use the Ubuntu container
 from README when the host compiler installation lacks matching sanitizer libs.
-Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run all five suites.
+Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run the CTest suites.
 
 The `updates` suite uses simulated network replies for release selection,
 timeouts, rate limits, cancellation, preferences, and notification behavior.
+The `release-pipeline` suite checks generated versions, release tag validation,
+checksums, interrupted uploads, and publication retries using simulated GitHub
+responses. When Node.js is installed, `website-releases` verifies both download
+channels, incomplete assets, and out-of-order builds. CI installs Node.js.
 Normal tests never contact GitHub. To explicitly check real HTTPS connectivity:
 
 ```sh

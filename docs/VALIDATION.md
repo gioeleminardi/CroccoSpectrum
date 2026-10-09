@@ -6,6 +6,19 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Development/release channels (2026-10-09): all seven CTest suites pass in Fedora
+  44 Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK. The
+  container build produces `0.2.0-dev.184.g233be51` packages; final portable-folder
+  and AppImage launches pass offline on Ubuntu 24.04/26.04 and Fedora 44.
+  Executable versions, CLI metadata, package names, bundle/source build identities,
+  and checksums agree. A separate Fedora Release build reports stable `0.2.0`.
+  Fourteen offline pipeline tests cover CMake identities, stable-tag validation,
+  draft publication, checksums, retries, and tag collisions; seven website tests
+  cover channel separation, incomplete packages, out-of-order builds, and network
+  failures. Update regressions cover development-to-final release comparisons and
+  the latest-stable endpoint. The download layout was inspected in the browser;
+  workflow actionlint, shell syntax, and Python compilation pass. GitHub publication
+  is simulated in tests; no release was published as part of this validation.
 - CroccoSpectrum 0.2.0 version bump: Fedora 44 Debug build and all five CTest
   suites pass with Qt 6.11.2. Both GUI and CLI `--version` report 0.2.0;
   packaging metadata matches the CMake project version. The update-check
