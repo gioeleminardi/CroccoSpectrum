@@ -63,9 +63,9 @@ of preview row skipping or overview aggregation, although those displays limit
 event-boundary resolution. Plot measurement state is transient.
 
 Waterfall measurement changes publish their ordered row-start frame bounds to
-the time-selection fields without calling `setRange`. The separate average
+the analysis-interval fields without calling `setRange`. The separate average
 button submits a snapshot of those bounds to the existing analysis worker,
-using the same exclusive-end convention as the time panel. Pending gestures
+using the same exclusive-end convention as the analysis interval. Pending gestures
 and intervals shorter than one FFT window keep that button disabled.
 
 Spectrum hover stores the pointer's plot position and paints a crosshair with
@@ -185,7 +185,9 @@ replacement for numeric bins or zoomed analysis. Capture boundaries are never
 crossed by an accepted FFT window.
 
 Waterfall viewport bounds are 64-bit frame ranges separate from the analysis
-selection. Pixel mapping subtracts integer frame origins before conversion.
+selection. **Use waterfall view** explicitly applies the viewport through
+`setRange`; ordinary minimap navigation leaves the analysis interval unchanged.
+Pixel mapping subtracts integer frame origins before conversion.
 Measurements retain frame endpoints across density refreshes and band drags
 preserve their frame span. Hover inspects the painted cell's representative FFT
 start; maximum-aggregated cells remain visual summaries, not numeric measurements.

@@ -2009,7 +2009,7 @@ class UiTests : public QObject
         QSignalSpy errors(&window, &rf::MainWindow::analysisError);
         auto *averageDock = window.findChild<QDockWidget *>("averageDock");
         QVERIFY(averageDock);
-        findAction(window, "Average time selection")->trigger();
+        findAction(window, "Average analysis interval")->trigger();
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && averageDock->isVisible(), 10000);
         QCOMPARE(errors.count(), 0);
         auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
@@ -2123,7 +2123,7 @@ class UiTests : public QObject
         QCOMPARE(window.spectrumResult()->spectrumStart, std::uint64_t{512});
         QCOMPARE(peakFrequency(), 64.0);
         move(0);
-        auto *average = findAction(window, "Average time selection");
+        auto *average = findAction(window, "Average analysis interval");
         QVERIFY(average);
         average->trigger();
         QVERIFY(window.isBusy());
@@ -2724,6 +2724,99 @@ class UiTests : public QObject
         QCOMPARE(minimap.viewport().begin, origin + 47360);
         QVERIFY(changes.count() >= 5);
     }
+    void analysisIntervalFromWaterfallView()
+    {
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), std::vector<int>(32, 8)),
+                             {0, 2048});
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        auto *minimap = window.findChild<rf::WaterfallMinimap *>("waterfallMinimap");
+        auto *useView = window.findChild<QPushButton *>("useWaterfallView");
+        auto *start = window.findChild<QLineEdit *>("selectionStart");
+        auto *end = window.findChild<QLineEdit *>("selectionEnd");
+        QVERIFY(waterfall && minimap && useView && start && end);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() &&
+                                    minimap->snapshot() && minimap->snapshot()->complete, 10000);
+        const auto overview = minimap->snapshot();
+        const rf::FrameRange visible{1024, 3072};
+        waterfall->setViewport(visible);
+        QCOMPARE(minimap->viewport(), visible);
+        QCOMPARE(window.selectedRange(), (rf::FrameRange{0, 2048}));
+        QCOMPARE(start->text(), "0");
+        QCOMPARE(end->text(), "2048");
+        // The explicit action uses the viewport, even if draft fields were edited.
+        start->setText("512");
+        end->setText("1536");
+        QTest::mouseClick(useView, Qt::LeftButton);
+        QCOMPARE(window.selectedRange(), visible);
+        QCOMPARE(start->text(), "1024");
+        QCOMPARE(end->text(), "3072");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult()->range == visible,
+                                10000);
+        QCOMPARE(waterfall->viewport(), visible);
+        QCOMPARE(minimap->snapshot(), overview);
+        QTest::mouseClick(window.findChild<QPushButton *>("averageSelection"), Qt::LeftButton);
+        auto *averageDock = window.findChild<QDockWidget *>("averageDock");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() &&
+            averageDock->findChild<QLabel *>()->text().contains("frames [1024, 3072)"), 10000);
+    }
+    void seekToTimeFromMenu_data()
+    {
+        QTest::addColumn<QString>("input");
+        QTest::addColumn<bool>("accepted");
+        QTest::addColumn<bool>("valid");
+        QTest::newRow("fractional-seconds") << "5.5" << true << true;
+        QTest::newRow("cancel") << "5.5" << false << true;
+        QTest::newRow("negative") << "-1" << true << false;
+        QTest::newRow("past-end") << "32" << true << false;
+        QTest::newRow("not-a-number") << "invalid" << true << false;
+    }
+    void seekToTimeFromMenu()
+    {
+        QFETCH(QString, input);
+        QFETCH(bool, accepted);
+        QFETCH(bool, valid);
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), std::vector<int>(32, 8)),
+                             {0, 2048});
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *seek = window.findChild<QAction *>("seekToTime");
+        QVERIFY(seek);
+        QSignalSpy errors(&window, &rf::MainWindow::analysisError);
+        bool handled = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QInputDialog *>();
+            if (!dialog)
+                return;
+            handled = true;
+            dialog->setTextValue(input);
+            if (accepted)
+                dialog->accept();
+            else
+                dialog->reject();
+        });
+        seek->trigger();
+        QVERIFY(handled);
+        QCOMPARE(errors.count(), accepted && !valid ? 1 : 0);
+        const rf::FrameRange expected = accepted && valid ? rf::FrameRange{1408, 3456}
+                                                         : rf::FrameRange{0, 2048};
+        QCOMPARE(window.selectedRange(), expected);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult()->range == expected,
+                                10000);
+    }
     void waterfallMinimapIntegration()
     {
         QTemporaryDir directory;
@@ -2786,7 +2879,7 @@ class UiTests : public QObject
         QTRY_VERIFY_WITH_TIMEOUT(waterfall->snapshot()->waterfallBand &&
             waterfall->snapshot()->waterfallBand->first <= waterfall->frequencyRange().first &&
             waterfall->snapshot()->waterfallBand->second >= waterfall->frequencyRange().second, 5000);
-        auto *average = findAction(window, "Average time selection");
+        auto *average = findAction(window, "Average analysis interval");
         QVERIFY(average);
         average->trigger();
         minimap->setViewport(waterfall->viewport());

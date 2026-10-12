@@ -9,7 +9,6 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QSpinBox;
 class QLineEdit;
-class QSlider;
 class QLabel;
 class QPushButton;
 class QProgressBar;
@@ -134,8 +133,7 @@ class MainWindow : public QMainWindow
     QSpinBox *overlap_;
     QCheckBox *removeDc_, *conjugate_, *autoRange_, *waterfallAutoRangeOnZoom_, *absoluteFrequency_, *maxHold_;
     QDoubleSpinBox *colorMin_, *colorMax_;
-    QLineEdit *start_, *end_, *seekTime_;
-    QSlider *timeline_;
+    QLineEdit *start_, *end_;
     QLabel *recordingLabel_, *resolutionLabel_, *coverageLabel_, *cursorLabel_, *averageLabel_;
     QPushButton *cancel_, *averageWaterfallSelection_;
     QProgressBar *progress_;

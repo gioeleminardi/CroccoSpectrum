@@ -253,7 +253,9 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
 | Freeze / resume following the pointer | Click inside the waterfall or waveform |
 | Seek to a sample | Double-click the waterfall or waveform |
+| Seek to an exact time | **View → Seek to time…** |
 | Select an exact interval | Enter 64-bit `[start, end)` sample indices |
+| Analyze the visible waterfall interval | **Use waterfall view** in **Analysis interval** |
 | Show the whole recording | `Home` |
 | Reset frequency zoom | `Ctrl+0` |
 | Zoom time | `Ctrl++` / `Ctrl+-` |
@@ -262,8 +264,11 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 
 Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
 Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
-Waterfall navigation changes only the visible time interval; the Start/End frame
-analysis range continues to control averages and sample exports. Cached pixels
+Waterfall navigation changes only the visible time interval; the **Analysis interval**
+Start/End frame fields control averages, waveforms, and sample exports. Enter exact
+frame bounds and click **Apply analysis interval**, or click **Use waterfall view**
+to apply the currently visible time span. The minimap handles visual navigation;
+the analysis controls no longer include a separate timeline or zoom buttons. Cached pixels
 move immediately, and denser data loads asynchronously for the visible time and
 frequency bounds. Resolution follows the plot's physical pixels, within bounded
 FFT-work and memory limits. Changing the analysis interval or DSP settings clears
@@ -304,7 +309,7 @@ it horizontally, and shows a vertical bar at its starting sample in the waveform
 The spectrum displays that row's exact FFT window, preserving frequency zoom and
 pan. Click inside either plot to freeze the shared frame and both markers; click
 again in either plot to resume following the pointer. Leaving the plots hides
-unfrozen markers and keeps the last spectrum. Changing the time selection clears
+unfrozen markers and keeps the last spectrum. Changing the analysis interval clears
 the freeze and resets the spectrum to its first row. Exact overview rows
 summarize several windows; their hover spectrum is the window at the row's
 starting sample. Spectrum CSV and PNG exports use the displayed window.
@@ -352,7 +357,7 @@ the same row gives zero duration.
 
 Waterfall markers also fill the **Start frame** and **End frame** fields live,
 ordered from earlier to later, without applying the range. The later row's
-start is the exclusive end. Use **Apply sample range** to change the displayed
+start is the exclusive end. Use **Apply analysis interval** to change the displayed
 interval, or **Average waterfall selection** in **Recording and analysis** to
 average just the marked interval while keeping the current views. That button
 requires a completed selection spanning at least one FFT window and uses the

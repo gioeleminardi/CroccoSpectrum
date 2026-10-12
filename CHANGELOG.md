@@ -4,6 +4,13 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Rework Time selection into a compact Analysis interval section for exact frame
+  entry, averages, waveforms, and sample exports. Remove the duplicate timeline
+  and zoom buttons; Use waterfall view applies the minimap's visible interval.
+  Move precise time seeking to View → Seek to time.
+
 ## 0.3.1 — 2026-10-09 — Frequency-axis rounding
 
 - Round frequency-axis labels in the spectrum and average plots according to

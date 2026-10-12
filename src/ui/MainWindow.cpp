@@ -39,7 +39,6 @@
 #include <QScreen>
 #include <QScrollArea>
 #include <QSignalBlocker>
-#include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStandardPaths>
@@ -452,7 +451,7 @@ void MainWindow::buildMenus()
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
     auto *analysis = menuBar()->addMenu("&Analysis");
-    connect(analysis->addAction("Average time selection"), &QAction::triggered, this,
+    connect(analysis->addAction("Average analysis interval"), &QAction::triggered, this,
             [this] { startAverage(false); });
     connect(analysis->addAction("Average entire recording"), &QAction::triggered, this,
             [this] { startAverage(true); });
@@ -508,6 +507,29 @@ void MainWindow::buildMenus()
     auto *next = view->addAction("Next interval");
     next->setShortcut(QKeySequence("Alt+Right"));
     connect(next, &QAction::triggered, this, [this] { panTime(true); });
+    auto *seek = view->addAction("Seek to time…");
+    seek->setObjectName("seekToTime");
+    connect(seek, &QAction::triggered, this, [this] {
+        if (!recording_)
+            return;
+        bool accepted = false;
+        const auto input = QInputDialog::getText(
+            this, "Seek to time", "Time (seconds)", QLineEdit::Normal,
+            number(static_cast<double>(range_.begin) / recording_->descriptor().sampleRate),
+            &accepted);
+        if (!accepted)
+            return;
+        bool ok = false;
+        const double seconds = input.toDouble(&ok);
+        const long double frame =
+            static_cast<long double>(seconds) * recording_->descriptor().sampleRate;
+        if (!ok || !std::isfinite(seconds) || seconds < 0 ||
+            frame >= static_cast<long double>(recording_->frameCount())) {
+            reportError("Seek time is outside the recording");
+            return;
+        }
+        seekFrame(static_cast<std::uint64_t>(frame));
+    });
     auto *settings = menuBar()->addMenu("&Settings");
     auto *rowsMenu = settings->addMenu("Waterfall rows");
     rowsMenu->setObjectName("waterfallRowsMenu");
@@ -743,9 +765,11 @@ void MainWindow::showPlotControls()
     addSection("Waterfall",
                "Mouse wheel: zoom frequency and time around the pointer. Left-button drag: pan "
                "both axes. Hold Ctrl when starting a drag to pan only time. These gestures change "
-               "the waterfall viewport independently of the analysis Start/End fields. "
+               "the waterfall viewport independently of the Analysis interval Start/End fields. "
                "The minimap shows the whole recording: drag its box to move through time, "
-               "or drag the top/bottom handles to change the visible time span.\n\n"
+               "or drag the top/bottom handles to change the visible time span. "
+               "Use waterfall view applies that span as the analysis interval for averages, "
+               "waveforms and sample exports. View > Seek to time jumps to a precise time.\n\n"
                "Hover: inspect the shared frame. Click to freeze/unfreeze the frame; double-click "
                "to seek.\n\n"
                "Shift + left-click: start measuring duration between waterfall rows. Left-click "
@@ -889,53 +913,37 @@ void MainWindow::buildControls()
     colorForm->addRow(absoluteFrequency_);
     colorForm->addRow("Waveform", waveformMode_);
     layout->addWidget(colors);
-    auto *selection = new QGroupBox("Time selection · [start, end)", this);
+    auto *selection = new QGroupBox("Analysis interval · [start, end)", this);
     auto *selectionForm = new QFormLayout(selection);
+    auto *selectionHelp = new QLabel("For averages, waveforms and sample exports.", selection);
+    selectionHelp->setWordWrap(true);
+    selectionForm->addRow(selectionHelp);
     start_ = new QLineEdit("0", this);
     start_->setObjectName("selectionStart");
     end_ = new QLineEdit("0", this);
     end_->setObjectName("selectionEnd");
-    auto *apply = new QPushButton("Apply sample range", this);
+    auto *apply = new QPushButton("Apply analysis interval", this);
     apply->setObjectName("applySelection");
-    seekTime_ = new QLineEdit("0", this);
-    auto *seek = new QPushButton("Seek to seconds", this);
-    timeline_ = new QSlider(Qt::Horizontal, this);
-    timeline_->setRange(0, 100000);
-    timeline_->setTracking(false);
+    auto *useView = new QPushButton("Use waterfall view", this);
+    useView->setObjectName("useWaterfallView");
+    useView->setToolTip("Apply the visible waterfall time range as the analysis interval.");
     selectionForm->addRow("Start frame", start_);
     selectionForm->addRow("End frame", end_);
     selectionForm->addRow(apply);
-    selectionForm->addRow("Time (s)", seekTime_);
-    selectionForm->addRow(seek);
-    selectionForm->addRow(timeline_);
-    auto *zoomButtons = new QWidget(this);
-    auto *zoomLayout = new QHBoxLayout(zoomButtons);
-    zoomLayout->setContentsMargins(0, 0, 0, 0);
-    for (const auto &label : {"−", "+", "All"}) {
-        auto *button = new QPushButton(QString::fromUtf8(label), this);
-        zoomLayout->addWidget(button);
-        connect(button, &QPushButton::clicked, this, [this, label = QString::fromUtf8(label)] {
-            if (label == "All") {
-                if (recording_)
-                    setRange({0, recording_->frameCount()});
-            } else
-                zoomTime(label == "+");
-        });
-    }
-    selectionForm->addRow(zoomButtons);
+    selectionForm->addRow(useView);
     layout->addWidget(selection);
-    auto *average = new QPushButton("Average time selection", this);
+    auto *average = new QPushButton("Average analysis interval", this);
     average->setObjectName("averageSelection");
     averageWaterfallSelection_ = new QPushButton("Average waterfall selection", this);
     averageWaterfallSelection_->setObjectName("averageWaterfallSelection");
     averageWaterfallSelection_->setEnabled(false);
     averageWaterfallSelection_->setToolTip(
-        "Average between the waterfall markers without applying the time range. "
+        "Average between the waterfall markers without applying the analysis interval. "
         "Complete a selection spanning at least one FFT window to enable this button.");
-    auto *exactWave = new QPushButton("Exact waveform for time selection", this);
-    layout->addWidget(average);
-    layout->addWidget(averageWaterfallSelection_);
-    layout->addWidget(exactWave);
+    auto *exactWave = new QPushButton("Exact waveform for analysis interval", this);
+    selectionForm->addRow(average);
+    selectionForm->addRow(averageWaterfallSelection_);
+    selectionForm->addRow(exactWave);
     coverageLabel_ = new QLabel("No analysis yet", this);
     coverageLabel_->setWordWrap(true);
     layout->addWidget(coverageLabel_);
@@ -954,27 +962,8 @@ void MainWindow::buildControls()
             reportError(QString::fromUtf8(error.what()));
         }
     });
-    connect(seek, &QPushButton::clicked, this, [this] {
-        if (!recording_)
-            return;
-        bool ok = false;
-        const double seconds = seekTime_->text().toDouble(&ok);
-        const long double frame =
-            static_cast<long double>(seconds) * recording_->descriptor().sampleRate;
-        if (!ok || !std::isfinite(seconds) || seconds < 0 ||
-            frame >= static_cast<long double>(recording_->frameCount())) {
-            reportError("Seek time is outside the recording");
-            return;
-        }
-        seekFrame(static_cast<std::uint64_t>(frame));
-    });
-    connect(timeline_, &QSlider::valueChanged, this, [this](int value) {
-        if (!recording_ || applying_)
-            return;
-        const auto count = recording_->frameCount() - 1;
-        const auto position = count / 100000U * static_cast<unsigned int>(value) +
-                              count % 100000U * static_cast<unsigned int>(value) / 100000U;
-        seekFrame(position);
+    connect(useView, &QPushButton::clicked, this, [this] {
+        setRange(waterfall_->viewport());
     });
     connect(average, &QPushButton::clicked, this, [this] { startAverage(false); });
     connect(averageWaterfallSelection_, &QPushButton::clicked, this, [this] {
@@ -1584,13 +1573,6 @@ void MainWindow::updateRanges()
 {
     start_->setText(QString::number(range_.begin));
     end_->setText(QString::number(range_.end));
-    if (recording_) {
-        const QSignalBlocker blocker(timeline_);
-        timeline_->setValue(static_cast<int>(static_cast<long double>(range_.begin) /
-                                             recording_->frameCount() * 100000));
-        seekTime_->setText(
-            number(static_cast<double>(range_.begin) / recording_->descriptor().sampleRate));
-    }
 }
 
 void MainWindow::setRange(FrameRange range)
