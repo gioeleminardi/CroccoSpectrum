@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-3B82F6?style=for-the-badge" alt="Version 0.2.0"></a>
+  <a href="https://github.com/gioeleminardi/CroccoSpectrum/releases/latest"><img src="https://img.shields.io/github/v/release/gioeleminardi/CroccoSpectrum?style=for-the-badge&amp;label=stable&amp;color=3B82F6" alt="Latest stable release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -73,7 +73,7 @@ checksums, and build information after their verification workflow succeeds.
 
 The [download website](https://gioeleminardi.github.io/CroccoSpectrum/#download)
 offers the stable release and latest successful development build separately.
-Development versions such as `0.2.0-dev.184.g233be51` identify the planned release,
+Development versions use `VERSION-dev.BUILD.gCOMMIT` to identify the planned release,
 CI run, and source commit. They are intended for beta testing. See [release workflow](docs/CI.md#publish-a-stable-release)
 for development and stable publication instructions.
 
@@ -104,24 +104,27 @@ are not included. The CLI, tests, screenshots, and smoke tests stay offline.
 
 ### Run an AppImage
 
+In the package commands below, replace `VERSION` with the version in your
+downloaded filename, including any development suffix.
+
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.2.0-x86_64.AppImage
-./croccospectrum-0.2.0-x86_64.AppImage
+chmod +x croccospectrum-VERSION-x86_64.AppImage
+./croccospectrum-VERSION-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.2.0-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-VERSION-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.2.0-x86_64.tar.gz
-./croccospectrum-0.2.0-x86_64/AppRun
+tar -xzf croccospectrum-VERSION-x86_64.tar.gz
+./croccospectrum-VERSION-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -212,8 +215,8 @@ provide finer bins and cover longer time intervals.
 | **Waterfall minimap** | Automatic background pass over every required window in the whole recording; temporal/frequency maxima |
 | **Average selected interval / entire recording** | Every eligible complete window; mean calculated in linear power |
 | **Exact waterfall overview + average** | Every required window; bounded temporal/frequency maxima and an exact average |
-| **Waveform preview** | Bounded initial region of the selection |
-| **Exact waveform** | Full selected interval, reduced to min/max envelopes |
+| **Waveform preview** | Starts with the waterfall interval; independent zoom reads up to 131,072 frames across the visible waveform interval |
+| **Exact waveform** | Every sample in the visible waveform interval, reduced to min/max envelopes |
 
 A sampled waterfall can miss short events. The minimap scans the complete recording
 in the background and preserves short events through maximum aggregation. Use it
@@ -237,10 +240,11 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 
 | Action | Control |
 | --- | --- |
-| Zoom frequency | Mouse wheel over the spectrum or waterfall |
+| Zoom frequency | Mouse wheel over the spectrum; `Ctrl` + mouse wheel over the waterfall |
 | Pan frequency | Drag the spectrum or waterfall |
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
+| Zoom / pan waveform time independently | Mouse wheel / left-button drag inside the waveform |
 | Move / resize the waterfall viewport | Drag the minimap box / its top or bottom handle |
 | Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
@@ -250,17 +254,24 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
 | Freeze / resume following the pointer | Click inside the waterfall or waveform |
 | Seek to a sample | Double-click the waterfall or waveform |
+| Seek to an exact time | **View → Seek to time…** |
 | Select an exact interval | Enter 64-bit `[start, end)` sample indices |
+| Analyze the visible waterfall interval | **Use waterfall view** in **Analysis interval** |
 | Show the whole recording | `Home` |
 | Reset frequency zoom | `Ctrl+0` |
 | Zoom time | `Ctrl++` / `Ctrl+-` |
 | Pan time | `Alt+Left` / `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
 
-Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
+Waterfall wheel zoom follows the pointer in time; hold `Ctrl` to zoom only frequency.
+Dragging pans both axes.
 Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
-Waterfall navigation changes only the visible time interval; the Start/End frame
-analysis range continues to control averages and sample exports. Cached pixels
+Waterfall navigation changes only the visible time interval; the **Analysis interval**
+Start/End frame fields control averages and sample exports. The waveform follows
+the visible waterfall interval automatically. Enter exact
+frame bounds and click **Apply analysis interval**, or click **Use waterfall view**
+to apply the currently visible time span. The minimap handles visual navigation;
+the analysis controls no longer include a separate timeline or zoom buttons. Cached pixels
 move immediately, and denser data loads asynchronously for the visible time and
 frequency bounds. Resolution follows the plot's physical pixels, within bounded
 FFT-work and memory limits. Changing the analysis interval or DSP settings clears
@@ -301,13 +312,20 @@ it horizontally, and shows a vertical bar at its starting sample in the waveform
 The spectrum displays that row's exact FFT window, preserving frequency zoom and
 pan. Click inside either plot to freeze the shared frame and both markers; click
 again in either plot to resume following the pointer. Leaving the plots hides
-unfrozen markers and keeps the last spectrum. Changing the time selection clears
+unfrozen markers and keeps the last spectrum. Changing the analysis interval clears
 the freeze and resets the spectrum to its first row. Exact overview rows
 summarize several windows; their hover spectrum is the window at the row's
 starting sample. Spectrum CSV and PNG exports use the displayed window.
 
-If a selected frame falls outside the bounded waveform preview, the waveform
-shows a local preview at that frame. An Exact waveform keeps its full selection.
+Changing the waterfall's time interval resets the waveform to match, including
+when zooming, panning, or using the minimap. Within that interval, mouse-wheel
+zoom and left-button drag inspect the waveform independently of the waterfall.
+Zoom can reach a single sample, irrespective of FFT length. Close-up views show
+connected sample traces and markers with I in cyan and Q in amber at the same
+sample indices. Hover reports the sample values without changing the interval.
+Large views use a labeled sampled preview, which can miss isolated peaks;
+**Analysis → Exact Waveform** scans every sample in the visible waveform interval.
+Frequency-only navigation retains the waveform's zoom and exact scan.
 
 Use **View** to show or hide analysis panels. Panels can be docked, floated, and
 resized; preferences and workspace layout are restored on the next launch.
@@ -349,7 +367,7 @@ the same row gives zero duration.
 
 Waterfall markers also fill the **Start frame** and **End frame** fields live,
 ordered from earlier to later, without applying the range. The later row's
-start is the exclusive end. Use **Apply sample range** to change the displayed
+start is the exclusive end. Use **Apply analysis interval** to change the displayed
 interval, or **Average waterfall selection** in **Recording and analysis** to
 average just the marked interval while keeping the current views. That button
 requires a completed selection spanning at least one FFT window and uses the
@@ -549,7 +567,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.2.0 is an early release.** The recorded checks include 167
+**CroccoSpectrum is in early development.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 

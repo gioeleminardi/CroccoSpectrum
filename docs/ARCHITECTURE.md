@@ -63,9 +63,9 @@ of preview row skipping or overview aggregation, although those displays limit
 event-boundary resolution. Plot measurement state is transient.
 
 Waterfall measurement changes publish their ordered row-start frame bounds to
-the time-selection fields without calling `setRange`. The separate average
+the analysis-interval fields without calling `setRange`. The separate average
 button submits a snapshot of those bounds to the existing analysis worker,
-using the same exclusive-end convention as the time panel. Pending gestures
+using the same exclusive-end convention as the analysis interval. Pending gestures
 and intervals shorter than one FFT window keep that button disabled.
 
 Spectrum hover stores the pointer's plot position and paints a crosshair with
@@ -95,15 +95,20 @@ only on the coordinating job thread. Cancellation or a worker exception stops
 the batch pipeline and joins every worker before returning or throwing.
 Submitting a new job atomically cancels that controller's running token and
 replaces its pending job. The main window uses separate controllers for one-window hover previews, waterfall
-viewport detail, and the whole-recording minimap. Navigation and hover do not cancel
+viewport detail, independent waveform zoom, and the whole-recording minimap. Navigation and hover do not cancel
 averages or exports, and minimap scanning continues through viewport changes.
 Progressive minimap snapshots are immutable copies, published about every 100 ms
 as rows complete. A mutex-protected latest snapshot and one queued notification
 coalesce GUI delivery, bounding the queue even while the GUI is occupied.
 The main window owns the shared frame cursor and freeze state for both time
 plots. Waveform sample buckets select the corresponding waterfall row start.
-An out-of-range waveform preview follows the selected frame using the hover
-job's bounded waveform snapshot; exact full-selection waveforms are retained.
+Waterfall time navigation resets the waveform to its viewport and supplies a
+matching waveform snapshot. Waveform wheel zoom and drag panning refine a local
+interval independently, including below FFT length. Its own controller reads
+bounded previews and rejects obsolete requests. Hover never changes the interval.
+Exact Waveform scans the visible waveform interval; frequency-only waterfall
+refinement retains independent zoom and exact results. Short exact views keep
+one point per sample, drawn as connected I/Q traces with sample markers.
 Endpoint placement and editing temporarily suppress shared hover and freeze commands,
 and invalidates queued hover results without changing the user's freeze state.
 Completed frequency selections follow the displayed frame and recalculate
@@ -145,8 +150,9 @@ change an export midway.
   FFT bins, with exact bin-aligned raster bounds.
 - Minimap: 1,024 × 192 cells (1.5 MiB), scanning every required window; it does
   not compute an implicit numeric average. Resizing does not restart this pass.
-- Waveform snapshots: at most 2,048 envelope buckets; every sample in a covered
-  bucket contributes to its extrema.
+- Waveform snapshots: at most 2,048 envelope buckets. Previews read at most 131,072
+  frames, distributed across the entire viewport, and label sampled coverage.
+  Exact scans include every sample in each bucket's extrema.
 - Preview LRU: 64 MiB per controller, maintained only by its worker; the main
   window's analysis, hover, and viewport caches retain at most 192 MiB, plus a
   separate 4 MiB minimap cache. Raster images and active FFT buffers are additional.
@@ -185,7 +191,9 @@ replacement for numeric bins or zoomed analysis. Capture boundaries are never
 crossed by an accepted FFT window.
 
 Waterfall viewport bounds are 64-bit frame ranges separate from the analysis
-selection. Pixel mapping subtracts integer frame origins before conversion.
+selection. **Use waterfall view** explicitly applies the viewport through
+`setRange`; ordinary minimap navigation leaves the analysis interval unchanged.
+Pixel mapping subtracts integer frame origins before conversion.
 Measurements retain frame endpoints across density refreshes and band drags
 preserve their frame span. Hover inspects the painted cell's representative FFT
 start; maximum-aggregated cells remain visual summaries, not numeric measurements.

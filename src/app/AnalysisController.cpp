@@ -82,10 +82,12 @@ quint64 AnalysisController::average(std::shared_ptr<Recording> recording, FrameR
     job.settings = settings;
     return submit(std::move(job));
 }
-quint64 AnalysisController::waveform(std::shared_ptr<Recording> recording, FrameRange range)
+quint64 AnalysisController::waveform(std::shared_ptr<Recording> recording, FrameRange range,
+                                     bool boundedPreview)
 {
     Job job;
     job.kind = Kind::Waveform;
+    job.boundedWaveformPreview = boundedPreview;
     job.recording = std::move(recording);
     job.range = range;
     return submit(std::move(job));
@@ -285,7 +287,8 @@ void AnalysisController::execute(Job job)
                 throw Cancelled();
             publishWaterfall(job.generation, result);
         } else if (job.kind == Kind::Waveform) {
-            const auto result = analyzeWaveform(*job.recording, job.range, cancelled, progress);
+            const auto result = analyzeWaveform(*job.recording, job.range, cancelled, progress,
+                                                job.boundedWaveformPreview);
             if (cancelled())
                 throw Cancelled();
             emit waveformReady(job.generation, result);

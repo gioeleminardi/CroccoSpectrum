@@ -45,7 +45,8 @@ class AnalysisController : public QObject
                      int columns = 1024, int rows = 128);
     quint64 waterfall(std::shared_ptr<Recording> recording, DspSettings settings,
                       WaterfallRequest request);
-    quint64 waveform(std::shared_ptr<Recording> recording, FrameRange range);
+    quint64 waveform(std::shared_ptr<Recording> recording, FrameRange range,
+                     bool boundedPreview = false);
     quint64 samples(std::shared_ptr<Recording> recording, FrameRange range, QString output);
     quint64 csv(CsvRequest request);
     quint64 png(PngRequest request);
@@ -72,6 +73,7 @@ class AnalysisController : public QObject
         FrameRange range;
         DspSettings settings;
         WaterfallRequest waterfall;
+        bool boundedWaveformPreview = false;
         QString output;
         std::optional<CsvRequest> csv;
         std::optional<PngRequest> png;

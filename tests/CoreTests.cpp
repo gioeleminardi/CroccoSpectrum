@@ -494,6 +494,43 @@ class CoreTests : public QObject
         QVERIFY_EXCEPTION_THROWN(rf::analyzeAverage(recording, range, settings, {}),
                                  std::runtime_error);
     }
+    void waveformPreviewCoversWholeInterval()
+    {
+        QTemporaryDir directory;
+        QByteArray bytes = QByteArray::fromHex("002000f0").repeated(262144) +
+                           QByteArray::fromHex("006000d0").repeated(262144) +
+                           QByteArray::fromHex("ff7f0080");
+        bytes.replace(200 * 4, 4, QByteArray::fromHex("ff7f0080"));
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("levels.iq"), bytes);
+        rf::Recording recording(descriptor);
+        const rf::FrameRange range{17, recording.frameCount()};
+        const auto preview = rf::analyzeWaveform(recording, range, {}, {}, true);
+        QCOMPARE(preview->range, range);
+        QVERIFY(!preview->complete);
+        QCOMPARE(preview->points.size(), std::size_t{2048});
+        QCOMPARE(preview->points.front().first, range.begin);
+        QCOMPARE(preview->points.back().last, range.end);
+        QCOMPARE(preview->points.front().maxI, 0.25);
+        QVERIFY(preview->points.back().maxI > 0.99);
+        QCOMPARE(preview->points.back().minQ, -1.0);
+        QCOMPARE(preview->invalidSamples, std::uint64_t{0});
+        QCOMPARE(preview->clippedComponents, std::uint64_t{2});
+        for (std::size_t index = 1; index < preview->points.size(); ++index) {
+            QVERIFY(preview->points[index].valid);
+            QCOMPARE(preview->points[index - 1].last, preview->points[index].first);
+        }
+        // Exact scans still retain a peak skipped by the bounded preview.
+        const auto exact = rf::analyzeWaveform(recording, range, {});
+        QVERIFY(exact->complete);
+        QVERIFY(exact->points.front().maxI > 0.99);
+        QCOMPARE(exact->clippedComponents, std::uint64_t{4});
+        const auto chunk = rf::analyzeWaveform(recording, {17, 2049}, {}, {}, true);
+        QVERIFY(chunk->complete);
+        QVERIFY(chunk->points[183].maxI > 0.99);
+        QVERIFY_EXCEPTION_THROWN(
+            rf::analyzeWaveform(recording, range, [] { return true; }, {}, true), rf::Cancelled);
+    }
     void waveformAndByteExport()
     {
         QTemporaryDir directory;

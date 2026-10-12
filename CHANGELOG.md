@@ -4,6 +4,23 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Shorten the waveform scan button and menu action to Exact Waveform. Add
+  independent mouse-wheel waveform zoom and drag panning down to single samples,
+  with connected I/Q traces and sample markers. Waterfall time navigation resets
+  waveform zoom; Exact Waveform scans its current visible interval.
+- Synchronize waveform time bounds with the waterfall viewport through full views,
+  zoom, pan, and minimap navigation. Distribute the bounded waveform preview across
+  the visible interval, label sampled coverage, and keep hover from replacing it
+  with a local interval. Exact waveform scans the visible waterfall interval.
+- Separate waterfall wheel zoom: scroll to zoom only time, or Ctrl + scroll to
+  zoom only frequency around the pointer.
+- Rework Time selection into a compact Analysis interval section for exact frame
+  entry, averages, and sample exports. Remove the duplicate timeline
+  and zoom buttons; Use waterfall view applies the minimap's visible interval.
+  Move precise time seeking to View → Seek to time.
+
 ## 0.3.1 — 2026-10-09 — Frequency-axis rounding
 
 - Round frequency-axis labels in the spectrum and average plots according to
