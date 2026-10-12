@@ -13,7 +13,7 @@
   <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
   <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-3B82F6?style=for-the-badge" alt="Version 0.2.0"></a>
+  <a href="https://github.com/gioeleminardi/CroccoSpectrum/releases/latest"><img src="https://img.shields.io/github/v/release/gioeleminardi/CroccoSpectrum?style=for-the-badge&amp;label=stable&amp;color=3B82F6" alt="Latest stable release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
 </p>
 
@@ -73,7 +73,7 @@ checksums, and build information after their verification workflow succeeds.
 
 The [download website](https://gioeleminardi.github.io/CroccoSpectrum/#download)
 offers the stable release and latest successful development build separately.
-Development versions such as `0.2.0-dev.184.g233be51` identify the planned release,
+Development versions use `VERSION-dev.BUILD.gCOMMIT` to identify the planned release,
 CI run, and source commit. They are intended for beta testing. See [release workflow](docs/CI.md#publish-a-stable-release)
 for development and stable publication instructions.
 
@@ -104,24 +104,27 @@ are not included. The CLI, tests, screenshots, and smoke tests stay offline.
 
 ### Run an AppImage
 
+In the package commands below, replace `VERSION` with the version in your
+downloaded filename, including any development suffix.
+
 With a packaged AppImage in the current directory:
 
 ```sh
-chmod +x croccospectrum-0.2.0-x86_64.AppImage
-./croccospectrum-0.2.0-x86_64.AppImage
+chmod +x croccospectrum-VERSION-x86_64.AppImage
+./croccospectrum-VERSION-x86_64.AppImage
 ```
 
 To launch without FUSE:
 
 ```sh
-./croccospectrum-0.2.0-x86_64.AppImage --appimage-extract-and-run
+./croccospectrum-VERSION-x86_64.AppImage --appimage-extract-and-run
 ```
 
 ### Run the portable folder
 
 ```sh
-tar -xzf croccospectrum-0.2.0-x86_64.tar.gz
-./croccospectrum-0.2.0-x86_64/AppRun
+tar -xzf croccospectrum-VERSION-x86_64.tar.gz
+./croccospectrum-VERSION-x86_64/AppRun
 ```
 
 Packaged builds include their application dependencies. The host supplies Linux,
@@ -549,7 +552,7 @@ Source archives and license provisions accompany distributed binaries. See
 
 ## Status and validation
 
-**CroccoSpectrum 0.2.0 is an early release.** The recorded checks include 167
+**CroccoSpectrum is in early development.** The recorded checks include 167
 independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
 stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
 
