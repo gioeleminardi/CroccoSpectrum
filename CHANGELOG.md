@@ -6,6 +6,8 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Separate waterfall wheel zoom: scroll to zoom only time, or Ctrl + scroll to
+  zoom only frequency around the pointer.
 - Rework Time selection into a compact Analysis interval section for exact frame
   entry, averages, waveforms, and sample exports. Remove the duplicate timeline
   and zoom buttons; Use waterfall view applies the minimap's visible interval.

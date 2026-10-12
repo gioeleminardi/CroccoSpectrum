@@ -585,7 +585,8 @@ void MainWindow::buildMenus()
             "are excluded and counted.\n\n"
             "A sampled waterfall can miss short events. Full averages and Exact waveform process "
             "every required sample/window.\n\n"
-            "Wheel: frequency zoom in spectra; frequency/time zoom in waterfall. "
+            "Wheel: frequency zoom in spectra; time zoom in waterfall. "
+            "Ctrl + wheel waterfall: zoom only frequency. "
             "Drag: frequency pan in spectra; frequency/time pan in waterfall. "
             "Ctrl + drag waterfall: pan only the visible time range. Drag the minimap box "
             "to navigate; drag its top/bottom edges to resize the viewport. Hover waterfall/waveform: "
@@ -697,7 +698,8 @@ void MainWindow::showKeyboardShortcuts()
     addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");
     addRow(plotForm, QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
            "Clear a measurement in the focused plot");
-    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; frequency and time in waterfall");
+    addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; time in waterfall");
+    addRow(plotForm, "Ctrl + mouse wheel", "Zoom only frequency in waterfall");
     addRow(plotForm, "Left-button drag", "Pan frequency in a spectrum; frequency and time in waterfall");
     addRow(plotForm, "Ctrl + left-button drag",
            "Pan only the waterfall time viewport");
@@ -763,7 +765,8 @@ void MainWindow::showPlotControls()
                "Left-click again to finish. Shift-drag the band to move it or a marker to resize "
                "it. Escape clears the measurement in the focused plot.");
     addSection("Waterfall",
-               "Mouse wheel: zoom frequency and time around the pointer. Left-button drag: pan "
+               "Mouse wheel: zoom only time around the pointer. Ctrl + mouse wheel: zoom only "
+               "frequency around the pointer. Left-button drag: pan "
                "both axes. Hold Ctrl when starting a drag to pan only time. These gestures change "
                "the waterfall viewport independently of the Analysis interval Start/End fields. "
                "The minimap shows the whole recording: drag its box to move through time, "

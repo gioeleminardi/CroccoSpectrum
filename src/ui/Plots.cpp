@@ -1192,14 +1192,24 @@ void WaterfallPlot::wheelEvent(QWheelEvent *event)
     }
     const auto plot = area(*this);
     const double factor = event->angleDelta().y() > 0 ? 0.8 : 1.25;
-    const auto &frequency = result_->frequencies;
-    const double fullRight = fullFrequencyRight();
-    const double fraction = (event->position().x() - plot.left()) / plot.width();
-    const double anchor = left_ + fraction * (right_ - left_);
-    const double span = std::clamp((right_ - left_) * factor, frequency[1] - frequency[0],
-                                  fullRight - frequency.front());
-    left_ = std::clamp(anchor - fraction * span, frequency.front(), fullRight - span);
-    right_ = left_ + span;
+    if (event->modifiers().testFlag(Qt::ControlModifier)) {
+        const auto &frequency = result_->frequencies;
+        const double fullRight = fullFrequencyRight();
+        const double fraction = (event->position().x() - plot.left()) / plot.width();
+        const double anchor = left_ + fraction * (right_ - left_);
+        const double span = std::clamp((right_ - left_) * factor, frequency[1] - frequency[0],
+                                      fullRight - frequency.front());
+        left_ = std::clamp(anchor - fraction * span, frequency.front(), fullRight - span);
+        right_ = left_ + span;
+        emit frequencyRangeChanged(left_, right_);
+        if (viewport_)
+            emit detailRequested();
+        else if (!measuring_)
+            updateHover(event->position());
+        update();
+        event->accept();
+        return;
+    }
     const double rowFraction = (event->position().y() - plot.top()) / plot.height();
     if (viewport_) {
         const auto spanFrames = static_cast<std::uint64_t>(std::clamp(
@@ -1212,7 +1222,6 @@ void WaterfallPlot::wheelEvent(QWheelEvent *event)
         const auto next = shiftedViewport({baseBegin, baseBegin + spanFrames},
             delta + static_cast<long double>(viewport_->begin - baseBegin), extent_);
         setViewport(next);
-        emit frequencyRangeChanged(left_, right_);
         emit detailRequested();
         update();
         event->accept();
@@ -1223,7 +1232,6 @@ void WaterfallPlot::wheelEvent(QWheelEvent *event)
     const double rows = std::clamp((bottom_ - top_) * factor, 1.0, rowCount);
     top_ = std::clamp(rowAnchor - rowFraction * rows, 0.0, rowCount - rows);
     bottom_ = top_ + rows;
-    emit frequencyRangeChanged(left_, right_);
     if (!measuring_)
         updateHover(event->position());
     update();

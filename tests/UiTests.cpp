@@ -1036,9 +1036,10 @@ class UiTests : public QObject
         QSignalSpy ranges(&plot, &rf::WaterfallPlot::frequencyRangeChanged);
         QSignalSpy clicked(&plot, &rf::WaterfallPlot::frameClicked);
         QSignalSpy hovered(&plot, &rf::WaterfallPlot::frameHovered);
-        const auto wheel = [&plot](const QPoint &position, int delta) {
+        const auto wheel = [&plot](const QPoint &position, int delta,
+                                  Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
             QWheelEvent event(position, plot.mapToGlobal(position), {}, QPoint(0, delta),
-                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                              Qt::NoButton, modifiers, Qt::NoScrollPhase, false);
             QApplication::sendEvent(&plot, &event);
         };
         wheel(QPoint(10, 10), 120);
@@ -1048,6 +1049,10 @@ class UiTests : public QObject
         wheel(QPoint(326, 152), 120);
         const double fullLeft = complex ? -20 : 0;
         const double fullSpan = complex ? 50 : 40;
+        QCOMPARE(ranges.count(), 0);
+        QCOMPARE(plot.frequencyRange(), std::make_pair(fullLeft, fullLeft + fullSpan));
+        wheel(QPoint(326, 152), 120, Qt::ControlModifier);
+        wheel(QPoint(326, 152), 120, Qt::ControlModifier);
         QCOMPARE(ranges.count(), 2);
         QVERIFY(std::abs(ranges.last().at(0).toDouble() - (fullLeft + fullSpan * 0.18)) < 1e-9);
         QVERIFY(std::abs(ranges.last().at(1).toDouble() - (fullLeft + fullSpan * 0.82)) < 1e-9);
@@ -1086,15 +1091,19 @@ class UiTests : public QObject
         QCOMPARE(clicked.count(), 2);
         QCOMPARE(ranges.count(), rangeCount);
 
-        for (int step = 0; step < 30; ++step)
+        for (int step = 0; step < 30; ++step) {
             wheel(QPoint(326, 152), 120);
+            wheel(QPoint(326, 152), 120, Qt::ControlModifier);
+        }
         QVERIFY(std::abs(ranges.last().at(1).toDouble() - ranges.last().at(0).toDouble() - 10) < 1e-9);
         moveMouse(&plot, QPoint(326, 33));
         QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1200});
         moveMouse(&plot, QPoint(326, 271));
         QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{1600});
-        for (int step = 0; step < 30; ++step)
+        for (int step = 0; step < 30; ++step) {
             wheel(QPoint(326, 152), -120);
+            wheel(QPoint(326, 152), -120, Qt::ControlModifier);
+        }
         QCOMPARE(ranges.last().at(0).toDouble(), fullLeft);
         QCOMPARE(ranges.last().at(1).toDouble(), fullLeft + fullSpan);
         moveMouse(&plot, QPoint(326, 33));
@@ -1119,6 +1128,7 @@ class UiTests : public QObject
         result->rowStarts = {0, 100, 200, 300, 400, 500, 600, 700};
         result->waterfall.assign(40, 0.01);
         plot.setPreview(result, 100);
+        plot.setFrequencyRange(-11, 21);
         plot.show();
         const QPoint center(326, 152);
         for (int step = 0; step < 2; ++step) {
@@ -2023,8 +2033,18 @@ class UiTests : public QObject
         const QPoint center(76 + (waterfall->width() - 100) / 2,
                             32 + (waterfall->height() - 70) / 2);
         QWheelEvent event(center, waterfall->mapToGlobal(center), {}, QPoint(0, 120),
-                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                          Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+        const auto viewportBeforeZoom = waterfall->viewport();
         QApplication::sendEvent(waterfall, &event);
+        QCOMPARE(waterfall->viewport(), viewportBeforeZoom);
+        QCOMPARE(ranges.count(), 1);
+        const auto frequencyBeforeTimeZoom = waterfall->frequencyRange();
+        QWheelEvent timeZoom(center, waterfall->mapToGlobal(center), {}, QPoint(0, 120),
+                             Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(waterfall, &timeZoom);
+        QVERIFY(waterfall->viewport().size() < viewportBeforeZoom.size());
+        QCOMPARE(waterfall->frequencyRange(), frequencyBeforeTimeZoom);
+        QCOMPARE(ranges.count(), 1);
         const auto rangeCount = ranges.count();
         QTest::mousePress(waterfall, Qt::LeftButton,
                           timeOnly ? Qt::ControlModifier : Qt::NoModifier, center);

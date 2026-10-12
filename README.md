@@ -240,7 +240,7 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 
 | Action | Control |
 | --- | --- |
-| Zoom frequency | Mouse wheel over the spectrum or waterfall |
+| Zoom frequency | Mouse wheel over the spectrum; `Ctrl` + mouse wheel over the waterfall |
 | Pan frequency | Drag the spectrum or waterfall |
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
@@ -262,7 +262,8 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 | Pan time | `Alt+Left` / `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
 
-Waterfall wheel zoom follows the pointer on both axes; dragging pans both axes.
+Waterfall wheel zoom follows the pointer in time; hold `Ctrl` to zoom only frequency.
+Dragging pans both axes.
 Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
 Waterfall navigation changes only the visible time interval; the **Analysis interval**
 Start/End frame fields control averages, waveforms, and sample exports. Enter exact
