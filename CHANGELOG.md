@@ -6,6 +6,10 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Shorten the waveform scan button and menu action to Exact Waveform. Add
+  independent mouse-wheel waveform zoom and drag panning down to single samples,
+  with connected I/Q traces and sample markers. Waterfall time navigation resets
+  waveform zoom; Exact Waveform scans its current visible interval.
 - Synchronize waveform time bounds with the waterfall viewport through full views,
   zoom, pan, and minimap navigation. Distribute the bounded waveform preview across
   the visible interval, label sampled coverage, and keep hover from replacing it

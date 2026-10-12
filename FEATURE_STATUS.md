@@ -22,7 +22,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Waterfall minimap | Implemented | Progressive exact whole-recording maxima; move/resize viewport independently of analysis range |
 | Spectrum hover crosshair | Implemented | Pointer frequency/power axis labels; zoom, absolute frequency and dBFS/Hz supported; exact FFT-bin readout retained |
 | Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
-| Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; waveform time bounds follow the waterfall viewport |
+| Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; waterfall time navigation resets waveform bounds |
 | Shift-click spectrum and waterfall measurements | Implemented | Two endpoints; FFT-bin frequency difference and linear-power mean; row-start duration with exact frame differences; Shift-drag band/markers to move/resize with live updates; Escape clears |
 | Average waterfall selection | Implemented | Markers update draft frame fields without applying; exact average over ordered row-start bounds; requires a completed interval with one FFT window |
 | User-selected power-of-two FFT | Implemented | 256 through 1,048,576 |
@@ -32,7 +32,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Interval max hold | Implemented | Separate result from average |
 | Full exact waterfall overview | Implemented | Explicit full pass; bounded temporal/frequency maxima plus average |
 | Parallel FFT scans | Implemented | Automatic bounded workers for averages, exact overviews/minimaps and larger previews/waterfalls; ordered reductions; short jobs stay serial |
-| Waveform and exact min/max envelopes | Implemented | Bounded sampled preview across the visible waterfall interval; exact visible-interval scan is an explicit command |
+| Waveform and exact min/max envelopes | Implemented | Independent time zoom/pan down to single samples; connected I/Q traces and markers; bounded preview and explicit exact scan of the visible waveform interval |
 | Color minimum/maximum, auto range, palettes | Implemented | Recolors snapshots without FFT work; Baudline spans black to #00F9AB |
 | Docked/floating analysis panels | Implemented | Qt docking, persisted workspace |
 | Sample/time seek, time and frequency zoom/pan | Implemented | 64-bit sample text fields; linked frequency views |

@@ -1743,6 +1743,118 @@ class UiTests : public QObject
         QCOMPARE(seeks.count(), 1);
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.spectrumResult(), 10000);
     }
+    void waveformZoomBounds()
+    {
+        rf::WaveformPlot plot;
+        plot.resize(600, 310);
+        plot.show();
+        auto result = std::make_shared<rf::WaveformResult>();
+        constexpr std::uint64_t begin = 9'007'199'254'740'993;
+        const rf::FrameRange entire{begin, begin + 8};
+        result->range = entire;
+        result->complete = true;
+        for (std::uint64_t frame = begin; frame < entire.end; ++frame)
+            result->points.push_back({frame, frame + 1, 0.5, 0.5, -0.5, -0.5, 0.7, 0.7, true});
+        plot.setWaveform(result, 100000000, rf::SampleKind::Complex);
+        const QPoint center(326, 60);
+        for (int step = 0; step < 8; ++step) {
+            QWheelEvent zoom(center, plot.mapToGlobal(center), {}, QPoint(0, 120),
+                             Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(&plot, &zoom);
+        }
+        QCOMPARE(plot.viewport().size(), std::uint64_t{1});
+        QVERIFY(plot.viewport().begin >= begin && plot.viewport().end <= entire.end);
+        QSignalSpy hovered(&plot, &rf::WaveformPlot::frameHovered);
+        moveMouse(&plot, center);
+        QCOMPARE(hovered.last().at(0).toULongLong(), plot.viewport().begin);
+        QWheelEvent zoomOut(center, plot.mapToGlobal(center), {}, QPoint(0, -120),
+                            Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&plot, &zoomOut);
+        QCOMPARE(plot.viewport().size(), std::uint64_t{2});
+        QSignalSpy clicks(&plot, &rf::WaveformPlot::frameClicked);
+        QTest::mousePress(&plot, Qt::LeftButton, Qt::NoModifier, center);
+        moveMouse(&plot, QPoint(-10000, 60), Qt::LeftButton);
+        QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(-10000, 60));
+        QCOMPARE(plot.viewport().end, entire.end);
+        QCOMPARE(clicks.count(), 0);
+        plot.setViewport({0, 2});
+        QCOMPARE(plot.viewport(), (rf::FrameRange{begin, begin + 2}));
+        plot.setViewport({entire.end, entire.end + 2});
+        QCOMPARE(plot.viewport(), (rf::FrameRange{entire.end - 2, entire.end}));
+        plot.setTimeRange(entire);
+        QCOMPARE(plot.viewport(), entire);
+    }
+    void waveformZoomIsIndependent()
+    {
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 1024;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.findChild<QDockWidget *>("waveformDock")->show();
+        window.show();
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), std::vector<int>(2048, 8)));
+        auto *waveform = window.findChild<rf::WaveformPlot *>("waveformPlot");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && waveform->snapshot(), 10000);
+        const auto fullRange = waterfall->viewport();
+        const auto analysisRange = window.selectedRange();
+        const QPoint center(76 + (waveform->width() - 100) / 2, 60);
+        for (int step = 0; step < 40; ++step) {
+            QWheelEvent zoom(center, waveform->mapToGlobal(center), {}, QPoint(0, 120),
+                             Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(waveform, &zoom);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(waveform->snapshot()->range.size() < 128, 3000);
+        const auto zoomed = waveform->snapshot();
+        QVERIFY(zoomed->complete);
+        QCOMPARE(waterfall->viewport(), fullRange);
+        QCOMPARE(window.selectedRange(), analysisRange);
+        QCOMPARE(zoomed->points.size(), zoomed->range.size());
+        for (const auto &point : zoomed->points) {
+            QCOMPARE(point.last, point.first + 1);
+            const double phase = 2 * std::numbers::pi * 8 * (point.first % 256) / 256;
+            QCOMPARE(point.minI, std::round(16000 * std::cos(phase)) / 32768);
+            QCOMPARE(point.minQ, std::round(16000 * std::sin(phase)) / 32768);
+        }
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(window.grab().save(screenshots + "/waveform-iq-samples.png"));
+        }
+        QSignalSpy clicks(waveform, &rf::WaveformPlot::frameClicked);
+        QTest::mousePress(waveform, Qt::LeftButton, Qt::NoModifier, center);
+        moveMouse(waveform, center + QPoint(180, 0), Qt::LeftButton);
+        QTest::mouseRelease(waveform, Qt::LeftButton, Qt::NoModifier, center + QPoint(180, 0));
+        QVERIFY(waveform->viewport().begin < zoomed->range.begin);
+        QCOMPARE(clicks.count(), 0);
+        QCOMPARE(waterfall->viewport(), fullRange);
+        QTRY_COMPARE_WITH_TIMEOUT(waveform->snapshot()->range, waveform->viewport(), 3000);
+
+        const rf::FrameRange local{1000, 201000};
+        waveform->setViewport(local);
+        QTRY_COMPARE_WITH_TIMEOUT(waveform->snapshot()->range, local, 3000);
+        QVERIFY(!waveform->snapshot()->complete);
+        QPushButton *exact = nullptr;
+        for (auto *button : window.findChildren<QPushButton *>())
+            if (button->text() == "Exact Waveform")
+                exact = button;
+        QVERIFY(exact);
+        exact->click();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && waveform->snapshot()->complete, 3000);
+        QCOMPARE(waveform->snapshot()->range, local);
+        QCOMPARE(waterfall->viewport(), fullRange);
+
+        // Waterfall navigation resets independent zoom and rejects queued local data.
+        waveform->setViewport({2000, 2032});
+        waveform->setViewport({3000, 3064});
+        const rf::FrameRange next{10000, 11024};
+        waterfall->setViewport(next);
+        QCOMPARE(waveform->viewport(), next);
+        QTRY_VERIFY_WITH_TIMEOUT(waveform->snapshot() && waveform->snapshot()->range == next, 3000);
+        QCOMPARE(window.selectedRange(), analysisRange);
+    }
     void waveformFollowsWaterfallViewport()
     {
         QTemporaryDir directory;
@@ -1831,7 +1943,7 @@ class UiTests : public QObject
         QTRY_VERIFY_WITH_TIMEOUT(waveform->snapshot() && waveform->snapshot()->range == largeChunk,
                                 10000);
         QVERIFY(!waveform->snapshot()->complete);
-        auto *exact = findAction(window, "Exact waveform over waterfall view");
+        auto *exact = findAction(window, "Exact Waveform");
         QVERIFY(exact);
         exact->trigger();
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && waveform->snapshot()->complete, 10000);
@@ -1887,7 +1999,7 @@ class UiTests : public QObject
         QTest::mouseMove(waveform, QPoint(76, 60));
         QCOMPARE(hovered.last().at(0).toULongLong(), std::uint64_t{0});
         QVERIFY(cursor.last().at(0).toString().contains("click to unfreeze"));
-        auto *exact = findAction(window, "Exact waveform over waterfall view");
+        auto *exact = findAction(window, "Exact Waveform");
         QVERIFY(exact);
         exact->trigger();
         QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);

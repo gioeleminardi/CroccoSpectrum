@@ -208,6 +208,9 @@ class WaveformPlot : public QWidget
     void setWaveform(std::shared_ptr<const WaveformResult> result, double sampleRate,
                      SampleKind kind);
     [[nodiscard]] std::shared_ptr<const WaveformResult> snapshot() const { return result_; }
+    void setTimeRange(FrameRange range);
+    void setViewport(FrameRange range);
+    [[nodiscard]] FrameRange viewport() const { return viewport_; }
     void setMode(int mode);
     void setFrameCursor(std::optional<std::uint64_t> frame, bool frozen);
     void clear();
@@ -217,17 +220,23 @@ class WaveformPlot : public QWidget
     void frameClicked(quint64 frame);
     void cursorLeft();
     void frameSelected(quint64 frame);
+    void viewportChanged(rf::FrameRange range);
 
   protected:
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void leaveEvent(QEvent *) override;
+    void wheelEvent(QWheelEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
 
   private:
     const WavePoint *pointAt(const QPointF &position) const;
     std::shared_ptr<const WaveformResult> result_;
+    FrameRange extent_, viewport_, dragViewport_;
+    std::optional<QPointF> dragPosition_;
+    bool dragMoved_ = false;
     std::optional<std::uint64_t> cursorFrame_;
     bool frameFrozen_ = false;
     double sampleRate_ = 1;

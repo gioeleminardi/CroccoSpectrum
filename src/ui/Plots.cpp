@@ -1532,9 +1532,32 @@ void WaveformPlot::setWaveform(std::shared_ptr<const WaveformResult> result, dou
                                SampleKind kind)
 {
     result_ = std::move(result);
+    if (result_ && extent_.size() == 0)
+        setTimeRange(result_->range);
     sampleRate_ = sampleRate;
     kind_ = kind;
     update();
+}
+void WaveformPlot::setTimeRange(FrameRange range)
+{
+    extent_ = range;
+    viewport_ = range;
+    dragPosition_.reset();
+    unsetCursor();
+    update();
+}
+void WaveformPlot::setViewport(FrameRange range)
+{
+    if (extent_.size() == 0)
+        return;
+    const auto span = std::clamp<std::uint64_t>(range.size(), 1, extent_.size());
+    const auto begin = std::clamp(range.begin, extent_.begin, extent_.end - span);
+    const FrameRange next{begin, begin + span};
+    if (viewport_ == next)
+        return;
+    viewport_ = next;
+    update();
+    emit viewportChanged(next);
 }
 void WaveformPlot::setMode(int mode)
 {
@@ -1550,6 +1573,9 @@ void WaveformPlot::setFrameCursor(std::optional<std::uint64_t> frame, bool froze
 void WaveformPlot::clear()
 {
     result_.reset();
+    extent_ = viewport_ = {};
+    dragPosition_.reset();
+    unsetCursor();
     cursorFrame_.reset();
     frameFrozen_ = false;
     update();
@@ -1557,17 +1583,22 @@ void WaveformPlot::clear()
 void WaveformPlot::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
+    const bool samples = result_ && result_->complete && !result_->points.empty() &&
+        std::all_of(result_->points.begin(), result_->points.end(),
+                    [](const WavePoint &point) { return point.last - point.first == 1; });
     base(painter, *this,
          !result_ ? "WAVEFORM · waiting for waterfall data"
+         : result_->range != viewport_ ? "WAVEFORM · updating visible interval…"
          : !result_->complete
-             ? "WAVEFORM · sampled waterfall interval · use Exact waveform to scan every sample"
+             ? "WAVEFORM · sampled preview · use Exact Waveform to scan every sample"
+         : samples ? "WAVEFORM · individual samples"
              : "WAVEFORM · exact min/max envelopes");
     if (!result_ || result_->points.empty())
         return;
     const auto plot = area(*this);
     double minimum = mode_ == 1 ? 0 : -1, maximum = 1;
     for (const auto &point : result_->points)
-        if (point.valid) {
+        if (point.valid && point.last > viewport_.begin && point.first < viewport_.end) {
             const bool both = mode_ == 0 && kind_ == SampleKind::Complex;
             minimum = std::min(minimum, mode_ == 1 ? point.minMagnitude
                                         : both     ? std::min(point.minI, point.minQ)
@@ -1588,59 +1619,107 @@ void WaveformPlot::paintEvent(QPaintEvent *)
     painter.drawLine(QPointF(plot.left(), y(0)), QPointF(plot.right(), y(0)));
     painter.save();
     painter.setClipRect(plot);
+    std::optional<QPointF> previousI, previousQ;
     for (const auto &point : result_->points) {
-        if (!point.valid)
+        if (!point.valid || point.last <= viewport_.begin || point.first >= viewport_.end) {
+            previousI.reset();
+            previousQ.reset();
             continue;
-        const double x = plot.left() + static_cast<double>(point.first - result_->range.begin) /
-                                           static_cast<double>(result_->range.size()) *
+        }
+        const double x = plot.left() + frameDifference(point.first, viewport_.begin) /
+                                           static_cast<double>(viewport_.size()) *
                                            plot.width();
         const double low = mode_ == 1 ? point.minMagnitude : point.minI;
         const double high = mode_ == 1 ? point.maxMagnitude : point.maxI;
         painter.setPen(QPen(trace, 1.2));
-        painter.drawLine(QPointF(x, y(low)), QPointF(x, y(high)));
-        painter.drawPoint(QPointF(x, y(high)));
+        if (samples) {
+            const QPointF sample(x, y(high));
+            if (previousI)
+                painter.drawLine(*previousI, sample);
+            if (plot.width() / static_cast<double>(viewport_.size()) >= 4)
+                painter.drawEllipse(sample, 2, 2);
+            previousI = sample;
+        } else {
+            painter.drawLine(QPointF(x, y(low)), QPointF(x, y(high)));
+            painter.drawPoint(QPointF(x, y(high)));
+        }
         if (mode_ == 0 && kind_ == SampleKind::Complex) {
             painter.setPen(QPen(QColor("#f7b75b"), 1.2));
-            painter.drawLine(QPointF(x, y(point.minQ)), QPointF(x, y(point.maxQ)));
-            painter.drawPoint(QPointF(x, y(point.maxQ)));
+            if (samples) {
+                const QPointF sample(x, y(point.maxQ));
+                if (previousQ)
+                    painter.drawLine(*previousQ, sample);
+                if (plot.width() / static_cast<double>(viewport_.size()) >= 4)
+                    painter.drawEllipse(sample, 2, 2);
+                previousQ = sample;
+            } else {
+                painter.drawLine(QPointF(x, y(point.minQ)), QPointF(x, y(point.maxQ)));
+                painter.drawPoint(QPointF(x, y(point.maxQ)));
+            }
         }
     }
-    if (cursorFrame_ && *cursorFrame_ >= result_->range.begin &&
-        *cursorFrame_ < result_->range.end) {
+    if (cursorFrame_ && *cursorFrame_ >= viewport_.begin && *cursorFrame_ < viewport_.end) {
         const double x = plot.left() +
-                         static_cast<double>(*cursorFrame_ - result_->range.begin) /
-                             static_cast<double>(result_->range.size()) * plot.width();
+                         static_cast<double>(*cursorFrame_ - viewport_.begin) /
+                             static_cast<double>(viewport_.size()) * plot.width();
         painter.fillRect(QRectF(x - 1, plot.top(), 2, plot.height()),
                          QColor(255, 255, 255, frameFrozen_ ? 180 : 90));
     }
     painter.restore();
+    if (mode_ == 0 && kind_ == SampleKind::Complex) {
+        painter.setPen(trace);
+        painter.drawText(QRectF(plot.right() - 70, plot.top() + 4, 30, 20), Qt::AlignCenter, "I");
+        painter.setPen(QColor("#f7b75b"));
+        painter.drawText(QRectF(plot.right() - 35, plot.top() + 4, 30, 20), Qt::AlignCenter, "Q");
+    }
     painter.setPen(foreground);
     painter.drawText(QRectF(0, plot.top() - 8, 68, 18), Qt::AlignRight, number(maximum));
     painter.drawText(QRectF(0, plot.bottom() - 10, 68, 18), Qt::AlignRight, number(minimum));
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("%1 … %2 s · frames [%3, %4) · %5 invalid · %6 clipped components")
-                         .arg(QString::number(static_cast<double>(result_->range.begin) / sampleRate_,
-                                              'f', 3))
-                         .arg(QString::number(static_cast<double>(result_->range.end) / sampleRate_,
-                                              'f', 3))
-                         .arg(result_->range.begin)
-                         .arg(result_->range.end)
+                         .arg(number(static_cast<double>(viewport_.begin) / sampleRate_))
+                         .arg(number(static_cast<double>(viewport_.end) / sampleRate_))
+                         .arg(viewport_.begin)
+                         .arg(viewport_.end)
                          .arg(result_->invalidSamples)
                          .arg(result_->clippedComponents));
 }
 const WavePoint *WaveformPlot::pointAt(const QPointF &position) const
 {
-    if (!result_ || result_->points.empty() || !area(*this).contains(position))
+    if (!result_ || result_->points.empty() || viewport_.size() == 0 ||
+        !area(*this).contains(position))
         return nullptr;
     const auto plot = area(*this);
-    const auto index =
-        std::min(static_cast<std::size_t>((position.x() - plot.left()) / plot.width() *
-                                         static_cast<double>(result_->points.size())),
-                 result_->points.size() - 1);
-    return &result_->points[index];
+    const long double fraction = (position.x() - plot.left()) / plot.width();
+    const auto offset = std::min(static_cast<std::uint64_t>(fraction * viewport_.size()),
+                                 viewport_.size() - 1);
+    const auto frame = viewport_.begin + offset;
+    auto point = std::upper_bound(result_->points.begin(), result_->points.end(), frame,
+                                  [](std::uint64_t value, const WavePoint &item) {
+                                      return value < item.first;
+                                  });
+    if (point == result_->points.begin())
+        return nullptr;
+    --point;
+    return frame < point->last ? &*point : nullptr;
 }
 void WaveformPlot::mouseMoveEvent(QMouseEvent *event)
 {
+    if (dragPosition_) {
+        if (!dragMoved_ && (event->position() - *dragPosition_).manhattanLength() >=
+                              QApplication::startDragDistance()) {
+            dragMoved_ = true;
+            setCursor(Qt::ClosedHandCursor);
+        }
+        if (dragMoved_) {
+            const long double delta = static_cast<long double>(
+                (dragPosition_->x() - event->position().x()) / area(*this).width()) *
+                dragViewport_.size();
+            setViewport(shiftedViewport(dragViewport_, delta, extent_));
+        }
+        event->accept();
+        return;
+    }
     const auto *point = pointAt(event->position());
     if (!point) {
         leaveEvent(nullptr);
@@ -1670,14 +1749,51 @@ void WaveformPlot::leaveEvent(QEvent *)
     }
     emit cursorLeft();
 }
+void WaveformPlot::wheelEvent(QWheelEvent *event)
+{
+    if (extent_.size() == 0 || viewport_.size() == 0 || dragPosition_ ||
+        !area(*this).contains(event->position()) || event->angleDelta().y() == 0) {
+        event->ignore();
+        return;
+    }
+    const bool inward = event->angleDelta().y() > 0;
+    const long double scaled = static_cast<long double>(viewport_.size()) * (inward ? 0.8L : 1.25L);
+    const auto span = static_cast<std::uint64_t>(std::clamp(
+        inward ? std::floor(scaled) : std::ceil(scaled), 1.0L,
+        static_cast<long double>(extent_.size())));
+    const long double fraction = (event->position().x() - area(*this).left()) / area(*this).width();
+    const auto begin = std::min(viewport_.begin, extent_.end - span);
+    const long double delta = fraction * (static_cast<long double>(viewport_.size()) - span) +
+                              static_cast<long double>(viewport_.begin - begin);
+    setViewport(shiftedViewport({begin, begin + span}, delta, extent_));
+    event->accept();
+}
 void WaveformPlot::mousePressEvent(QMouseEvent *event)
 {
-    const auto *point = pointAt(event->position());
-    if (event->button() == Qt::LeftButton && point)
-        emit frameClicked(point->first);
+    if (event->button() == Qt::LeftButton && viewport_.size() &&
+        area(*this).contains(event->position())) {
+        dragPosition_ = event->position();
+        dragViewport_ = viewport_;
+        dragMoved_ = false;
+        event->accept();
+    }
+}
+void WaveformPlot::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() != Qt::LeftButton || !dragPosition_)
+        return;
+    dragPosition_.reset();
+    unsetCursor();
+    if (!dragMoved_) {
+        if (const auto *point = pointAt(event->position()))
+            emit frameClicked(point->first);
+    }
+    event->accept();
 }
 void WaveformPlot::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    dragPosition_.reset();
+    unsetCursor();
     const auto *point = pointAt(event->position());
     if (point)
         emit frameSelected(point->first);

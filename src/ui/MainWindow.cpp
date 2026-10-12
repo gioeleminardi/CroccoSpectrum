@@ -197,6 +197,10 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     waterfallTimer_->setSingleShot(true);
     waterfallTimer_->setInterval(100);
     connect(waterfallTimer_, &QTimer::timeout, this, &MainWindow::requestWaterfall);
+    waveformTimer_ = new QTimer(this);
+    waveformTimer_->setSingleShot(true);
+    waveformTimer_->setInterval(100);
+    connect(waveformTimer_, &QTimer::timeout, this, &MainWindow::requestWaveform);
     saveTimer_ = new QTimer(this);
     saveTimer_->setSingleShot(true);
     saveTimer_->setInterval(400);
@@ -229,10 +233,12 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     connect(minimap_, &WaterfallMinimap::viewportChanged, waterfall_, &WaterfallPlot::setViewport);
     connect(waterfall_, &WaterfallPlot::viewportChanged, this, [this](FrameRange range) {
         minimap_->setViewport(range);
-        if (waveformResult_ && waveformResult_->range != range) {
-            waveformResult_.reset();
-            waveform_->clear();
-        }
+        waveformTimer_->stop();
+        waveformController_.cancel();
+        ++waveformGeneration_;
+        waveformResult_.reset();
+        waveform_->clear();
+        waveform_->setTimeRange(range);
         scheduleWaterfall();
         updateView();
     });
@@ -243,6 +249,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     averagePlot_ = new SpectrumPlot(this);
     waveform_ = new WaveformPlot(this);
     waveform_->setObjectName("waveformPlot");
+    connect(waveform_, &WaveformPlot::viewportChanged, this, &MainWindow::scheduleWaveform);
     auto *averageContainer = new QWidget(this);
     auto *averageLayout = new QVBoxLayout(averageContainer);
     averageLayout->setContentsMargins(0, 0, 0, 0);
@@ -308,7 +315,7 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     statusBar()->addPermanentWidget(spinner);
     statusBar()->addPermanentWidget(progress_);
     statusBar()->addPermanentWidget(cancel_);
-    for (auto *worker : {&controller_, &waterfallController_, &minimapController_})
+    for (auto *worker : {&controller_, &waterfallController_, &minimapController_, &waveformController_})
         connect(worker, &AnalysisController::processingChanged, this,
                 [this, spinner, worker](bool active) {
                     if (active)
@@ -472,7 +479,7 @@ void MainWindow::buildMenus()
                                                    pixels.width(), requestedWaterfallRows());
                 setBusy(true, "Scanning every window for exact overview…");
             });
-    connect(analysis->addAction("Exact waveform over waterfall view"), &QAction::triggered, this,
+    connect(analysis->addAction("Exact Waveform"), &QAction::triggered, this,
             &MainWindow::startWaveform);
     auto *mark = analysis->addAction("Add bookmark / note…");
     mark->setShortcut(QKeySequence("Ctrl+B"));
@@ -783,8 +790,11 @@ void MainWindow::showPlotControls()
                "again to finish. Shift-drag the band to move it or a marker to resize it. Escape "
                "clears the measurement in the focused plot.");
     addSection("Baseband waveform",
-               "The time range follows the waterfall viewport. Large views use a sampled preview; "
-               "Exact waveform over waterfall view scans every visible sample.\n\n"
+               "Mouse wheel: zoom time around the pointer. Left-button drag: pan time. "
+               "Waveform zoom is independent; changing the waterfall time range resets it. "
+               "Zoom in to see individual samples: I is cyan and Q is amber. "
+               "Large views use a sampled preview; "
+               "Exact Waveform scans every visible sample.\n\n"
                "Hover: inspect sample values and the shared frame. Click to freeze/unfreeze the "
                "frame; double-click to seek.");
     sections->addStretch();
@@ -925,7 +935,7 @@ void MainWindow::buildControls()
     auto *selection = new QGroupBox("Analysis interval · [start, end)", this);
     auto *selectionForm = new QFormLayout(selection);
     auto *selectionHelp =
-        new QLabel("Averages and exports. Waveform follows the waterfall view.", selection);
+        new QLabel("Averages and exports. Waterfall time changes reset waveform zoom.", selection);
     selectionHelp->setWordWrap(true);
     selectionForm->addRow(selectionHelp);
     start_ = new QLineEdit("0", this);
@@ -950,7 +960,8 @@ void MainWindow::buildControls()
     averageWaterfallSelection_->setToolTip(
         "Average between the waterfall markers without applying the analysis interval. "
         "Complete a selection spanning at least one FFT window to enable this button.");
-    auto *exactWave = new QPushButton("Exact waveform for waterfall view", this);
+    auto *exactWave = new QPushButton("Exact Waveform", this);
+    exactWave->setToolTip("Scan every sample in the visible waveform interval.");
     selectionForm->addRow(average);
     selectionForm->addRow(averageWaterfallSelection_);
     selectionForm->addRow(exactWave);
@@ -1090,6 +1101,16 @@ void MainWindow::connectWorker()
     connect(&spectrumController_, &AnalysisController::failed, this,
             [this](quint64 generation, const QString &message) {
                 if (generation == spectrumGeneration_)
+                    reportError(message);
+            });
+    connect(&waveformController_, &AnalysisController::waveformReady, this,
+            [this](quint64 generation, std::shared_ptr<const WaveformResult> result) {
+                if (generation == waveformGeneration_ && recording_)
+                    displayWaveform(*result);
+            });
+    connect(&waveformController_, &AnalysisController::failed, this,
+            [this](quint64 generation, const QString &message) {
+                if (generation == waveformGeneration_)
                     reportError(message);
             });
     connect(&waterfallController_, &AnalysisController::waterfallReady, this,
@@ -1253,6 +1274,9 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
 
 void MainWindow::clearMeasurements()
 {
+    waveformTimer_->stop();
+    waveformController_.cancel();
+    ++waveformGeneration_;
     waterfallTimer_->stop();
     waterfallController_.cancel();
     ++waterfallGeneration_;
@@ -1313,6 +1337,21 @@ void MainWindow::requestWaterfall()
     WaterfallRequest request{waterfall_->viewport(), left, right, pixels.width(),
                               requestedWaterfallRows(), false, preferences_.view.waterfallRows != 0};
     waterfallGeneration_ = waterfallController_.waterfall(recording_, preferences_.dsp, request);
+}
+void MainWindow::scheduleWaveform()
+{
+    if (!recording_ || waveform_->viewport().size() == 0)
+        return;
+    waveformController_.cancel();
+    ++waveformGeneration_;
+    if (!waveformTimer_->isActive())
+        waveformTimer_->start();
+}
+void MainWindow::requestWaveform()
+{
+    if (!recording_ || waveform_->viewport().size() == 0)
+        return;
+    waveformGeneration_ = waveformController_.waveform(recording_, waveform_->viewport(), true);
 }
 int MainWindow::requestedWaterfallRows() const
 {
@@ -1446,7 +1485,7 @@ void MainWindow::displaySpectrum(std::shared_ptr<const PreviewResult> result, bo
 
 void MainWindow::displayWaveform(const WaveformResult &result)
 {
-    if (result.points.empty() || result.range != waterfall_->viewport())
+    if (result.points.empty() || result.range != waveform_->viewport())
         return;
     // Frequency-only refinement must not replace an exact scan of this interval.
     if (waveformResult_ && waveformResult_->complete && waveformResult_->range == result.range)
@@ -1665,10 +1704,13 @@ void MainWindow::startAverage(FrameRange range, const QString &message)
 }
 void MainWindow::startWaveform()
 {
-    if (!recording_ || waterfall_->viewport().size() == 0)
+    if (!recording_ || waveform_->viewport().size() == 0)
         return;
     previewTimer_->stop();
-    generation_ = controller_.waveform(recording_, waterfall_->viewport());
+    waveformTimer_->stop();
+    waveformController_.cancel();
+    ++waveformGeneration_;
+    generation_ = controller_.waveform(recording_, waveform_->viewport());
     waveformDock_->show();
     setBusy(true, "Reading exact waveform envelope…");
 }
@@ -1744,6 +1786,10 @@ void MainWindow::exportPng()
         reportError("Calculate an average before exporting it");
         return;
     }
+    if (choice == "Waveform" && (!waveformResult_ || waveformResult_->range != waveform_->viewport())) {
+        reportError("Wait for the visible waveform interval to finish updating");
+        return;
+    }
     auto range = choice == "Average spectrum"              ? average_->range
                  : choice == "Waveform" && waveformResult_ ? waveformResult_->range
                                                            : range_;
@@ -1766,8 +1812,9 @@ void MainWindow::exportPng()
                         {"dsp", dspToJson(preferences_.dsp)},
                         {"view", viewToJson(preferences_.view)},
                         {"unit", powerUnit(preferences_.dsp.scale)},
-                        {"sampled_preview", choice != "Spectrum" && displayed->sampled},
-                        {"exact_overview", choice != "Spectrum" && displayed->aggregated},
+                        {"sampled_preview", choice == "Waveform" ? !waveformResult_->complete
+                                                                 : choice != "Spectrum" && displayed->sampled},
+                        {"exact_overview", choice != "Spectrum" && choice != "Waveform" && displayed->aggregated},
                         {"waveform_complete", waveformResult_ && waveformResult_->complete},
                         {"coverage_label", coverageLabel_->text()},
                         {"average_coverage", average_ ? averageLabel_->text() : QString()}};

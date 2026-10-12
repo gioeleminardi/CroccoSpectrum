@@ -215,8 +215,8 @@ provide finer bins and cover longer time intervals.
 | **Waterfall minimap** | Automatic background pass over every required window in the whole recording; temporal/frequency maxima |
 | **Average selected interval / entire recording** | Every eligible complete window; mean calculated in linear power |
 | **Exact waterfall overview + average** | Every required window; bounded temporal/frequency maxima and an exact average |
-| **Waveform preview** | Same time interval as the waterfall; large views sample up to 131,072 frames across the interval |
-| **Exact waveform** | Every sample in the visible waterfall interval, reduced to min/max envelopes |
+| **Waveform preview** | Starts with the waterfall interval; independent zoom reads up to 131,072 frames across the visible waveform interval |
+| **Exact waveform** | Every sample in the visible waveform interval, reduced to min/max envelopes |
 
 A sampled waterfall can miss short events. The minimap scans the complete recording
 in the background and preserves short events through maximum aggregation. Use it
@@ -244,6 +244,7 @@ instructions. Plots show no hover tooltips; this guide can stay open while you w
 | Pan frequency | Drag the spectrum or waterfall |
 | Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
 | Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
+| Zoom / pan waveform time independently | Mouse wheel / left-button drag inside the waveform |
 | Move / resize the waterfall viewport | Drag the minimap box / its top or bottom handle |
 | Inspect frequency and power coordinates | Hover over the spectrum |
 | Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
@@ -316,12 +317,15 @@ the freeze and resets the spectrum to its first row. Exact overview rows
 summarize several windows; their hover spectrum is the window at the row's
 starting sample. Spectrum CSV and PNG exports use the displayed window.
 
-The waveform always spans the waterfall's visible time interval, including when
-zooming, panning, or using the minimap. Hover changes the shared frame without
-changing the waveform interval. Large views use a labeled sampled preview, which
-can miss isolated peaks; **Analysis → Exact waveform over waterfall view** scans
-every visible sample. Frequency-only navigation retains an exact waveform; changing
-the time interval requests a new preview.
+Changing the waterfall's time interval resets the waveform to match, including
+when zooming, panning, or using the minimap. Within that interval, mouse-wheel
+zoom and left-button drag inspect the waveform independently of the waterfall.
+Zoom can reach a single sample, irrespective of FFT length. Close-up views show
+connected sample traces and markers with I in cyan and Q in amber at the same
+sample indices. Hover reports the sample values without changing the interval.
+Large views use a labeled sampled preview, which can miss isolated peaks;
+**Analysis → Exact Waveform** scans every sample in the visible waveform interval.
+Frequency-only navigation retains the waveform's zoom and exact scan.
 
 Use **View** to show or hide analysis panels. Panels can be docked, floated, and
 resized; preferences and workspace layout are restored on the next launch.

@@ -6,6 +6,16 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Independent waveform zoom (2026-10-12 working tree): all seven local Fedora 44
+  Release CTest suites pass with Qt 6.11.2. GUI regressions cover zooming below
+  FFT length to individual samples, decoded I/Q values at matching sample
+  indices, drag panning without toggling freeze, single-sample zoom and zoom-out,
+  range limits above 2^53, exact scans of an independent waveform interval,
+  and rejecting local results after waterfall time navigation resets zoom.
+  Existing shared freeze/seek and measurement cases pass. The close-up I/Q
+  traces, markers, legend, and frame bounds were visually inspected offscreen.
+  Portable packages were not rebuilt for this change.
+
 - Waveform/waterfall synchronization (2026-10-12 working tree): all seven local
   Fedora 44 Release CTest suites pass with Qt 6.11.2. Core regression cases cover
   full-interval bounded sampling, nonzero starts, final samples, exact peak

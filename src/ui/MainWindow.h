@@ -63,6 +63,8 @@ class MainWindow : public QMainWindow
     void requestPreview();
     void scheduleWaterfall();
     void requestWaterfall();
+    void scheduleWaveform();
+    void requestWaveform();
     [[nodiscard]] int requestedWaterfallRows() const;
     void startMinimap();
     void beginMeasurement(QWidget *plot);
@@ -122,7 +124,9 @@ class MainWindow : public QMainWindow
     AnalysisController controller_;
     AnalysisController spectrumController_;
     AnalysisController waterfallController_, minimapController_;
+    AnalysisController waveformController_;
     quint64 waterfallGeneration_ = 0, minimapGeneration_ = 0;
+    quint64 waveformGeneration_ = 0;
     UpdateChecker *updateChecker_;
     QString notifiedUpdateVersion_;
     SpectrumPlot *spectrum_, *averagePlot_;
@@ -141,6 +145,7 @@ class MainWindow : public QMainWindow
     QListWidget *bookmarksList_;
     QTimer *previewTimer_, *saveTimer_;
     QTimer *waterfallTimer_;
+    QTimer *waveformTimer_;
     QMenu *recentFilesMenu_;
     QActionGroup *waterfallRowsGroup_;
 };

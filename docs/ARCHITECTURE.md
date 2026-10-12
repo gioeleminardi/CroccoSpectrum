@@ -95,17 +95,20 @@ only on the coordinating job thread. Cancellation or a worker exception stops
 the batch pipeline and joins every worker before returning or throwing.
 Submitting a new job atomically cancels that controller's running token and
 replaces its pending job. The main window uses separate controllers for one-window hover previews, waterfall
-viewport detail, and the whole-recording minimap. Navigation and hover do not cancel
+viewport detail, independent waveform zoom, and the whole-recording minimap. Navigation and hover do not cancel
 averages or exports, and minimap scanning continues through viewport changes.
 Progressive minimap snapshots are immutable copies, published about every 100 ms
 as rows complete. A mutex-protected latest snapshot and one queued notification
 coalesce GUI delivery, bounding the queue even while the GUI is occupied.
 The main window owns the shared frame cursor and freeze state for both time
 plots. Waveform sample buckets select the corresponding waterfall row start.
-The waveform uses the waterfall viewport's time bounds and is delivered with its
-detail snapshot. Hover never changes those bounds. Exact waveform scans the visible
-interval and is retained through frequency-only refinement; time navigation rejects
-obsolete waveform results along with obsolete waterfall requests.
+Waterfall time navigation resets the waveform to its viewport and supplies a
+matching waveform snapshot. Waveform wheel zoom and drag panning refine a local
+interval independently, including below FFT length. Its own controller reads
+bounded previews and rejects obsolete requests. Hover never changes the interval.
+Exact Waveform scans the visible waveform interval; frequency-only waterfall
+refinement retains independent zoom and exact results. Short exact views keep
+one point per sample, drawn as connected I/Q traces with sample markers.
 Endpoint placement and editing temporarily suppress shared hover and freeze commands,
 and invalidates queued hover results without changing the user's freeze state.
 Completed frequency selections follow the displayed frame and recalculate
