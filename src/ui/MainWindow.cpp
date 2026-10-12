@@ -34,6 +34,7 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QProgressBar>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -60,6 +61,17 @@ namespace rf
 {
 namespace
 {
+class MenuBarStyle : public QProxyStyle
+{
+  public:
+    int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr,
+                    const QWidget *widget = nullptr) const override
+    {
+        const int value = QProxyStyle::pixelMetric(metric, option, widget);
+        return metric == PM_MenuBarVMargin ? value + 4 : value;
+    }
+};
+
 class ProcessingSpinner : public QWidget
 {
   public:
@@ -384,6 +396,9 @@ void MainWindow::startUpdateChecks()
 
 void MainWindow::buildMenus()
 {
+    auto *menuStyle = new MenuBarStyle;
+    menuStyle->setParent(menuBar());
+    menuBar()->setStyle(menuStyle);
     auto *file = menuBar()->addMenu("&File");
     auto *open = file->addAction("&Open recording…");
     open->setShortcut(QKeySequence::Open);
