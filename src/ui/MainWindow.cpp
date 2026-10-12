@@ -915,7 +915,7 @@ void MainWindow::buildControls()
     layout->addWidget(colors);
     auto *selection = new QGroupBox("Analysis interval · [start, end)", this);
     auto *selectionForm = new QFormLayout(selection);
-    auto *selectionHelp = new QLabel("For averages, waveforms and sample exports.", selection);
+    auto *selectionHelp = new QLabel("Averages, waveforms and exports.", selection);
     selectionHelp->setWordWrap(true);
     selectionForm->addRow(selectionHelp);
     start_ = new QLineEdit("0", this);
@@ -1488,11 +1488,20 @@ void MainWindow::updateDsp()
     }
     const bool changed = settings != preferences_.dsp;
     preferences_.dsp = settings;
+    const auto durationText = [](double seconds) {
+        if (seconds >= 1)
+            return number(seconds) + " s";
+        if (seconds >= 1e-3)
+            return number(seconds * 1e3) + " ms";
+        if (seconds >= 1e-6)
+            return number(seconds * 1e6) + " us";
+        return number(seconds * 1e9) + " ns";
+    };
     resolutionLabel_->setText(
-        QString("Bin spacing: %1 Hz\nWindow: %2 s · hop: %3 s\nENBW shown in CSV/numeric results")
-            .arg(number(rate / settings.fftSize))
-            .arg(number(settings.fftSize / rate))
-            .arg(number(static_cast<double>(settings.hop()) / rate)));
+        QString("Bin spacing: %1 Hz\nWindow: %2 · hop: %3\nENBW shown in CSV/numeric results")
+            .arg(QString::number(rate / settings.fftSize, 'f', 0))
+            .arg(durationText(settings.fftSize / rate))
+            .arg(durationText(static_cast<double>(settings.hop()) / rate)));
     if (changed) {
         schedulePreview();
         startMinimap();
