@@ -229,6 +229,10 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     connect(minimap_, &WaterfallMinimap::viewportChanged, waterfall_, &WaterfallPlot::setViewport);
     connect(waterfall_, &WaterfallPlot::viewportChanged, this, [this](FrameRange range) {
         minimap_->setViewport(range);
+        if (waveformResult_ && waveformResult_->range != range) {
+            waveformResult_.reset();
+            waveform_->clear();
+        }
         scheduleWaterfall();
         updateView();
     });
@@ -468,7 +472,7 @@ void MainWindow::buildMenus()
                                                    pixels.width(), requestedWaterfallRows());
                 setBusy(true, "Scanning every window for exact overview…");
             });
-    connect(analysis->addAction("Exact waveform over selected interval"), &QAction::triggered, this,
+    connect(analysis->addAction("Exact waveform over waterfall view"), &QAction::triggered, this,
             &MainWindow::startWaveform);
     auto *mark = analysis->addAction("Add bookmark / note…");
     mark->setShortcut(QKeySequence("Ctrl+B"));
@@ -772,13 +776,15 @@ void MainWindow::showPlotControls()
                "The minimap shows the whole recording: drag its box to move through time, "
                "or drag the top/bottom handles to change the visible time span. "
                "Use waterfall view applies that span as the analysis interval for averages, "
-               "waveforms and sample exports. View > Seek to time jumps to a precise time.\n\n"
+               "sample exports. View > Seek to time jumps to a precise time.\n\n"
                "Hover: inspect the shared frame. Click to freeze/unfreeze the frame; double-click "
                "to seek.\n\n"
                "Shift + left-click: start measuring duration between waterfall rows. Left-click "
                "again to finish. Shift-drag the band to move it or a marker to resize it. Escape "
                "clears the measurement in the focused plot.");
     addSection("Baseband waveform",
+               "The time range follows the waterfall viewport. Large views use a sampled preview; "
+               "Exact waveform over waterfall view scans every visible sample.\n\n"
                "Hover: inspect sample values and the shared frame. Click to freeze/unfreeze the "
                "frame; double-click to seek.");
     sections->addStretch();
@@ -918,7 +924,8 @@ void MainWindow::buildControls()
     layout->addWidget(colors);
     auto *selection = new QGroupBox("Analysis interval · [start, end)", this);
     auto *selectionForm = new QFormLayout(selection);
-    auto *selectionHelp = new QLabel("Averages, waveforms and exports.", selection);
+    auto *selectionHelp =
+        new QLabel("Averages and exports. Waveform follows the waterfall view.", selection);
     selectionHelp->setWordWrap(true);
     selectionForm->addRow(selectionHelp);
     start_ = new QLineEdit("0", this);
@@ -943,7 +950,7 @@ void MainWindow::buildControls()
     averageWaterfallSelection_->setToolTip(
         "Average between the waterfall markers without applying the analysis interval. "
         "Complete a selection spanning at least one FFT window to enable this button.");
-    auto *exactWave = new QPushButton("Exact waveform for analysis interval", this);
+    auto *exactWave = new QPushButton("Exact waveform for waterfall view", this);
     selectionForm->addRow(average);
     selectionForm->addRow(averageWaterfallSelection_);
     selectionForm->addRow(exactWave);
@@ -1066,9 +1073,7 @@ void MainWindow::connectWorker()
                     waterfall_->setViewport(range_);
                 if (!preview_->aggregated)
                     scheduleWaterfall();
-                waveformResult_ = std::make_shared<WaveformResult>(preview_->waveform);
-                waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
-                                       recording_->descriptor().format.kind);
+                displayWaveform(preview_->waveform);
                 displaySpectrum(preview_, !preserveFrequency);
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
@@ -1091,7 +1096,8 @@ void MainWindow::connectWorker()
             [this](quint64 generation, std::shared_ptr<const PreviewResult> result) {
                 if (generation != waterfallGeneration_ || !recording_)
                     return;
-                waterfall_->setDetail(std::move(result));
+                waterfall_->setDetail(result);
+                displayWaveform(result->waveform);
                 updateFrameCursors();
                 updateWaterfallCoverage();
                 updateView();
@@ -1130,11 +1136,7 @@ void MainWindow::connectWorker()
             [this](quint64 generation, std::shared_ptr<const WaveformResult> result) {
                 if (generation != generation_)
                     return;
-                waveformResult_ = std::move(result);
-                waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
-                                       recording_->descriptor().format.kind);
-                updateFrameCursors();
-                waveformDock_->show();
+                displayWaveform(*result);
                 setBusy(false, "Exact waveform complete");
             });
     connect(&controller_, &AnalysisController::progressChanged, this,
@@ -1437,20 +1439,22 @@ void MainWindow::displaySpectrum(std::shared_ptr<const PreviewResult> result, bo
 {
     spectrumPreview_ = std::move(result);
     spectrum_->setPreview(spectrumPreview_, resetZoom);
-    const auto frame = spectrumPreview_->spectrumStart;
-    if (waveformResult_ &&
-        (frame < waveformResult_->range.begin || frame >= waveformResult_->range.end)) {
-        // Keep long recordings bounded: the hover job already supplies local
-        // waveform data. Exact waveforms retain their full selected interval.
-        auto waveform = std::make_shared<WaveformResult>(spectrumPreview_->waveform);
-        waveform->complete = waveform->range == range_;
-        waveformResult_ = std::move(waveform);
-        waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
-                               recording_->descriptor().format.kind);
-    }
     updateFrameCursors();
     updateWaterfallCoverage();
     updateSpectrumView();
+}
+
+void MainWindow::displayWaveform(const WaveformResult &result)
+{
+    if (result.points.empty() || result.range != waterfall_->viewport())
+        return;
+    // Frequency-only refinement must not replace an exact scan of this interval.
+    if (waveformResult_ && waveformResult_->complete && waveformResult_->range == result.range)
+        return;
+    waveformResult_ = std::make_shared<WaveformResult>(result);
+    waveform_->setWaveform(waveformResult_, recording_->descriptor().sampleRate,
+                           recording_->descriptor().format.kind);
+    updateFrameCursors();
 }
 
 void MainWindow::updateWaterfallCoverage()
@@ -1661,10 +1665,11 @@ void MainWindow::startAverage(FrameRange range, const QString &message)
 }
 void MainWindow::startWaveform()
 {
-    if (!recording_)
+    if (!recording_ || waterfall_->viewport().size() == 0)
         return;
     previewTimer_->stop();
-    generation_ = controller_.waveform(recording_, range_);
+    generation_ = controller_.waveform(recording_, waterfall_->viewport());
+    waveformDock_->show();
     setBusy(true, "Reading exact waveform envelope…");
 }
 

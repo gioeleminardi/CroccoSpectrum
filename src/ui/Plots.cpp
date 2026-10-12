@@ -1558,8 +1558,9 @@ void WaveformPlot::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     base(painter, *this,
-         result_ && !result_->complete
-             ? "WAVEFORM · bounded region preview · use Exact waveform for the full selection"
+         !result_ ? "WAVEFORM · waiting for waterfall data"
+         : !result_->complete
+             ? "WAVEFORM · sampled waterfall interval · use Exact waveform to scan every sample"
              : "WAVEFORM · exact min/max envelopes");
     if (!result_ || result_->points.empty())
         return;
@@ -1650,7 +1651,8 @@ void WaveformPlot::mouseMoveEvent(QMouseEvent *event)
         update();
     }
     emit cursorChanged(
-        QString("Frames [%1, %2) · I [%3, %4] · Q [%5, %6] · click to %7 · double-click to seek")
+        QString("%1 [%2, %3) · I [%4, %5] · Q [%6, %7] · click to %8 · double-click to seek")
+            .arg(result_->complete ? "Frames" : "Sampled frames in")
             .arg(point->first)
             .arg(point->last)
             .arg(number(point->minI))

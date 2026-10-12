@@ -6,10 +6,14 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Synchronize waveform time bounds with the waterfall viewport through full views,
+  zoom, pan, and minimap navigation. Distribute the bounded waveform preview across
+  the visible interval, label sampled coverage, and keep hover from replacing it
+  with a local interval. Exact waveform scans the visible waterfall interval.
 - Separate waterfall wheel zoom: scroll to zoom only time, or Ctrl + scroll to
   zoom only frequency around the pointer.
 - Rework Time selection into a compact Analysis interval section for exact frame
-  entry, averages, waveforms, and sample exports. Remove the duplicate timeline
+  entry, averages, and sample exports. Remove the duplicate timeline
   and zoom buttons; Use waterfall view applies the minimap's visible interval.
   Move precise time seeking to View → Seek to time.
 

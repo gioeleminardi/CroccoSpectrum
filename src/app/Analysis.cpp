@@ -219,7 +219,7 @@ std::size_t PreviewResult::memoryBytes() const
 
 std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, FrameRange range,
                                                 const CancelCheck &cancelled,
-                                                const Progress &progress)
+                                                const Progress &progress, bool boundedPreview)
 {
     recording.validateRange(range);
     if (range.size() == 0)
@@ -237,9 +237,17 @@ std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, Fram
     ProgressReporter reporter(progress);
     std::size_t bucket = 0;
     constexpr std::uint64_t blockFrames = 131072;
+    const bool sampled = boundedPreview && range.size() > blockFrames;
     for (auto start = range.begin; start < range.end;) {
         checkpoint(cancelled);
-        const auto end = start + std::min(blockFrames, range.end - start);
+        while (bucket + 1 < result->points.size() && start >= result->points[bucket].last)
+            ++bucket;
+        // Spread the existing preview budget across the full viewport. Keep
+        // the final samples visible as well as the beginning of the recording.
+        const auto readFrames = sampled ? blockFrames / maxPoints : blockFrames;
+        if (sampled && bucket + 1 == result->points.size())
+            start = result->points[bucket].last - readFrames;
+        const auto end = start + std::min(readFrames, range.end - start);
         const auto samples = recording.read({start, end});
         for (std::size_t index = 0; index < samples.size(); ++index) {
             if ((index & 4095U) == 0)
@@ -281,13 +289,13 @@ std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, Fram
                 point.maxMagnitude = std::max(point.maxMagnitude, magnitude);
             }
         }
-        start = end;
+        start = sampled ? result->points[bucket].last : end;
         reporter.report(static_cast<double>(start - range.begin) /
                         static_cast<double>(range.size()));
     }
     checkpoint(cancelled);
     recording.verifyUnchanged();
-    result->complete = true;
+    result->complete = !sampled;
     return result;
 }
 
@@ -345,10 +353,7 @@ std::shared_ptr<PreviewResult> analyzePreview(const Recording &recording, FrameR
             if (row == 0)
                 result->spectrum = std::move(spectrum);
         });
-    const FrameRange waveRange{range.begin,
-                               range.begin + std::min<std::uint64_t>(range.size(), 131072)};
-    result->waveform = *analyzeWaveform(recording, waveRange, cancelled);
-    result->waveform.complete = waveRange == range;
+    result->waveform = *analyzeWaveform(recording, range, cancelled, {}, true);
     checkpoint(cancelled);
     recording.verifyUnchanged();
     return result;
@@ -462,6 +467,8 @@ std::shared_ptr<PreviewResult> analyzeWaterfall(const Recording &recording,
                 }
             }
         });
+    if (!request.exact)
+        result->waveform = *analyzeWaveform(recording, range, cancelled, {}, true);
     checkpoint(cancelled);
     recording.verifyUnchanged();
     result->complete = true;
@@ -558,10 +565,7 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
     if (overview) {
         overview->invalidWindows = result->invalidWindows;
         overview->boundaryWindows = result->boundaryWindows;
-        const FrameRange waveRange{range.begin,
-                                   range.begin + std::min<std::uint64_t>(range.size(), 131072)};
-        overview->waveform = *analyzeWaveform(recording, waveRange, cancelled);
-        overview->waveform.complete = waveRange == range;
+        overview->waveform = *analyzeWaveform(recording, range, cancelled, {}, true);
     }
     return result;
 }

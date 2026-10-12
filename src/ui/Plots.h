@@ -207,6 +207,7 @@ class WaveformPlot : public QWidget
     explicit WaveformPlot(QWidget *parent = nullptr);
     void setWaveform(std::shared_ptr<const WaveformResult> result, double sampleRate,
                      SampleKind kind);
+    [[nodiscard]] std::shared_ptr<const WaveformResult> snapshot() const { return result_; }
     void setMode(int mode);
     void setFrameCursor(std::optional<std::uint64_t> frame, bool frozen);
     void clear();

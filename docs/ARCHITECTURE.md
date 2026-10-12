@@ -102,8 +102,10 @@ as rows complete. A mutex-protected latest snapshot and one queued notification
 coalesce GUI delivery, bounding the queue even while the GUI is occupied.
 The main window owns the shared frame cursor and freeze state for both time
 plots. Waveform sample buckets select the corresponding waterfall row start.
-An out-of-range waveform preview follows the selected frame using the hover
-job's bounded waveform snapshot; exact full-selection waveforms are retained.
+The waveform uses the waterfall viewport's time bounds and is delivered with its
+detail snapshot. Hover never changes those bounds. Exact waveform scans the visible
+interval and is retained through frequency-only refinement; time navigation rejects
+obsolete waveform results along with obsolete waterfall requests.
 Endpoint placement and editing temporarily suppress shared hover and freeze commands,
 and invalidates queued hover results without changing the user's freeze state.
 Completed frequency selections follow the displayed frame and recalculate
@@ -145,8 +147,9 @@ change an export midway.
   FFT bins, with exact bin-aligned raster bounds.
 - Minimap: 1,024 × 192 cells (1.5 MiB), scanning every required window; it does
   not compute an implicit numeric average. Resizing does not restart this pass.
-- Waveform snapshots: at most 2,048 envelope buckets; every sample in a covered
-  bucket contributes to its extrema.
+- Waveform snapshots: at most 2,048 envelope buckets. Previews read at most 131,072
+  frames, distributed across the entire viewport, and label sampled coverage.
+  Exact scans include every sample in each bucket's extrema.
 - Preview LRU: 64 MiB per controller, maintained only by its worker; the main
   window's analysis, hover, and viewport caches retain at most 192 MiB, plus a
   separate 4 MiB minimap cache. Raster images and active FFT buffers are additional.

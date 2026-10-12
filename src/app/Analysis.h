@@ -19,7 +19,7 @@ struct Cancelled : std::runtime_error {
 
 struct WavePoint {
     std::uint64_t first = 0;
-    std::uint64_t last = 0; // Exclusive; min/max cover this entire bucket.
+    std::uint64_t last = 0; // Exclusive; sampled previews inspect only part of the bucket.
     double minI = 0, maxI = 0, minQ = 0, maxQ = 0, minMagnitude = 0, maxMagnitude = 0;
     bool valid = false;
 };
@@ -29,7 +29,7 @@ struct WaveformResult {
     std::vector<WavePoint> points;
     std::uint64_t invalidSamples = 0;
     std::uint64_t clippedComponents = 0;
-    bool complete = false;
+    bool complete = false; // True only when every sample in range was scanned.
 };
 
 struct PreviewResult {
@@ -90,9 +90,11 @@ std::shared_ptr<AverageResult> analyzeAverage(const Recording &recording, FrameR
                                               const Progress &progress = {},
                                               PreviewResult *overview = nullptr,
                                               int overviewColumns = 1024, int overviewRows = 128);
+// Bounded previews distribute at most 131,072 inspected frames across range.
 std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, FrameRange range,
                                                 const CancelCheck &cancelled,
-                                                const Progress &progress = {});
+                                                const Progress &progress = {},
+                                                bool boundedPreview = false);
 // Numerical and byte exports are transactional: never overwrite an existing
 // path and remove incomplete new outputs on failure/cancellation.
 void exportSamples(const Recording &recording, FrameRange range, const QString &output,

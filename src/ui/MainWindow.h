@@ -74,6 +74,7 @@ class MainWindow : public QMainWindow
     void clearFrameCursor();
     void updateFrameCursors();
     void displaySpectrum(std::shared_ptr<const PreviewResult> result, bool resetZoom);
+    void displayWaveform(const WaveformResult &result);
     void updateSpectrumView();
     void updateWaterfallCoverage();
     void updateDsp();
