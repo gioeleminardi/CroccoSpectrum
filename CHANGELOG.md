@@ -4,7 +4,7 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## Unreleased
+## 0.4.0 — 2026-10-12 — Waveform and waterfall navigation
 
 - Shorten the waveform scan button and menu action to Exact Waveform. Add
   independent mouse-wheel waveform zoom and drag panning down to single samples,
