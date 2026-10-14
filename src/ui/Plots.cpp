@@ -945,8 +945,8 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("Time (%6) · %1 rows · %2 … %3 %4 · %5")
                          .arg(result_->rowStarts.size())
-                         .arg(number(minimum))
-                         .arg(number(maximum))
+                         .arg(QString::number(minimum, 'f', 0))
+                         .arg(QString::number(maximum, 'f', 0))
                          .arg(powerUnit(scale_))
                          .arg(view_.palette)
                          .arg(timeScale == 1000 ? "ms" : "s"));
