@@ -438,19 +438,21 @@ Bounded reads and caches keep navigation independent of whole-file loading.
 Large FFT scans use bounded parallel workers and preserve ordered reductions;
 short jobs and memory-heavy FFTs use fewer workers.
 
-Recorded local measurements on a Ryzen 9 9950X3D with NVMe storage:
+Current Release measurements on a Ryzen 9 9950X3D with NVMe storage
+(2026-10-14; medians of three runs):
 
 | Workload | Measured result |
 | --- | --- |
-| Initial GUI preview of a 40 GB file | 150 ms, including a 100 ms layout delay |
-| Full average of 400 MB / 4 GB | 1.01 s / 10.01 s; about 22.5 MiB peak RSS |
-| Exact minimap of 4 GB, 65,536-point FFT | 22.2 s serial → 4.3–4.9 s parallel |
+| Initial GUI preview of a 40 GB file | 156 ms, including a 100 ms layout delay |
+| Full average of 400 MB / 4 GB, FFT 4,096 | 0.309 s / 2.865 s; about 1.3–1.4 GB/s |
+| Full average of 400 MB / 4 GB, FFT 65,536 | 0.444 s / 4.299 s; about 0.9 GB/s |
+| Peak process RSS for these threaded averages | About 110–122 MiB |
 
-These are warm-cache, synthetic int16 I/Q measurements at 100 MS/s. The average
-baseline uses one worker, Hann 4,096-point FFTs, and 50% overlap; the GUI preview
-is offscreen. The parallel minimap comparison uses 50% overlap and excludes GUI
-painting. [Benchmarks](docs/BENCHMARKS.md) records hardware, methods, and workload
-limits; these figures are not performance guarantees.
+The average passes use automatic parallel workers, warm-cache synthetic int16
+I/Q at 100 MS/s, Hann windows, and 50% overlap. Observed 4 GB timings span
+2.066–2.969 s at FFT 4,096 and 4.228–5.062 s at FFT 65,536. The GUI preview is
+offscreen. [Benchmarks](docs/BENCHMARKS.md) records settings, CPU use, memory,
+timing ranges, and measurement scope; these figures are not performance guarantees.
 
 ## Contributing
 

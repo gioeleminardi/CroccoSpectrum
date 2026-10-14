@@ -6,6 +6,10 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Refresh the dense-file benchmark for automatic parallel analysis, with two FFT
+  lengths, repeated warm runs, CPU/wall and memory reporting, and recorded build
+  context. Update the performance report and README, keeping only the current
+  benchmark results.
 - Fix panels failing to detach or jumping to the main window's center on
   Ubuntu 24.04 Wayland sessions by preferring XWayland when available. Preserve
   explicit Qt platform overrides and other systems' default backend selection.

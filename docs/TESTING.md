@@ -59,11 +59,28 @@ This instrumented Qt is a test dependency, not the distributed release runtime.
 Use separate ASAN and TSAN builds. Do not suppress whole Qt libraries to convert
 an unexplained race report into a claimed passing gate.
 
-Explicit dense-file benchmark (up to 40 GB temporary disk space, cleaned on exit):
+Explicit dense-file benchmark (up to 40 GB temporary disk space, cleaned on exit),
+using the optimized build and automatic analysis workers:
 
 ```sh
-python3 tests/benchmark.py --cli dist/croccospectrum-0.2.0-x86_64/croccospectrum-cli --gui dist/croccospectrum-0.2.0-x86_64/AppRun --output build/benchmarks.json
+python3 tests/benchmark.py --cli build/release/croccospectrum-cli \
+  --gui build/release/croccospectrum --output build/benchmarks.json
 ```
+
+The default matrix uses 4,096- and 65,536-point FFTs, Hann windows and 50% overlap.
+It records one fixture-advised cold pass and three warm repeats for each CLI
+workload, including whole-file averages of 400 MB and 4 GB. The 40 GB case checks
+tail spectra and bounded GUI startup; it does not run a full average. Use
+`--max-bytes 4000000000` for a smaller run, `--fft-sizes 4096 65536` to select FFT
+lengths, and `--repeats 3` to set the number of warm runs.
+
+Output is a JSON object with build/host/settings metadata and a `results` array.
+CLI rows include analysis elapsed time, complete process wall time, process-wide
+CPU seconds, CPU/wall ratio, disk input blocks, peak RSS, and tone/coverage checks.
+CPU/wall ratios can exceed one with parallel scans; they are not worker counts.
+GUI rows measure offscreen smoke startup with a 100 ms settling delay and
+uncontrolled cache state. See [Benchmarks](BENCHMARKS.md) for current results and
+measurement scope. Avoid concurrent performance tests when collecting a run.
 
 Extended GUI stress test (eight hours in this example), built when
 BUILD_TESTING is enabled:
