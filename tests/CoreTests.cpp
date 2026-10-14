@@ -34,6 +34,51 @@ class CoreTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void integratedBandAndSnr()
+    {
+        const std::vector<double> frequency{0, 10, 20, 30, 40, 50};
+        const std::vector<double> power{1, 1, 3, 4, 5, 0};
+        const auto band = rf::integrateBand(frequency, power, rf::PowerScale::Spectrum, 20, 4, 2);
+        QVERIFY(band);
+        QCOMPARE(band->lowerHz, 20.0);
+        QCOMPARE(band->upperHz, 40.0);
+        QCOMPARE(band->bandwidthHz, 30.0);
+        QCOMPARE(band->power, 6.0); // Sum 12 * spacing/ENBW = 6.
+        const auto single = rf::integrateBand(frequency, power, rf::PowerScale::Density, 0, 2, 2);
+        QVERIFY(single);
+        QCOMPARE(single->bandwidthHz, 10.0);
+        QCOMPARE(single->power, 30.0);
+        const auto measured = rf::measureBands(frequency, power, rf::PowerScale::Spectrum, 20,
+                                                std::pair{2U, 4U}, std::pair{2U, 4U},
+                                                std::pair{0U, 1U});
+        const auto snr = measured["snr"].toObject();
+        QVERIFY(snr["available"].toBool());
+        QCOMPARE(snr["noise_in_signal_band_linear"].toDouble(), 1.5);
+        QCOMPARE(snr["net_signal_linear"].toDouble(), 4.5);
+        QVERIFY(std::abs(snr["snr_db"].toDouble() - 10 * std::log10(3.0)) < 1e-12);
+        QVERIFY(!rf::integrateBand(frequency, power, rf::PowerScale::Spectrum, 0, 0, 1));
+        QVERIFY(!rf::integrateBand(frequency, power, rf::PowerScale::Density, 20, 0, 9));
+        auto invalid = power;
+        invalid[2] = std::numeric_limits<double>::quiet_NaN();
+        QVERIFY(!rf::integrateBand(frequency, invalid, rf::PowerScale::Density, 20, 2, 3));
+        invalid[2] = -1;
+        QVERIFY(!rf::integrateBand(frequency, invalid, rf::PowerScale::Density, 20, 2, 3));
+        const auto overlap = rf::measureBands(frequency, power, rf::PowerScale::Density, 20,
+                                               {}, std::pair{1U, 2U}, std::pair{0U, 1U});
+        QVERIFY(!overlap["snr"].toObject()["available"].toBool());
+        const auto weak = rf::measureBands(frequency, power, rf::PowerScale::Density, 20,
+                                            {}, std::pair{5U, 5U}, std::pair{0U, 1U});
+        QCOMPARE(weak["snr"].toObject()["snr_db"].toString(), QString("-inf"));
+        const auto noNoise = rf::measureBands(frequency, power, rf::PowerScale::Density, 20,
+                                               {}, std::pair{2U, 4U}, std::pair{5U, 5U});
+        QCOMPARE(noNoise["snr"].toObject()["snr_db"].toString(), QString("inf"));
+        const std::vector<double> zero(power.size(), 0);
+        const auto silence = rf::measureBands(frequency, zero, rf::PowerScale::Density, 20,
+                                               std::pair{0U, 5U}, std::pair{2U, 4U},
+                                               std::pair{0U, 1U});
+        QCOMPARE(silence["selected"].toObject()["power_dbfs"].toString(), QString("-inf"));
+        QVERIFY(!silence["snr"].toObject()["available"].toBool());
+    }
     void trimmedExportPreservesCaptureSemantics()
     {
         QTemporaryDir directory;

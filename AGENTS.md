@@ -164,6 +164,11 @@ needs that evidence rather than on every edit.
   power is `|X|² / |sum(w)|²`; PSD is `|X|² / (Fs * sum(w²))`. Average linear
   powers before converting to dB. Zero power is negative infinity, not a fabricated
   numerical floor. dBFS/dBFS/Hz are not calibrated dBm.
+- Selected-band power integrates PSD times FFT bin spacing, or spectrum power
+  times spacing/ENBW, over inclusive bin centers. Report dBFS; normalize a
+  separate noise band's power to the signal bandwidth before subtracting noise
+  for SNR. Use one displayed FFT or a completed linear-power average, preserving
+  the analyzed interval and band/DSP metadata in exports.
 - Exact passes visit every eligible complete hop-aligned window. Reject and
   count invalid and capture-boundary windows; report trailing frames and finite
   clipping separately. Do not use sampled previews or aggregated pixels as exact

@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+#include "ui/DisplayUnits.h"
 #include "ui/ImportDialog.h"
 #include "recording/Metadata.h"
 #include <QAction>
@@ -39,6 +40,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace
@@ -532,7 +534,7 @@ class UiTests : public QObject
         QSignalSpy cursor(&plot, &rf::SpectrumPlot::cursorChanged);
         moveMouse(&plot, QPoint(276, 152));
         QVERIFY(!cursor.isEmpty());
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 800 Hz · -50 dBFS"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 800 Hz · -50.0 dBFS"));
         const auto crosshair = plot.grab().toImage();
         const auto pixel = [](const QImage &image, int x, int y) {
             return image.pixelColor(qRound(x * image.devicePixelRatio()),
@@ -549,7 +551,7 @@ class UiTests : public QObject
         view.autoRange = true;
         plot.setView(view, rf::PowerScale::Spectrum, 0);
         moveMouse(&plot, QPoint(276, 152));
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 800 Hz · -41.51029996 dBFS"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 800 Hz · -41.5 dBFS"));
         // Crosshair follows axis coordinates, independently of the FFT bin center.
         plot.setFrequencyRange(500, 1500);
         view.autoRange = false;
@@ -558,7 +560,7 @@ class UiTests : public QObject
         view.colorMax = -20;
         plot.setView(view, rf::PowerScale::Density, 1'000'000'000);
         moveMouse(&plot, QPoint(276, 152));
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000000900 Hz · -70 dBFS/Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000000900 Hz · -70.0 dBFS/Hz"));
         const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
         if (!screenshots.isEmpty()) {
             QVERIFY(QDir().mkpath(screenshots));
@@ -884,11 +886,11 @@ class UiTests : public QObject
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 200));
         moveMouse(&plot, QPoint(326, 200));
         QVERIFY(!cursor.isEmpty());
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000 Hz · -70 dBFS"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000 Hz · -70.0 dBFS"));
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 200));
         QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(201, 200));
         moveMouse(&plot, QPoint(451, 200), Qt::LeftButton, Qt::ShiftModifier);
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1500 Hz · -70 dBFS"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1500 Hz · -70.0 dBFS"));
         QVERIFY(plot.measurementText().contains("Start: 1 kHz · End: 2 kHz"));
         QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(451, 200));
         const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
@@ -898,7 +900,7 @@ class UiTests : public QObject
         }
         QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 200));
         moveMouse(&plot, QPoint(326, 200), Qt::LeftButton, Qt::ShiftModifier);
-        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000 Hz · -70 dBFS"));
+        QVERIFY(cursor.last().at(0).toString().contains("Cursor: 1000 Hz · -70.0 dBFS"));
         QTest::mouseRelease(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(326, 200));
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
     }
@@ -918,6 +920,7 @@ class UiTests : public QObject
         result->frequencies = {-2000, -1000, 0, 1000, 2000};
         result->spectrum.power = {0, 0.25, 1, 0.25, 0};
         result->spectrumStart = 256;
+        result->spectrum.enbwHz = result->frequencies[1] - result->frequencies[0];
         plot.setPreview(result);
         plot.show();
         QSignalSpy ranges(&plot, &rf::SpectrumPlot::frequencyRangeChanged);
@@ -927,8 +930,8 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
         QTest::mouseClick(&plot, Qt::LeftButton, endModifiers, QPoint(276, 180));
         QVERIFY(!plot.isMeasuring());
-        // Mean(0.25, 1) = 0.625; averaging dB would incorrectly give -3.0103.
-        QVERIFY(plot.measurementText().contains("-2.041199827 dBFS"));
+        // Sum(0.25, 1) = 1.25 with rectangular ENBW equal to bin spacing.
+        QVERIFY(plot.measurementText().contains("1.0 dBFS"));
         QVERIFY(plot.measurementText().contains("frame 256"));
         QCOMPARE(ranges.count(), 0);
         const auto text = plot.measurementText();
@@ -945,7 +948,7 @@ class UiTests : public QObject
         next->spectrumStart = 512;
         next->spectrum.power = {0, 0.5, 0.5, 0.25, 0};
         plot.setPreview(next, false);
-        QVERIFY(plot.measurementText().contains("-3.010299957 dBFS"));
+        QVERIFY(plot.measurementText().contains("0.0 dBFS"));
         QVERIFY(plot.measurementText().contains("frame 512"));
         view.absoluteFrequency = true;
         plot.setView(view, rf::PowerScale::Spectrum, 1'000'000'000);
@@ -972,6 +975,7 @@ class UiTests : public QObject
         QVERIFY(!plot.isMeasuring());
         QVERIFY(plot.measurementText().contains("Δf: 0 Hz"));
         QVERIFY(plot.measurementText().contains("−∞ dBFS"));
+        result->spectrum.enbwHz = result->frequencies[1] - result->frequencies[0];
         plot.setPreview(result);
         QVERIFY(plot.measurementText().isEmpty());
     }
@@ -989,18 +993,19 @@ class UiTests : public QObject
         auto result = std::make_shared<rf::PreviewResult>();
         result->frequencies = {0, 1000, 2000, 3000, 4000, 5000, 6000};
         result->spectrum.power = {1, 1, 1, 1, 4, 4, 4};
+        result->spectrum.enbwHz = result->frequencies[1] - result->frequencies[0];
         plot.setPreview(result);
         plot.show();
         const QPoint first(159, 200), last(326, 200);
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, reversed ? last : first);
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, reversed ? first : last);
-        QVERIFY(plot.measurementText().contains("0 dBFS"));
+        QVERIFY(plot.measurementText().contains("4.8 dBFS"));
         QSignalSpy ranges(&plot, &rf::SpectrumPlot::frequencyRangeChanged);
         QTest::mousePress(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(243, 200));
         QVERIFY(plot.isMeasuring());
         moveMouse(&plot, QPoint(326, 200), Qt::LeftButton, Qt::ShiftModifier);
-        // Move one bin: mean(1, 1, 4) = 2, while width stays 2 kHz.
-        QVERIFY(plot.measurementText().contains("3.010299957 dBFS"));
+        // Move one bin: sum(1, 1, 4) = 6, while width stays 2 kHz.
+        QVERIFY(plot.measurementText().contains("7.8 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 2 kHz"));
         QVERIFY(plot.measurementText().contains(reversed ? "Start: 4 kHz · End: 2 kHz"
                                                         : "Start: 2 kHz · End: 4 kHz"));
@@ -1013,13 +1018,13 @@ class UiTests : public QObject
         // Cross the other marker, then move the band beyond both plot edges.
         shiftDrag(&plot, QPoint(159, 200), QPoint(576, 200));
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
-        QVERIFY(plot.measurementText().contains("6.020599913 dBFS"));
+        QVERIFY(plot.measurementText().contains("9.0 dBFS"));
         shiftDrag(&plot, QPoint(534, 200), QPoint(-100, 200));
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
-        QVERIFY(plot.measurementText().contains("0 dBFS"));
+        QVERIFY(plot.measurementText().contains("3.0 dBFS"));
         shiftDrag(&plot, QPoint(118, 200), QPoint(800, 200));
         QVERIFY(plot.measurementText().contains("Δf: 1 kHz"));
-        QVERIFY(plot.measurementText().contains("6.020599913 dBFS"));
+        QVERIFY(plot.measurementText().contains("9.0 dBFS"));
         QCOMPARE(ranges.count(), 0);
         // A click without a drag still begins a replacement measurement.
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(534, 200));
@@ -1036,13 +1041,14 @@ class UiTests : public QObject
         // Real-input axis includes Nyquist. Select all bins, including zero.
         result->frequencies = {0, 1000, 2000};
         result->spectrum.power = {0, 1, 2};
+        result->spectrum.enbwHz = result->frequencies[1] - result->frequencies[0];
         plot.setPreview(result);
         plot.setView({}, rf::PowerScale::Density, 0);
         plot.show();
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
         QVERIFY(plot.measurementText().contains("Δf: 2 kHz"));
-        QVERIFY(plot.measurementText().contains("0 dBFS/Hz"));
+        QVERIFY(plot.measurementText().contains("34.8 dBFS"));
         auto invalid = std::make_shared<rf::PreviewResult>(*result);
         invalid->spectrum.valid = false;
         invalid->spectrum.power.clear();
@@ -1064,7 +1070,7 @@ class UiTests : public QObject
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
         QVERIFY(plot.measurementText().contains("Average trace"));
         plot.setAverage(average, true);
-        QVERIFY(plot.measurementText().contains("6.020599913 dBFS/Hz"));
+        QVERIFY(plot.measurementText().contains("40.8 dBFS"));
         QVERIFY(plot.measurementText().contains("Max-hold trace"));
     }
     void spectrumMeasurementUsesEveryBin()
@@ -1078,13 +1084,100 @@ class UiTests : public QObject
         for (std::size_t bin = 0; bin < bins; ++bin)
             result->frequencies[bin] = static_cast<double>(bin) - 524288;
         result->spectrum.power[500000] = 1;
+        result->spectrum.enbwHz = result->frequencies[1] - result->frequencies[0];
         plot.setPreview(result);
         plot.show();
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 180));
         QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(576, 180));
-        // A screen-pixel mean would give a much higher value for this single tone.
-        QVERIFY(plot.measurementText().contains("-60.20599913 dBFS"));
+        // Integrate all numerical bins, including a tone between screen sample points.
+        QVERIFY(plot.measurementText().contains("0.0 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
+    }
+    void signalAndNoiseBands_data()
+    {
+        QTest::addColumn<bool>("average");
+        QTest::addColumn<bool>("density");
+        QTest::newRow("spectrum") << false << false;
+        QTest::newRow("PSD") << false << true;
+        QTest::newRow("average-spectrum") << true << false;
+        QTest::newRow("average-PSD") << true << true;
+    }
+    void signalAndNoiseBands()
+    {
+        QFETCH(bool, average);
+        QFETCH(bool, density);
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        const auto scale = density ? rf::PowerScale::Density : rf::PowerScale::Spectrum;
+        plot.setView({}, scale, 0);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->frequencies = {0, 1000, 2000, 3000, 4000, 5000, 6000};
+        result->spectrum.power = {1, 1, 3, 4, 5, 0, 0};
+        result->spectrum.enbwHz = 1000;
+        if (density)
+            for (auto &power : result->spectrum.power)
+                power /= 1000;
+        auto mean = std::make_shared<rf::AverageResult>();
+        mean->frequencies = result->frequencies;
+        mean->averagePower = result->spectrum.power;
+        mean->maxPower = result->spectrum.power;
+        mean->validWindows = 2;
+        mean->enbwHz = 1000;
+        if (average)
+            plot.setAverage(mean, false);
+        else
+            plot.setPreview(result);
+        plot.show();
+        auto *signal = plot.findChild<QAction *>("setSignalBand");
+        auto *noise = plot.findChild<QAction *>("setNoiseBand");
+        QVERIFY(signal && noise);
+        QVERIFY(!signal->isEnabled());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(243, 200));
+        QVERIFY(!signal->isEnabled());
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(409, 200));
+        QVERIFY(signal->isEnabled());
+        signal->trigger();
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, QPoint(76, 200));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(159, 200));
+        noise->trigger();
+        const auto measurements = plot.bandMeasurements();
+        QCOMPARE(measurements["signal"].toObject()["bandwidth_hz"].toDouble(), 3000.0);
+        QCOMPARE(measurements["noise"].toObject()["bandwidth_hz"].toDouble(), 2000.0);
+        QVERIFY(std::abs(measurements["snr"].toObject()["snr_db"].toDouble() -
+                         10 * std::log10(3.0)) < 1e-12);
+        QVERIFY(plot.measurementText().contains("SNR: 4.8 dB"));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty() && !density) {
+            QVERIFY(QDir().mkpath(screenshots));
+            const QString name = average ? "/average-snr" : "/spectrum-snr";
+            QVERIFY(plot.grab().save(screenshots + name + ".png"));
+            plot.resize(360, 180);
+            QCoreApplication::processEvents();
+            const QRect body(0, 0, plot.width() - 120, 10000);
+            const int textHeight = plot.fontMetrics().boundingRect(
+                body, Qt::TextWordWrap, plot.measurementText()).height();
+            QVERIFY(textHeight <= plot.height() - 86);
+            QVERIFY(plot.grab().save(screenshots + name + "-small.png"));
+        }
+        if (average) {
+            plot.setAverage(mean, true);
+            QVERIFY(!plot.bandMeasurements()["snr"].toObject()["available"].toBool());
+            plot.setAverage(mean, false);
+        } else {
+            auto next = std::make_shared<rf::PreviewResult>(*result);
+            for (auto &power : next->spectrum.power)
+                power *= 2;
+            plot.setPreview(next, false);
+            QVERIFY(std::abs(plot.bandMeasurements()["snr"].toObject()["snr_db"].toDouble() -
+                             10 * std::log10(3.0)) < 1e-12);
+        }
+        plot.findChild<QAction *>("clearPowerBands")->trigger();
+        QCOMPARE(plot.minimumHeight(), 180);
+        QVERIFY(!plot.bandMeasurements().contains("snr"));
+        QVERIFY(!plot.measurementText().isEmpty());
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QVERIFY(plot.bandMeasurements().isEmpty());
+        QVERIFY(!signal->isEnabled());
     }
     void waterfallNavigation_data()
     {
@@ -2546,6 +2639,20 @@ class UiTests : public QObject
         QTRY_COMPARE_WITH_TIMEOUT(window.spectrumResult()->spectrumStart, std::uint64_t{512},
                                   10000);
         const auto selected = window.spectrumResult();
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        const auto selectBand = [&](int first, int last) {
+            const auto point = [&](int bin) {
+                return QPoint(76 + qRound(bin * (spectrum->width() - 100) / 255.0), 70);
+            };
+            QTest::mouseClick(spectrum, Qt::LeftButton, Qt::ShiftModifier, point(first));
+            QTest::mouseClick(spectrum, Qt::LeftButton, Qt::NoModifier, point(last));
+        };
+        selectBand(185, 201);
+        spectrum->findChild<QAction *>("setSignalBand")->trigger();
+        selectBand(40, 70);
+        spectrum->findChild<QAction *>("setNoiseBand")->trigger();
+        const auto exportedBands = spectrum->bandMeasurements();
+        QVERIFY(exportedBands["snr"].toObject()["available"].toBool());
         const auto nativeDialogs = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
         const auto restoreDialogs = qScopeGuard([nativeDialogs] {
@@ -2578,6 +2685,11 @@ class UiTests : public QObject
         const auto metadata = QJsonDocument::fromJson(file.readLine().mid(2)).object();
         QCOMPARE(metadata["start"].toString(), QString("512"));
         QCOMPARE(metadata["end"].toString(), QString("768"));
+        QCOMPARE(metadata["band_measurements"].toObject(), exportedBands);
+        QCOMPARE(metadata["fft_size"].toInt(), 256);
+        QCOMPARE(metadata["unit"].toString(), QString("dBFS"));
+        QCOMPARE(metadata["coverage"].toObject()["enbw_hz"].toDouble(),
+                 selected->spectrum.enbwHz);
         file.readLine(); // Column headings.
         for (std::size_t bin = 0; bin < selected->spectrum.power.size(); ++bin) {
             const auto values = file.readLine().trimmed().split(',');
@@ -2587,6 +2699,7 @@ class UiTests : public QObject
         }
         QVERIFY(file.atEnd());
         const auto pngPath = directory.filePath("spectrum.png");
+        const auto pngBands = spectrum->bandMeasurements();
         bool pngDialogHandled = false;
         QTimer::singleShot(0, &window, [&] {
             auto *dialog = window.findChild<QInputDialog *>();
@@ -2614,8 +2727,62 @@ class UiTests : public QObject
             QJsonDocument::fromJson(image.text("CroccoSpectrum").toUtf8()).object();
         QCOMPARE(pngMetadata["start"].toString(), QString("256"));
         QCOMPARE(pngMetadata["end"].toString(), QString("512"));
+        QCOMPARE(pngMetadata["band_measurements"].toObject(), pngBands);
+        QCOMPARE(pngMetadata["dsp"].toObject(), rf::dspToJson(saved.dsp));
         QVERIFY(!pngMetadata["sampled_preview"].toBool());
         QVERIFY(!pngMetadata["exact_overview"].toBool());
+        window.findChild<QPushButton *>("averageSelection")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+        spectrum = window.findChild<QDockWidget *>("averageDock")->findChild<rf::SpectrumPlot *>();
+        QVERIFY(spectrum);
+        selectBand(185, 201);
+        spectrum->findChild<QAction *>("setSignalBand")->trigger();
+        selectBand(40, 70);
+        spectrum->findChild<QAction *>("setNoiseBand")->trigger();
+        const auto averageBands = spectrum->bandMeasurements();
+        QVERIFY(averageBands["snr"].toObject()["available"].toBool());
+        const auto averageCsvPath = directory.filePath("average.csv");
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QFileDialog *>();
+            if (dialog) {
+                dialog->selectFile(averageCsvPath);
+                static_cast<QDialog *>(dialog)->accept();
+            }
+        });
+        findAction(window, "Export average / max-hold CSV…")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && QFileInfo::exists(averageCsvPath), 10000);
+        QFile averageFile(averageCsvPath);
+        QVERIFY(averageFile.open(QIODevice::ReadOnly));
+        const auto averageMetadata =
+            QJsonDocument::fromJson(averageFile.readLine().mid(2)).object();
+        QCOMPARE(averageMetadata["band_measurements"].toObject(), averageBands);
+        QCOMPARE(averageMetadata["start"].toString(), QString("0"));
+        QCOMPARE(averageMetadata["end"].toString(), QString("768"));
+        QCOMPARE(averageMetadata["method"].toString(), QString("linear_power_mean"));
+        const auto averagePngPath = directory.filePath("average.png");
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = window.findChild<QInputDialog *>();
+            if (!dialog)
+                return;
+            dialog->setTextValue("Average spectrum");
+            QTimer::singleShot(0, &window, [&] {
+                auto *fileDialog = window.findChild<QFileDialog *>();
+                if (fileDialog) {
+                    fileDialog->selectFile(averagePngPath);
+                    static_cast<QDialog *>(fileDialog)->accept();
+                }
+            });
+            dialog->accept();
+        });
+        png->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && QFileInfo::exists(averagePngPath), 10000);
+        const auto averagePngMetadata = QJsonDocument::fromJson(
+            QImage(averagePngPath).text("CroccoSpectrum").toUtf8()).object();
+        QCOMPARE(averagePngMetadata["band_measurements"].toObject(), averageBands);
+        QCOMPARE(averagePngMetadata["start"].toString(), QString("0"));
+        QCOMPARE(averagePngMetadata["end"].toString(), QString("768"));
+        QCOMPARE(averagePngMetadata["dsp"].toObject(), rf::dspToJson(saved.dsp));
+        QCOMPARE(averagePngMetadata["method"].toString(), QString("linear_power_mean"));
     }
     void brandingAndAbout()
     {
@@ -2768,9 +2935,9 @@ class UiTests : public QObject
         QTest::addColumn<double>("center");
         QTest::addColumn<double>("roundedLeft");
         QTest::newRow("Hz") << 400.0 << 0.0 << -230.0;
-        QTest::newRow("kHz") << 4000.0 << 0.0 << -2300.0;
-        QTest::newRow("MHz") << 400'000.0 << 915'000'000.0 << -230'000.0;
-        QTest::newRow("GHz") << 4'000'000.0 << 2'400'000'000.0 << -2'300'000.0;
+        QTest::newRow("kHz") << 4000.0 << 0.0 << -2296.0;
+        QTest::newRow("MHz") << 400'000.0 << 915'000'000.0 << -229'600.0;
+        QTest::newRow("GHz") << 4'000'000.0 << 2'400'000'000.0 << -2'296'000.0;
         QTest::newRow("narrow-GHz") << 400.0 << 2'400'000'000.0 << -230.0;
         QTest::newRow("sub-Hz") << 0.4 << 0.0 << -0.23;
     }
@@ -2804,10 +2971,90 @@ class UiTests : public QObject
             QTest::mouseRelease(&plot, Qt::LeftButton, Qt::NoModifier, QPoint(363, 100));
             moveMouse(&plot, QPoint(10, 10));
             const auto panned = plot.grab(axis).toImage();
-            QVERIFY(panned != original); // Narrow GHz ticks must still distinguish the pan.
+            if (span >= 1)
+                QVERIFY(panned != original); // Retain one-Hz precision even at GHz centers.
+            else
+                QCOMPARE(panned, original); // Sub-Hz changes round to the same integer Hz.
             // Fractional panning coordinates render as the nearest display values.
             plot.setFrequencyRange(roundedLeft, roundedLeft + span);
             QCOMPARE(plot.grab(axis).toImage(), panned);
+        }
+    }
+    void displayUnitFormatting()
+    {
+        QCOMPARE(rf::decibelText(-42.345), QString("-42.3"));
+        QCOMPARE(rf::decibelText(18.76), QString("18.8"));
+        QCOMPARE(rf::decibelText(-0.04), QString("0.0"));
+        QCOMPARE(rf::decibelText(-std::numeric_limits<double>::infinity()), QString("−∞"));
+        QCOMPARE(rf::frequencyText(-0.2), QString("0 Hz"));
+        QCOMPARE(rf::frequencyText(999.4), QString("999 Hz"));
+        QCOMPARE(rf::frequencyText(999.6), QString("1 kHz"));
+        QCOMPARE(rf::frequencyText(1234.6), QString("1.235 kHz"));
+        QCOMPARE(rf::frequencyText(-1'234'567.6), QString("-1.234568 MHz"));
+        QCOMPARE(rf::frequencyText(2'400'000'000.6), QString("2.400000001 GHz"));
+        QCOMPARE(rf::frequencyNumber(2'400'000'000.6, 1e9), QString("2.400000001"));
+        QCOMPARE(rf::durationText(0), QString("0 s"));
+        QCOMPARE(rf::durationText(1.25), QString("1.25 s"));
+        QCOMPARE(rf::durationText(1e-3), QString("1 ms"));
+        QCOMPARE(rf::durationText(1e-6), QString("1 µs"));
+        QCOMPARE(rf::durationText(1e-9), QString("1 ns"));
+        QCOMPARE(rf::durationText(-2.5e-7), QString("-250 ns"));
+    }
+    void dynamicTimeLabels_data()
+    {
+        QTest::addColumn<double>("rate");
+        QTest::addColumn<QString>("unit");
+        QTest::newRow("seconds") << 1.0 << "s";
+        QTest::newRow("milliseconds") << 1e3 << "ms";
+        QTest::newRow("microseconds") << 1e6 << "µs";
+        QTest::newRow("nanoseconds") << 1e9 << "ns";
+    }
+    void dynamicTimeLabels()
+    {
+        QFETCH(double, rate);
+        QFETCH(QString, unit);
+        rf::WaterfallPlot plot;
+        plot.resize(600, 310);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->range = {0, 4};
+        result->frequencies = {-1, 0, 1};
+        result->columns = 3;
+        result->rowStarts = {1, 2};
+        result->waterfall.assign(6, 0.25);
+        plot.setPreview(result, rate);
+        plot.show();
+        QSignalSpy cursor(&plot, &rf::WaterfallPlot::cursorChanged);
+        moveMouse(&plot, rowPosition(plot, 0, 2));
+        QVERIFY(cursor.last()[0].toString().contains("· 1 " + unit + " ·"));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, rowPosition(plot, 0, 2));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, rowPosition(plot, 1, 2));
+        QVERIFY(plot.measurementText().contains("Start: 1 " + unit));
+        QVERIFY(plot.measurementText().contains("End: 2 " + unit));
+        QVERIFY(plot.measurementText().contains("Duration: 1 " + unit));
+        QTemporaryDir directory;
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.dsp.overlapPercent = 0;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto recording = toneRecording(directory.filePath("tone.iq"), {8, 8, 8});
+        recording.sampleRate = 256 * rate;
+        window.openRecording(recording);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.spectrumResult(), 10000);
+        bool resolution = false, duration = false;
+        for (auto *label : window.findChildren<QLabel *>()) {
+            resolution |= label->text().contains("Window: 1 " + unit + " · hop: 1 " + unit);
+            duration |= label->text().contains("768 frames · 3 " + unit);
+        }
+        QVERIFY(resolution);
+        QVERIFY(duration);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(plot.grab().save(screenshots + "/waterfall-time-" + unit + ".png"));
+            QVERIFY(window.grab().save(screenshots + "/analysis-time-" + unit + ".png"));
         }
     }
     void frequencyCursorPrecision()
@@ -2825,7 +3072,7 @@ class UiTests : public QObject
         QSignalSpy cursor(&plot, &rf::SpectrumPlot::cursorChanged);
         QTest::mouseMove(&plot, QPoint(76, 60));
         QTRY_VERIFY(!cursor.isEmpty());
-        QVERIFY(cursor.last().at(0).toString().contains("Bin 0 · 999999904.63256836 Hz"));
+        QVERIFY(cursor.last().at(0).toString().contains("Bin 0 · 999999905 Hz"));
         QVERIFY(cursor.last().at(0).toString().contains("Cursor: 999999905 Hz"));
         const auto badge = QRect(76, plot.height() - 37,
                                  plot.fontMetrics().horizontalAdvance("999.999905 MHz") + 12,
@@ -2896,9 +3143,9 @@ class UiTests : public QObject
         QVERIFY(waterfall->grab().toImage() != waterfallImage);
         QSignalSpy cursor(spectrum, &rf::SpectrumPlot::cursorChanged);
         moveMouse(spectrum, QPoint(80, 32));
-        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(maximum)));
+        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(rf::decibelText(maximum))));
         moveMouse(spectrum, QPoint(80, spectrum->height() - 38));
-        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(minimum)));
+        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(rf::decibelText(minimum))));
         automatic->setChecked(true);
         QVERIFY(adaptColors->isEnabled());
         QTest::keyClick(spin, Qt::Key_Up);

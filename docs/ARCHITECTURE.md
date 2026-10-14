@@ -49,18 +49,75 @@ are fftshifted. Averages use the arithmetic mean of linear powers, accumulated
 online to avoid unbounded arrays or overflowing sums. Log conversion happens
 only when presenting/exporting dB. Zero power exports as negative infinity.
 
-Spectrum Shift-click measurements snap to bin centers and average the exact
-linear bins between both endpoints, inclusive. This is mean spectral power,
-not integrated band power; the result retains the current spectrum/PSD unit.
-The mean is recomputed on completion, a new trace, or changed endpoints during
-a Shift-drag edit, not on every paint. Band drags preserve the bin/row span and
+Spectrum Shift-click measurements snap to bin centers and integrate every exact
+linear bin between both endpoints, inclusive. For bin spacing `df = Fs/N`:
+
+```text
+Pband = sum(PSD[k] * df) = sum(spectrum_power[k] * df/ENBW)
+Band power (dBFS) = 10*log10(Pband)
+Band bandwidth B = included bin count * df
+Noise density D  = Pnoise/Bnoise
+Noise in signal bandwidth N = D*Bsignal
+Net signal S = max(Psignal_band - N, 0)
+SNR (dB) = 10*log10(S/N)
+```
+
+Band power uses normalized mean-square units, independent of the spectrum/PSD
+display scale. A single-bin selection has bandwidth `df`, even though its marker
+separation is zero. This discrete sum includes real DC/Nyquist bins once with
+their existing one-sided scaling; no trapezoidal endpoint weighting is applied.
+Full-band integration equals window-weighted mean-square power. Capture the
+window's leakage/main lobe in a tone's band; a narrow selection can exclude tone
+power. Window weighting can change a finite noise realization's measured power.
+The spectrum/PSD conversion follows the documented
+[SciPy periodogram scaling](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.periodogram.html).
+
+Right-click assigns a completed selection to a signal or noise band. Assignments
+copy the bin bounds; subsequent selection edits require reassignment to change
+them. Both bands are recomputed from the same single complete FFT window or
+completed interval average, never waterfall pixels. Interval averages integrate
+the arithmetic mean of linear powers over valid windows. Max-hold may integrate
+bins from different windows and is labeled as such; SNR is unavailable on it.
+SNR assumes the noise band's PSD represents additive noise in the signal band.
+Use a noise-only band away from signals, leakage, DC and real Nyquist endpoints;
+those endpoint noise bins are not doubled like the real interior bins. The two
+bands must not overlap, and their bandwidths may differ. Subtract the normalized
+noise in linear power before taking logarithms. A nonpositive net signal reports
+negative infinity; positive signal with zero measured noise reports positive
+infinity, not a finite noise-floor estimate. Both zero, invalid bins, and overlap
+report SNR unavailable. Zero integrated power is negative infinity. JSON encodes
+infinite logarithmic results as `"-inf"`/`"inf"`, retaining zero linear power.
+
+Measurements are recomputed on completion, a new trace, or changed endpoints
+during a Shift-drag edit, not on every paint. Band drags preserve the bin span and
 clamp both endpoints together; marker drags may cross the other endpoint. A
 marker hit takes priority over a band hit within six logical pixels. The normal
 drag threshold distinguishes edits from replacement Shift-clicks. Waterfall
-measurements use row-start frame timestamps and
-subtract 64-bit indices before conversion to seconds. Duration is independent
-of preview row skipping or overview aggregation, although those displays limit
-event-boundary resolution. Plot measurement state is transient.
+measurements use row-start frame timestamps and subtract 64-bit indices before
+conversion to seconds. Duration is independent of preview row skipping or
+overview aggregation, although those displays limit event-boundary resolution.
+Plot measurement state is transient; Escape also clears signal/noise bands.
+
+UI frequency values round to whole Hz before scaling to compact kHz/MHz/GHz
+labels. This includes axis ticks, cursors, band endpoints/widths, bin spacing and
+ENBW. Time readouts select s/ms/µs/ns by magnitude, including window/hop durations,
+recording/import summaries and waterfall/waveform times. The shared UI formatter
+in `src/ui/DisplayUnits.h` changes presentation only; numeric export bounds and
+analysis retain their original precision.
+UI dB/dBFS/dBFS/Hz readouts use one decimal place, preserving infinities and
+rounding small finite values to `0.0` without a negative-zero label. This rounding
+is applied after logarithms for presentation; integration, noise subtraction,
+plot color limits and numeric export values retain full precision.
+
+Spectrum/average CSV headers and PNG metadata include `band_measurements` with
+baseband frequency bounds in Hz, inclusive bin indices, integration bandwidth,
+ENBW, linear power and dBFS. Signal/noise bands include SNR, normalization,
+assumptions, and availability status when both are assigned. The surrounding
+metadata records the recording/full-scale reference, source identity, actual
+analyzed `[start,end)` frame interval, DSP settings and trace method. CSV bin
+columns retain their original spectrum/PSD units. PNG view settings separately
+record whether the axis shows absolute RF frequency; band metadata always uses
+baseband Hz to remain unambiguous across capture retunes.
 
 Waterfall measurement changes publish their ordered row-start frame bounds to
 the analysis-interval fields without calling `setRange`. The separate average

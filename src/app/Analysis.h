@@ -99,9 +99,16 @@ std::shared_ptr<WaveformResult> analyzeWaveform(const Recording &recording, Fram
 // path and remove incomplete new outputs on failure/cancellation.
 void exportSamples(const Recording &recording, FrameRange range, const QString &output,
                    const CancelCheck &cancelled, const Progress &progress = {});
+// Band endpoints are inclusive bin indices. All bands use the same immutable trace.
+QJsonObject measureBands(std::span<const double> frequencies, std::span<const double> powers,
+                        PowerScale scale, double enbwHz,
+                        std::optional<std::pair<std::size_t, std::size_t>> selected,
+                        std::optional<std::pair<std::size_t, std::size_t>> signal = {},
+                        std::optional<std::pair<std::size_t, std::size_t>> noise = {});
 void exportSpectrumCsv(const RecordingDescriptor &recording, const QString &identity,
                        FrameRange range, const DspSettings &settings,
                        std::span<const double> frequencies, std::span<const double> powers,
                        const QString &method, const QJsonObject &coverage, const QString &output,
-                       const CancelCheck &cancelled = {}, const Progress &progress = {});
+                       const CancelCheck &cancelled = {}, const Progress &progress = {},
+                       const QJsonObject &bandMeasurements = {});
 } // namespace rf

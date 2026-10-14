@@ -20,6 +20,7 @@ struct CsvRequest {
     std::vector<double> power;
     QString method;
     QJsonObject coverage;
+    QJsonObject bandMeasurements;
     QString output;
 };
 struct PngRequest {

@@ -1,4 +1,4 @@
-#include "app/Analysis.h"
+#include "app/Session.h"
 #include "recording/Metadata.h"
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -78,6 +78,9 @@ int main(int argc, char **argv)
          {"scale", "spectrum or density", "scale", "spectrum"},
          {"remove-dc", "Remove each window's mean"},
          {"conjugate", "Invert complex spectral sign"},
+         {"band", "Integrate selected baseband bin centers (Hz, inclusive)", "lower:upper"},
+         {"signal-band", "Signal baseband band for noise-subtracted SNR (Hz)", "lower:upper"},
+         {"noise-band", "Representative noise baseband band (Hz)", "lower:upper"},
          {"output", "Output path for CSV or sample export (must not exist)", "path"},
          {"summary", "Omit numeric bin arrays; useful for benchmarks"}});
     parser.process(app);
@@ -88,6 +91,9 @@ int main(int argc, char **argv)
         if (!QStringList{"inspect", "spectrum", "average", "waveform", "export-samples"}.contains(
                 command))
             throw std::runtime_error("Unknown command");
+        if (command != "spectrum" && command != "average" &&
+            (parser.isSet("band") || parser.isSet("signal-band") || parser.isSet("noise-band")))
+            throw std::runtime_error("Band measurements require spectrum or average");
         const auto path = QFileInfo(parser.value("file")).absoluteFilePath();
         rf::RecordingDescriptor descriptor;
         if (path.endsWith(".sigmf-meta"))
@@ -196,10 +202,36 @@ int main(int argc, char **argv)
                 output["power"] = array(power);
             }
             output["power_unit"] = rf::powerUnit(settings.scale);
+            output["dsp"] = rf::dspToJson(settings);
             output["complete_pass"] = true;
+            const auto bandOption = [&](const QString &name)
+                -> std::optional<std::pair<std::size_t, std::size_t>> {
+                if (!parser.isSet(name))
+                    return {};
+                const auto bounds = parser.value(name).split(':');
+                bool lowerOk = false, upperOk = false;
+                const double lower = bounds.size() == 2 ? bounds[0].toDouble(&lowerOk) : 0;
+                const double upper = bounds.size() == 2 ? bounds[1].toDouble(&upperOk) : 0;
+                if (!lowerOk || !upperOk || !std::isfinite(lower) || !std::isfinite(upper) ||
+                    lower > upper || frequencies.empty() || lower < frequencies.front() ||
+                    upper > frequencies.back())
+                    throw std::runtime_error(("Invalid --" + name + " bounds").toStdString());
+                const auto first = std::lower_bound(frequencies.begin(), frequencies.end(), lower);
+                const auto end = std::upper_bound(first, frequencies.end(), upper);
+                if (first == end)
+                    throw std::runtime_error(("No FFT bin centers in --" + name).toStdString());
+                return std::pair{static_cast<std::size_t>(first - frequencies.begin()),
+                                 static_cast<std::size_t>(end - frequencies.begin() - 1)};
+            };
+            const auto measurements = rf::measureBands(frequencies, power, settings.scale,
+                output["enbw_hz"].toDouble(), bandOption("band"), bandOption("signal-band"),
+                bandOption("noise-band"));
+            if (!measurements.isEmpty())
+                output["band_measurements"] = measurements;
             if (parser.isSet("output"))
                 rf::exportSpectrumCsv(descriptor, recording.identity(), range, settings,
-                                      frequencies, power, command, output, parser.value("output"));
+                                      frequencies, power, command, output, parser.value("output"),
+                                      {}, {}, measurements);
         } else if (command == "waveform") {
             const auto waveform = rf::analyzeWaveform(recording, range, [] { return false; });
             output["invalid_samples"] = QString::number(waveform->invalidSamples);

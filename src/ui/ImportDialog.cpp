@@ -1,4 +1,5 @@
 #include "ImportDialog.h"
+#include "DisplayUnits.h"
 #include "recording/Metadata.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -128,11 +129,11 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
             [this](quint64 generation, const std::shared_ptr<Recording> &recording, FrameRange) {
                 if (generation != generation_)
                     return;
-                QString summary = QString("%1 frames · %2 seconds · %3 bytes/frame\nSource: %4")
+                QString summary = QString("%1 frames · %2 · %3 bytes/frame\nSource: %4")
                                       .arg(recording->frameCount())
-                                      .arg(static_cast<double>(recording->frameCount()) /
-                                               recording->descriptor().sampleRate,
-                                           0, 'g', 10)
+                                      .arg(durationText(
+                                          static_cast<double>(recording->frameCount()) /
+                                          recording->descriptor().sampleRate))
                                       .arg(recording->descriptor().format.frameBytes())
                                       .arg(base_.metadataSource);
                 if (recording->descriptor().allowPartial) {

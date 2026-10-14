@@ -6,6 +6,40 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- UI decibel rounding (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass. One-decimal readouts cover spectrum power, PSD,
+  band power, normalized noise, SNR, hover/crosshair and plot limits, including
+  zero/infinite results and suppression of negative-zero labels. Spectrum and
+  average readouts were visually inspected at normal and doubled scale, including
+  narrow plots. The 397 independent numerical checks and GUI export regressions
+  pass with unrounded numerical values. Desktop UI and Wayland URL/live HTTPS
+  update cases remain skipped as detailed below.
+- Display units and frequency precision (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass, including 96 UI cases and 397 independent
+  numerical comparisons/invalid-input checks. Focused GUI checks cover s/ms/µs/ns
+  selection endpoints, duration, hover and recording/window/hop readouts, plus
+  whole-Hz rounding and panned Hz/kHz/MHz/GHz axes. Normal and doubled-scale
+  renders were inspected, including narrow GHz plots with fewer tick labels to
+  avoid overlap. Seven desktop UI cases and the Wayland URL/live HTTPS update
+  cases remain skipped. Numeric exports retain full analysis precision.
+- Integrated band power and SNR (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass. The independent NumPy/SciPy suite passes 397
+  comparisons and invalid-input checks, including band integration for tones,
+  off-bin leakage, noise, tone plus noise, DC/Nyquist and silence across all four
+  windows, both scales, real/complex input, displayed FFTs and interval averages.
+  Unequal signal/noise bandwidths, noise subtraction, nonzero analyzed intervals,
+  invalid bounds and overlap are covered. Core/UI regressions cover zero and
+  unavailable powers, negative-infinite/positive-infinite SNR, selection editing,
+  assigned-band refresh and max-hold exclusion. GUI CSV/PNG exports verify band
+  metadata, DSP settings and actual intervals for both spectrum and averages;
+  SciPy checks also inspect CLI CSV metadata. Spectrum/average readouts were
+  visually inspected offscreen at normal and doubled scale, including narrow
+  plots. Seven desktop-specific UI cases and two update cases (Wayland URL
+  handoff and opt-in live HTTPS) remain skipped; no package, live-network or
+  field validation is claimed by these checks.
 - Threaded benchmark refresh (2026-10-14, Release
   `0.4.1-dev.local.g69c4ea4.dirty`): all seven local Fedora 44 CTest suites pass
   with GCC 16.2.1, Qt 6.11.2 and FFTW 3.3.10, including the independent numerical

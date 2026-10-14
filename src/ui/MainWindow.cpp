@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "DisplayUnits.h"
 #include "ImportDialog.h"
 #include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
@@ -704,9 +705,10 @@ void MainWindow::showKeyboardShortcuts()
     auto *plots = new QGroupBox("Plot controls", content);
     auto *plotForm = new QFormLayout(plots);
     addRow(plotForm, "Shift + left-click, then left-click",
-           "Measure width / mean power in a spectrum, or duration in the waterfall");
+           "Measure width / integrated power in a spectrum, or duration in the waterfall");
     addRow(plotForm, "Shift + drag band", "Move a spectrum / waterfall measurement");
     addRow(plotForm, "Shift + drag marker", "Resize a spectrum / waterfall measurement");
+    addRow(plotForm, "Right-click spectrum", "Assign signal / noise bands for SNR");
     addRow(plotForm, QKeySequence(Qt::Key_Escape).toString(QKeySequence::NativeText),
            "Clear a measurement in the focused plot");
     addRow(plotForm, "Mouse wheel", "Zoom frequency in a spectrum; time in waterfall");
@@ -772,9 +774,11 @@ void MainWindow::showPlotControls()
     addSection("Spectrum / average spectrum",
                "Mouse wheel: zoom frequency around the pointer. Left-button drag: pan frequency. "
                "Hover: inspect frequency and power coordinates.\n\n"
-               "Shift + left-click: start measuring frequency width and mean spectral power. "
+               "Shift + left-click: start measuring frequency width and integrated band power. "
                "Left-click again to finish. Shift-drag the band to move it or a marker to resize "
-               "it. Escape clears the measurement in the focused plot.");
+               "it. Right-click to assign the selection as a signal or noise band. SNR subtracts "
+               "noise scaled to the signal bandwidth. Interval SNR uses the average trace. Escape "
+               "clears the measurement and both assigned bands.");
     addSection("Waterfall",
                "Mouse wheel: zoom only time around the pointer. Ctrl + mouse wheel: zoom only "
                "frequency around the pointer. Left-button drag: pan "
@@ -1023,12 +1027,12 @@ void MainWindow::connectWorker()
                 updateRanges();
                 const auto &descriptor = recording_->descriptor();
                 recordingLabel_->setText(
-                    QString("%1\n%2 frames · %3 s\n%4 MS/s · %5-bit %6\n%7")
+                    QString("%1\n%2 frames · %3\n%4 MS/s · %5-bit %6\n%7")
                         .arg(QFileInfo(descriptor.path).fileName())
                         .arg(recording_->frameCount())
-                        .arg(number(static_cast<double>(recording_->frameCount()) /
-                                    descriptor.sampleRate))
-                        .arg(number(descriptor.sampleRate / 1e6))
+                        .arg(durationText(static_cast<double>(recording_->frameCount()) /
+                                          descriptor.sampleRate))
+                        .arg(frequencyNumber(descriptor.sampleRate, 1e6))
                         .arg(descriptor.format.bits)
                         .arg(descriptor.format.kind == SampleKind::Complex ? "I/Q" : "real")
                         .arg(descriptor.metadataSource));
@@ -1096,7 +1100,7 @@ void MainWindow::connectWorker()
                 updateView();
                 resolutionLabel_->setText(resolutionLabel_->text().replace(
                     "ENBW shown in CSV/numeric results",
-                    QString("ENBW: %1 Hz").arg(number(preview_->spectrum.enbwHz))));
+                    QString("ENBW: %1 Hz").arg(frequencyNumber(preview_->spectrum.enbwHz, 1))));
                 setBusy(false, "Preview ready");
                 emit analysisDisplayed();
             });
@@ -1541,18 +1545,9 @@ void MainWindow::updateDsp()
     }
     const bool changed = settings != preferences_.dsp;
     preferences_.dsp = settings;
-    const auto durationText = [](double seconds) {
-        if (seconds >= 1)
-            return number(seconds) + " s";
-        if (seconds >= 1e-3)
-            return number(seconds * 1e3) + " ms";
-        if (seconds >= 1e-6)
-            return number(seconds * 1e6) + " us";
-        return number(seconds * 1e9) + " ns";
-    };
     resolutionLabel_->setText(
         QString("Bin spacing: %1 Hz\nWindow: %2 · hop: %3\nENBW shown in CSV/numeric results")
-            .arg(QString::number(rate / settings.fftSize, 'f', 0))
+            .arg(frequencyNumber(rate / settings.fftSize, 1))
             .arg(durationText(settings.fftSize / rate))
             .arg(durationText(static_cast<double>(settings.hop()) / rate)));
     if (changed) {
@@ -1739,6 +1734,7 @@ void MainWindow::exportCsv(bool average)
     request.settings = preferences_.dsp;
     request.output = path;
     if (average) {
+        request.bandMeasurements = averagePlot_->bandMeasurements();
         request.range = average_->range;
         request.frequencies = average_->frequencies;
         request.power = maxHold_->isChecked() ? average_->maxPower : average_->averagePower;
@@ -1751,6 +1747,7 @@ void MainWindow::exportCsv(bool average)
             {"trailing_frames", QString::number(average_->trailingFrames)},
             {"enbw_hz", average_->enbwHz}};
     } else {
+        request.bandMeasurements = spectrum_->bandMeasurements();
         request.range = {spectrumPreview_->spectrumStart,
                          spectrumPreview_->spectrumStart +
                              static_cast<std::uint64_t>(preferences_.dsp.fftSize)};
@@ -1825,6 +1822,13 @@ void MainWindow::exportPng()
                         {"waveform_complete", waveformResult_ && waveformResult_->complete},
                         {"coverage_label", coverageLabel_->text()},
                         {"average_coverage", average_ ? averageLabel_->text() : QString()}};
+    if (choice == "Spectrum" || choice == "Average spectrum") {
+        request.metadata.insert("method", choice == "Spectrum" ? "single_complete_window"
+                               : maxHold_->isChecked() ? "max_hold" : "linear_power_mean");
+        request.metadata.insert("band_measurements",
+                                (choice == "Spectrum" ? spectrum_ : averagePlot_)
+                                    ->bandMeasurements());
+    }
     if (choice == "Waterfall") {
         const auto [left, right] = waterfall_->frequencyRange();
         request.metadata.insert("frequency_left_hz", left);

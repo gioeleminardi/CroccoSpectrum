@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(CroccoSpectrum VERSION 0.4.1 LANGUAGES CXX)
+project(CroccoSpectrum VERSION 0.5.0 LANGUAGES CXX)
 include(cmake/BuildVersion.cmake)
 
 set(CMAKE_CXX_STANDARD 20)

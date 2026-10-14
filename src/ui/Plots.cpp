@@ -1,4 +1,6 @@
 #include "Plots.h"
+#include "DisplayUnits.h"
+#include <QAction>
 #include <QApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -57,26 +59,6 @@ QRectF area(const QWidget &widget)
 QString number(double value)
 {
     return QString::number(value, 'g', 10);
-}
-
-QString frequencyText(double value)
-{
-    const double magnitude = std::abs(value);
-    const double divisor = magnitude >= 1e9 ? 1e9 : magnitude >= 1e6 ? 1e6
-                                                 : magnitude >= 1e3 ? 1e3 : 1;
-    const QString unit = divisor == 1e9   ? "GHz"
-                         : divisor == 1e6 ? "MHz"
-                         : divisor == 1e3 ? "kHz" : "Hz";
-    return QString::number(value / divisor, 'g', 15) + " " + unit;
-}
-
-QString durationText(double value)
-{
-    if (value > 0 && value < 1e-3)
-        return number(value * 1e6) + " µs";
-    if (value > 0 && value < 1)
-        return number(value * 1e3) + " ms";
-    return number(value) + " s";
 }
 
 void measurementReadout(QPainter &painter, const QRectF &plot, const QString &text)
@@ -196,6 +178,31 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     setMinimumSize(360, 180);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+    setContextMenuPolicy(Qt::ActionsContextMenu);
+    signalBandAction_ = new QAction("Use selection as signal band", this);
+    signalBandAction_->setObjectName("setSignalBand");
+    noiseBandAction_ = new QAction("Use selection as noise band", this);
+    noiseBandAction_->setObjectName("setNoiseBand");
+    clearBandsAction_ = new QAction("Clear signal and noise bands", this);
+    clearBandsAction_->setObjectName("clearPowerBands");
+    addActions({signalBandAction_, noiseBandAction_, clearBandsAction_});
+    connect(signalBandAction_, &QAction::triggered, this, [this] {
+        signalBins_ = measurementBins_;
+        updateMeasurementPower();
+        update();
+    });
+    connect(noiseBandAction_, &QAction::triggered, this, [this] {
+        noiseBins_ = measurementBins_;
+        updateMeasurementPower();
+        update();
+    });
+    connect(clearBandsAction_, &QAction::triggered, this, [this] {
+        signalBins_.reset();
+        noiseBins_.reset();
+        updateMeasurementPower();
+        update();
+    });
+    updateMeasurementPower();
 }
 void SpectrumPlot::setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom)
 {
@@ -228,6 +235,7 @@ void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFre
     view_ = std::move(view);
     scale_ = scale;
     center_ = centerFrequency;
+    updateMeasurementHeight();
     update();
 }
 void SpectrumPlot::clear()
@@ -242,33 +250,45 @@ void SpectrumPlot::clear()
 void SpectrumPlot::clearMeasurement()
 {
     measurementBins_.reset();
-    measurementMean_.reset();
+    signalBins_.reset();
+    noiseBins_.reset();
+    bandMeasurements_ = {};
     const bool active = isMeasuring();
     measuring_ = false;
     measurementDrag_ = {};
     unsetCursor();
     if (active)
         emit measurementActiveChanged(false);
+    updateMeasurementPower();
     update();
 }
 void SpectrumPlot::updateMeasurementPower()
 {
-    measurementMean_.reset();
-    if (!measurementBins_ || measuring_ || (preview_ && !preview_->spectrum.valid) ||
-        (average_ && average_->validWindows == 0))
-        return;
-    const auto power = powers();
-    const auto [first, last] = std::minmax(measurementBins_->first, measurementBins_->second);
-    if (last >= power.size())
-        return;
-    double mean = 0;
-    for (auto bin = first; bin <= last; ++bin) {
-        if (!std::isfinite(power[bin]) || power[bin] < 0)
-            return;
-        // Include zero-valued bins. An online linear mean avoids sum overflow.
-        mean += (power[bin] - mean) / static_cast<double>(bin - first + 1);
+    const bool valid = (preview_ && preview_->spectrum.valid) ||
+                       (average_ && average_->validWindows > 0);
+    const double enbw = preview_ ? preview_->spectrum.enbwHz : average_ ? average_->enbwHz : 0;
+    bandMeasurements_ = measureBands(frequencies(), valid ? powers() : std::span<const double>{},
+                                     scale_, enbw, measuring_ ? std::nullopt : measurementBins_,
+                                     signalBins_, noiseBins_);
+    if (average_ && maxHold_ && bandMeasurements_.contains("snr"))
+        bandMeasurements_["snr"] = QJsonObject{{"available", false},
+                                               {"reason", "SNR requires the average trace"}};
+    const bool selected = !isMeasuring() &&
+                          bandMeasurements_.value("selected").toObject()["available"].toBool();
+    signalBandAction_->setEnabled(selected);
+    noiseBandAction_->setEnabled(selected);
+    clearBandsAction_->setEnabled(signalBins_.has_value() || noiseBins_.has_value());
+    updateMeasurementHeight();
+}
+void SpectrumPlot::updateMeasurementHeight()
+{
+    int minimum = 180;
+    if (signalBins_ || noiseBins_) {
+        const QRect body(0, 0, std::max(1, width() - 120), 10000);
+        minimum = std::max(minimum, fontMetrics().boundingRect(body, Qt::TextWordWrap,
+                                                               measurementText()).height() + 86);
     }
-    measurementMean_ = mean;
+    setMinimumHeight(minimum);
 }
 QString SpectrumPlot::measurementText() const
 {
@@ -278,17 +298,41 @@ QString SpectrumPlot::measurementText() const
     const double first = frequency[measurementBins_->first];
     const double last = frequency[measurementBins_->second];
     const double center = view_.absoluteFrequency ? center_ : 0;
-    const QString mean = !measurementMean_ ? "unavailable"
-                         : *measurementMean_ == 0 ? "−∞ " + powerUnit(scale_)
-                         : number(powerToDb(*measurementMean_)) + " " + powerUnit(scale_);
+    const auto dbText = [](const QJsonValue &value) {
+        return value.isDouble() ? decibelText(value.toDouble())
+             : value.toString() == "inf" ? QString("∞") : QString("−∞");
+    };
+    const auto band = bandMeasurements_["selected"].toObject();
+    const QString power = band["available"].toBool()
+                              ? dbText(band["power_dbfs"]) + " dBFS" : "unavailable";
     const QString source = average_ ? (maxHold_ ? "Max-hold trace" : "Average trace")
                                    : QString("FFT frame %1").arg(preview_->spectrumStart);
-    return QString("Start: %1 · End: %2\nΔf: %3\n%4\n%5")
+    QString text = QString("Start: %1 · End: %2\nΔf: %3 · BW: %4\n%5")
         .arg(frequencyText(first + center), frequencyText(last + center),
              frequencyText(std::abs(last - first)),
+             band["available"].toBool() ? frequencyText(band["bandwidth_hz"].toDouble())
+                                       : QString("unavailable"),
              measuring_ ? "Click to set end · Esc to clear"
-                        : "Mean spectral power: " + mean,
-             source);
+                        : "Integrated band power: " + power);
+    for (const auto &name : {QString("signal"), QString("noise")}) {
+        const auto assigned = bandMeasurements_[name].toObject();
+        if (!assigned.isEmpty()) {
+            const QString label = name == "signal" ? "Signal" : "Noise";
+            text += "\n" + label + ": " +
+                    (assigned["available"].toBool()
+                         ? frequencyText(assigned["lower_hz"].toDouble() + center) + " … " +
+                               frequencyText(assigned["upper_hz"].toDouble() + center) + " · " +
+                               dbText(assigned["power_dbfs"]) + " dBFS"
+                         : QString("unavailable"));
+        }
+    }
+    const auto snr = bandMeasurements_["snr"].toObject();
+    if (!snr.isEmpty())
+        text += "\nSNR: " + (snr["available"].toBool()
+                    ? dbText(snr["snr_db"]) + " dB · N in signal BW: " +
+                          dbText(snr["noise_in_signal_band_dbfs"]) + " dBFS"
+                    : "unavailable (" + snr["reason"].toString() + ")");
+    return text + "\n" + source;
 }
 void SpectrumPlot::paintMeasurement(QPainter &painter)
 {
@@ -302,6 +346,22 @@ void SpectrumPlot::paintMeasurement(QPainter &painter)
                                          (right_ - left_) * plot.width();
     painter.save();
     painter.setClipRect(plot);
+    for (const auto &[bins, color] : {std::pair{signalBins_, QColor("#8ecae6")},
+                                     std::pair{noiseBins_, QColor("#c792ea")}}) {
+        if (!bins)
+            continue;
+        const double firstX = plot.left() + (frequency[bins->first] - left_) /
+                                               (right_ - left_) * plot.width();
+        const double lastX = plot.left() + (frequency[bins->second] - left_) /
+                                              (right_ - left_) * plot.width();
+        QColor fill = color;
+        fill.setAlpha(30);
+        painter.fillRect(QRectF(std::min(firstX, lastX), plot.top(), std::abs(lastX - firstX),
+                                 plot.height()), fill);
+        painter.setPen(QPen(color, 1, Qt::DashLine));
+        painter.drawLine(QPointF(firstX, plot.top()), QPointF(firstX, plot.bottom()));
+        painter.drawLine(QPointF(lastX, plot.top()), QPointF(lastX, plot.bottom()));
+    }
     painter.fillRect(
         QRectF(std::min(startX, endX), plot.top(), std::abs(endX - startX), plot.height()),
         QColor(255, 209, 102, 35));
@@ -341,7 +401,7 @@ void SpectrumPlot::paintCrosshair(QPainter &painter, double minimum, double maxi
     badge(QRectF(std::clamp(position.x() - labelWidth / 2, plot.left(), plot.right() - labelWidth),
                  plot.bottom() + 1, labelWidth, labelHeight), frequencyLabel);
     badge(QRectF(4, std::clamp(position.y() - labelHeight / 2, plot.top(), plot.bottom() - labelHeight),
-                 68, labelHeight), QString::number(level, 'f', 2));
+                 68, labelHeight), decibelText(level));
     painter.restore();
 }
 std::span<const double> SpectrumPlot::frequencies() const
@@ -407,14 +467,20 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
     const auto [minimum, maximum] = colorLimits(view_, power);
     const double extent = std::max(std::abs(left_ + (view_.absoluteFrequency ? center_ : 0)),
                                    std::abs(right_ + (view_.absoluteFrequency ? center_ : 0)));
-    const double divisor = extent >= 1e9 ? 1e9 : extent >= 1e6 ? 1e6 : extent >= 1e3 ? 1e3 : 1;
-    const QString unit = divisor == 1e9   ? "GHz"
-                         : divisor == 1e6 ? "MHz"
-                         : divisor == 1e3 ? "kHz"
-                                          : "Hz";
-    // Keep ticks compact after panning, with enough precision for narrow zooms.
-    const double tickSpacing = (right_ - left_) / (4 * divisor);
-    const int decimals = std::max(0, static_cast<int>(std::ceil(-std::log10(tickSpacing))) + 1);
+    const double divisor = frequencyDivisor(extent);
+    const QString unit = frequencyUnit(divisor);
+    std::array<QString, 5> tickLabels;
+    int widestLabel = 0;
+    for (int tick = 0; tick <= 4; ++tick) {
+        tickLabels[static_cast<std::size_t>(tick)] = frequencyNumber(
+            left_ + tick / 4.0 * (right_ - left_) + (view_.absoluteFrequency ? center_ : 0),
+            divisor);
+        widestLabel = std::max(widestLabel, painter.fontMetrics().horizontalAdvance(
+                                              tickLabels[static_cast<std::size_t>(tick)]));
+    }
+    // Preserve Hz precision on narrow plots by showing fewer labels, not fewer digits.
+    const int labelStep = plot.width() >= 4 * (widestLabel + 8) ? 1
+                          : plot.width() >= 2 * (widestLabel + 8) ? 2 : 4;
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const double x = plot.left() + fraction * plot.width();
@@ -424,13 +490,16 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
         painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         painter.setPen(foreground);
         painter.drawText(QRectF(0, y - 9, 68, 18), Qt::AlignRight | Qt::AlignVCenter,
-                         QString::number(minimum + fraction * (maximum - minimum), 'f', 1));
-        const double labelX = std::clamp(x - 65, 0.0, static_cast<double>(width() - 130));
-        painter.drawText(
-            QRectF(labelX, plot.bottom() + 5, 130, 18), Qt::AlignCenter,
-            QString::number((left_ + fraction * (right_ - left_) +
-                             (view_.absoluteFrequency ? center_ : 0)) / divisor,
-                            'f', decimals));
+                         decibelText(minimum + fraction * (maximum - minimum)));
+        if (tick % labelStep == 0) {
+            const auto &label = tickLabels[static_cast<std::size_t>(tick)];
+            const int labelWidth =
+                std::min(width(), painter.fontMetrics().horizontalAdvance(label) + 8);
+            const double labelX = std::clamp(x - labelWidth / 2.0, 0.0,
+                                            static_cast<double>(width() - labelWidth));
+            painter.drawText(QRectF(labelX, plot.bottom() + 5, labelWidth, 18), Qt::AlignCenter,
+                             label);
+        }
     }
     painter.drawText(
         QRectF(plot.left(), height() - 20, plot.width(), 18), Qt::AlignCenter,
@@ -546,15 +615,13 @@ void SpectrumPlot::updateHover(const QPointF &position)
         minimum + (plot.bottom() - position.y()) / plot.height() * (maximum - minimum);
     emit cursorChanged(QString("Bin %1 · %2 Hz · %3 %4 · Cursor: %5 Hz · %6 %4")
                            .arg(index)
-                           // A GHz center plus a narrow FFT bin needs more
-                           // precision than the compact axis tick labels.
-                           .arg(QString::number(
-                               frequency[index] + (view_.absoluteFrequency ? center_ : 0), 'g', 17))
-                           .arg(number(powerToDb(power[index])))
+                           .arg(frequencyNumber(
+                               frequency[index] + (view_.absoluteFrequency ? center_ : 0), 1))
+                           .arg(decibelText(powerToDb(power[index])))
                            .arg(powerUnit(scale_))
-                           .arg(QString::number(
-                               std::round(target + (view_.absoluteFrequency ? center_ : 0)), 'f', 0))
-                           .arg(number(level)));
+                           .arg(frequencyNumber(
+                               target + (view_.absoluteFrequency ? center_ : 0), 1))
+                           .arg(decibelText(level)));
     update();
 }
 
@@ -570,6 +637,7 @@ void SpectrumPlot::leaveEvent(QEvent *)
 void SpectrumPlot::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    updateMeasurementHeight();
     if (hoverPosition_)
         updateHover(*hoverPosition_);
 }
@@ -654,9 +722,9 @@ void SpectrumPlot::mouseReleaseEvent(QMouseEvent *event)
     if (!drag.moved) {
         measurementBins_ = std::pair{drag.pressIndex, drag.pressIndex};
         measuring_ = true;
-        measurementMean_.reset();
     } else
         emit measurementActiveChanged(false);
+    updateMeasurementPower();
     update();
     event->accept();
 }
@@ -869,9 +937,9 @@ QString WaterfallPlot::measurementText() const
     // Subtract exact frame indices before conversion, even above 2^53.
     const auto frames = first < last ? last - first : first - last;
     const double duration = static_cast<double>(frames) / sampleRate_;
-    return QString("Start: %1 s · frame %2\nEnd: %3 s · frame %4\nDuration: %5 · %6 frames%7")
-        .arg(number(static_cast<double>(first) / sampleRate_)).arg(first)
-        .arg(number(static_cast<double>(last) / sampleRate_)).arg(last)
+    return QString("Start: %1 · frame %2\nEnd: %3 · frame %4\nDuration: %5 · %6 frames%7")
+        .arg(durationText(static_cast<double>(first) / sampleRate_)).arg(first)
+        .arg(durationText(static_cast<double>(last) / sampleRate_)).arg(last)
         .arg(durationText(duration)).arg(frames)
         .arg(measuring_ ? "\nClick to set end · Esc to clear" : "");
 }
@@ -926,7 +994,7 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
     }
     painter.setPen(foreground);
     const auto timeRange = viewport_.value_or(timeSelectionRange_.value_or(result_->range));
-    const double timeScale = static_cast<double>(timeRange.end) / sampleRate_ < 0.1 ? 1000 : 1;
+    const auto [timeScale, timeSymbol] = timeUnit(static_cast<double>(timeRange.end) / sampleRate_);
     for (int tick = 0; tick <= 4; ++tick) {
         const double fraction = tick / 4.0;
         const auto row = std::min(
@@ -945,11 +1013,11 @@ void WaterfallPlot::paintEvent(QPaintEvent *)
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
                      QString("Time (%6) · %1 rows · %2 … %3 %4 · %5")
                          .arg(result_->rowStarts.size())
-                         .arg(QString::number(minimum, 'f', 0))
-                         .arg(QString::number(maximum, 'f', 0))
+                         .arg(decibelText(minimum))
+                         .arg(decibelText(maximum))
                          .arg(powerUnit(scale_))
                          .arg(view_.palette)
-                         .arg(timeScale == 1000 ? "ms" : "s"));
+                         .arg(timeSymbol));
     const QRectF legend(plot.right() + 6, plot.top(), 10, plot.height());
     for (int y = 0; y < static_cast<int>(legend.height()); ++y) {
         painter.setPen(QColor::fromRgb(paletteColor(view_.palette, 1.0 - y / legend.height())));
@@ -1161,13 +1229,14 @@ void WaterfallPlot::updateHover(const QPointF &position)
     const double frequency =
         left_ + (position.x() - plot.left()) / plot.width() * (right_ - left_) +
         (view_.absoluteFrequency ? center_ : 0);
-    emit cursorChanged(QString("%1 row %2 · frame %3 · %4 s · %5 Hz · click to %6 · "
+    emit cursorChanged(QString("%1 row %2 · frame %3 · %4 · %5 Hz · click to %6 · "
                                "double-click to seek")
                            .arg(result_->aggregated ? "Overview" : "Preview")
                            .arg(*row)
                            .arg(result_->rowStarts[*row])
-                           .arg(number(static_cast<double>(result_->rowStarts[*row]) / sampleRate_))
-                           .arg(QString::number(frequency, 'g', 17))
+                           .arg(durationText(
+                               static_cast<double>(result_->rowStarts[*row]) / sampleRate_))
+                           .arg(frequencyNumber(frequency, 1))
                            .arg(frameFrozen_ ? "unfreeze" : "freeze"));
     emit frameHovered(result_->rowStarts[*row]);
 }
@@ -1676,9 +1745,9 @@ void WaveformPlot::paintEvent(QPaintEvent *)
     painter.drawText(QRectF(0, plot.top() - 8, 68, 18), Qt::AlignRight, number(maximum));
     painter.drawText(QRectF(0, plot.bottom() - 10, 68, 18), Qt::AlignRight, number(minimum));
     painter.drawText(QRectF(plot.left(), height() - 24, plot.width(), 20), Qt::AlignCenter,
-                     QString("%1 … %2 s · frames [%3, %4) · %5 invalid · %6 clipped components")
-                         .arg(number(static_cast<double>(viewport_.begin) / sampleRate_))
-                         .arg(number(static_cast<double>(viewport_.end) / sampleRate_))
+                     QString("%1 … %2 · frames [%3, %4) · %5 invalid · %6 clipped components")
+                         .arg(durationText(static_cast<double>(viewport_.begin) / sampleRate_))
+                         .arg(durationText(static_cast<double>(viewport_.end) / sampleRate_))
                          .arg(viewport_.begin)
                          .arg(viewport_.end)
                          .arg(result_->invalidSamples)

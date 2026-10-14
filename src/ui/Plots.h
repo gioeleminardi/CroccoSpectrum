@@ -34,6 +34,7 @@ class SpectrumPlot : public QWidget
         return measuring_ || measurementDrag_.target != MeasurementDrag::Target::None;
     }
     [[nodiscard]] QString measurementText() const;
+    [[nodiscard]] QJsonObject bandMeasurements() const { return bandMeasurements_; }
   signals:
     void cursorChanged(QString text);
     void frequencyHovered(double frequency); // Baseband Hz, matching the linked plot ranges.
@@ -57,6 +58,7 @@ class SpectrumPlot : public QWidget
     std::span<const double> powers() const;
     std::optional<std::size_t> binAt(const QPointF &position) const;
     void updateMeasurementPower();
+    void updateMeasurementHeight();
     void paintMeasurement(QPainter &painter);
     void updateHover(const QPointF &position);
     void paintCrosshair(QPainter &painter, double minimum, double maximum);
@@ -70,7 +72,9 @@ class SpectrumPlot : public QWidget
     double dragLeft_ = 0, dragRight_ = 1;
     int dragX_ = -1;
     std::optional<std::pair<std::size_t, std::size_t>> measurementBins_;
-    std::optional<double> measurementMean_;
+    std::optional<std::pair<std::size_t, std::size_t>> signalBins_, noiseBins_;
+    QJsonObject bandMeasurements_;
+    QAction *signalBandAction_ = nullptr, *noiseBandAction_ = nullptr, *clearBandsAction_ = nullptr;
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;
     std::optional<QPointF> hoverPosition_;

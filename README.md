@@ -244,7 +244,7 @@ range and applies manual limits immediately.
 | Freeze / resume the shared frame | Click inside either time plot |
 | Seek to a sample / exact time | Double-click a time plot / **View → Seek to time…** |
 | Select an exact analysis interval | Enter 64-bit `[start, end)` frame bounds and apply |
-| Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
+| Measure spectrum width and integrated power | `Shift` + left-click the start, then left-click the end |
 | Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
 | Move / resize a measurement | `Shift` + drag its band / boundary marker |
 | Clear a measurement | `Escape` in that plot |
@@ -252,10 +252,30 @@ range and applies manual limits immediately.
 | Zoom / pan time | `Ctrl++` or `Ctrl+-` / `Alt+Left` or `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
 
-Spectrum endpoints snap to FFT bins. The readout averages the selected bins in
-linear power before converting to dB; it reports mean spectral power, rather
-than integrated band power. Waterfall duration uses the exact difference between
-row-start frames. Sampled and aggregated rows limit event-boundary resolution.
+Spectrum endpoints snap to FFT bins and include both endpoints. Integrated band
+power is reported in **dBFS**, using `sum(PSD × bin spacing)` or the equivalent
+`sum(spectrum power × bin spacing / ENBW)`. The bandwidth is the included bin
+count times the bin spacing, so a single-bin selection still has nonzero
+bandwidth. Include the tone's window main lobe/leakage when measuring its power.
+Frequency labels round to the nearest Hz, retaining compact kHz/MHz/GHz units.
+Time readouts use s, ms, µs or ns according to magnitude. Numeric exports retain
+the full frequency precision used by analysis. UI dB, dBFS and dBFS/Hz values use
+one decimal place; power/SNR calculations and numeric exports retain full precision.
+Waterfall duration uses the exact difference between row-start frames. Sampled
+and aggregated rows limit event-boundary resolution.
+
+Right-click a completed spectrum selection and choose **Use selection as signal
+band** or **Use selection as noise band**. Assign two separate bands on the same
+single-frame spectrum or completed interval average. Assignments copy the bounds;
+reassign after editing them. Noise is normalized to the signal bandwidth:
+`N = Pnoise × Bsignal / Bnoise`; **SNR** is
+`10 log10(max(Psignal_band − N, 0) / N)`. This assumes representative additive
+noise density; choose a noise-only band away from tones, leakage, DC and Nyquist.
+Overlapping bands report SNR unavailable. Nonpositive net signal reports −∞ dB;
+zero measured noise with positive signal reports +∞ dB. Both zero is unavailable.
+Interval SNR uses the average trace; max-hold bins can come from different times.
+**Clear signal and noise bands** keeps the ordinary selection; Escape clears all
+bands. See [the numerical contract](docs/ARCHITECTURE.md#units-and-numerical-contract).
 
 Waterfall markers fill draft Start/End fields without applying the interval.
 The later row's start is the exclusive end. **Average waterfall selection**
@@ -277,7 +297,7 @@ sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readi
 
 | Output | Contents |
 | --- | --- |
-| **CSV** | Numeric spectrum or average/max-hold bins, settings, and coverage metadata |
+| **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR, settings, and coverage metadata |
 | **PNG** | Plot snapshot with embedded recording and analysis metadata |
 | **Raw sample range** | Original sample bytes plus a `.rfmeta.json` sidecar |
 | **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
@@ -285,7 +305,11 @@ sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readi
 Recordings are opened read-only. Exports refuse existing output paths, and
 cancelled writes are not published as completed outputs. Application JSON stores
 sample indices as decimal strings to preserve 64-bit values. Spectrum CSV and PNG
-use the displayed FFT window; waterfall PNG metadata records viewport bounds.
+use the displayed FFT window; average exports use the completed analyzed interval.
+Band metadata includes baseband bounds in Hz, bandwidth, dBFS power, SNR/noise
+normalization, ENBW and status; bin columns keep their spectrum/PSD units. JSON
+represents infinite logarithmic results as `"-inf"`/`"inf"`. Waterfall PNG metadata
+records viewport bounds.
 
 <details>
 <summary><strong>Sample normalization and spectral conventions</strong></summary>
@@ -328,7 +352,12 @@ The portable folder includes `croccospectrum-cli`. The examples below use a
 ```
 
 Run `--help` for all format, rate, window, overlap, and output options. Commands
-emit JSON; spectrum and average also support CSV through `--output`. Raw files
+emit JSON; spectrum and average also support CSV through `--output`. Add
+`--band lower:upper`, `--signal-band lower:upper` and `--noise-band lower:upper`
+to `spectrum` or `average` for integrated power/SNR. Bounds are inclusive baseband
+Hz, must lie within the FFT bin-center domain, and must include at least one bin.
+For example, `--signal-band 10000:20000 --noise-band 30000:50000` uses different
+signal/noise bandwidths with the normalization above. Raw files
 use the initial import preset unless flags specify another layout. Metadata
 inputs use their saved interpretation; raw-format flags apply to raw binaries.
 
