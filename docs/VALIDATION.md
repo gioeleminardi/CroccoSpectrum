@@ -1,10 +1,68 @@
 # Validation evidence
 
 Recorded checks for CroccoSpectrum 0.1.0, 0.1.1, and the changes included in
-0.1.2, 0.1.3, 0.1.4, 0.1.5, 0.1.6, and 0.2.0 as of 2026-10-09.
+0.1.2, 0.1.3, 0.1.4, 0.1.5, 0.1.6, and 0.2.0, with dated follow-up checks below.
 The environments and test coverage below define the scope of this evidence.
 
 ## Passed
+
+- UI decibel rounding (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass. One-decimal readouts cover spectrum power, PSD,
+  band power, normalized noise, SNR, hover/crosshair and plot limits, including
+  zero/infinite results and suppression of negative-zero labels. Spectrum and
+  average readouts were visually inspected at normal and doubled scale, including
+  narrow plots. The 397 independent numerical checks and GUI export regressions
+  pass with unrounded numerical values. Desktop UI and Wayland URL/live HTTPS
+  update cases remain skipped as detailed below.
+- Display units and frequency precision (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass, including 96 UI cases and 397 independent
+  numerical comparisons/invalid-input checks. Focused GUI checks cover s/ms/µs/ns
+  selection endpoints, duration, hover and recording/window/hop readouts, plus
+  whole-Hz rounding and panned Hz/kHz/MHz/GHz axes. Normal and doubled-scale
+  renders were inspected, including narrow GHz plots with fewer tick labels to
+  avoid overlap. Seven desktop UI cases and the Wayland URL/live HTTPS update
+  cases remain skipped. Numeric exports retain full analysis precision.
+- Integrated band power and SNR (2026-10-14, Fedora 44 Debug
+  `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
+  all seven CTest suites pass. The independent NumPy/SciPy suite passes 397
+  comparisons and invalid-input checks, including band integration for tones,
+  off-bin leakage, noise, tone plus noise, DC/Nyquist and silence across all four
+  windows, both scales, real/complex input, displayed FFTs and interval averages.
+  Unequal signal/noise bandwidths, noise subtraction, nonzero analyzed intervals,
+  invalid bounds and overlap are covered. Core/UI regressions cover zero and
+  unavailable powers, negative-infinite/positive-infinite SNR, selection editing,
+  assigned-band refresh and max-hold exclusion. GUI CSV/PNG exports verify band
+  metadata, DSP settings and actual intervals for both spectrum and averages;
+  SciPy checks also inspect CLI CSV metadata. Spectrum/average readouts were
+  visually inspected offscreen at normal and doubled scale, including narrow
+  plots. Seven desktop-specific UI cases and two update cases (Wayland URL
+  handoff and opt-in live HTTPS) remain skipped; no package, live-network or
+  field validation is claimed by these checks.
+- Threaded benchmark refresh (2026-10-14, Release
+  `0.4.1-dev.local.g69c4ea4.dirty`): all seven local Fedora 44 CTest suites pass
+  with GCC 16.2.1, Qt 6.11.2 and FFTW 3.3.10, including the independent numerical
+  reference suite. Desktop-specific and opt-in live HTTPS cases skip as expected.
+  The dense 400 MB / 4 GB / 40 GB matrix completes 40 CLI passes and nine offscreen
+  GUI smoke launches. Hann FFTs of 4,096 and 65,536 with 50% overlap pass tone
+  frequency/power and complete-window-count checks. One fixture-advised cold pass
+  and three warm repeats per CLI workload record process-wide CPU time, wall time,
+  disk input blocks and peak RSS. Warm average CPU/wall ratios confirm parallel
+  execution; a small shell parent prevents Python launch memory from inflating
+  CLI peak RSS. Argument bounds, paths with spaces and CLI failure propagation
+  are checked. Results and scope are in [BENCHMARKS.md](BENCHMARKS.md). The 40 GB
+  case checks tail access and bounded startup, not a full average. Portable
+  packages, sanitizers and soak tests were not rerun for this benchmark refresh.
+
+- Ubuntu 24.04 docking workaround (2026-10-14 working tree): all seven local
+  Debug CTest suites pass with system Qt 6.4.2 and GNOME 46. Native XWayland
+  checks drag all four panels outside the main window and back into its left
+  dock area, verify pointer placement and released mouse grabs, and exercise
+  maximized floating panels across the available screens. Startup checks
+  reproduce the previous Wayland default and pass after the workaround,
+  including environment and command-line overrides. The local Release build
+  and offline smoke launches also pass. Portable packages were not rebuilt.
 
 - Independent waveform zoom (2026-10-12 working tree): all seven local Fedora 44
   Release CTest suites pass with Qt 6.11.2. GUI regressions cover zooming below
@@ -42,8 +100,8 @@ The environments and test coverage below define the scope of this evidence.
   run passed its 70 test cases but reported a race inside Qt's
   QFileInfoGatherer/QObject connection machinery during a file-dialog export;
   that full run is not a sanitizer pass. A 10-second offscreen mixed navigation
-  run including the 1,048,576-point FFT also passes. Local performance evidence
-  is recorded in BENCHMARKS.md; no portable packages were rebuilt for this change.
+  run including the 1,048,576-point FFT also passes. No portable packages were
+  rebuilt for this change.
 
 - Waterfall density and minimap (2026-10-09 working tree): all seven CTest suites
   pass on Fedora 44 in Debug and Release with Qt 6.11.2 / FFTW 3.3.10, including
@@ -54,9 +112,8 @@ The environments and test coverage below define the scope of this evidence.
   both resize handles, bounds and minimum span, frame indices above 2^53,
   measurements across refinement, stale-request rejection, hover outside the
   analysis range, exact-overview coexistence, and exported viewport metadata.
-  Offscreen images were inspected at normal and 2× display scaling. Dense
-  400 MB / 4 GB benchmark smoke checks and a mixed navigation run including the
-  1,048,576-point FFT pass; measurements and scope are in BENCHMARKS.md.
+  Offscreen images were inspected at normal and 2× display scaling. A mixed
+  navigation run including the 1,048,576-point FFT passes.
 
 - Development/release channels (2026-10-09): all seven CTest suites pass in Fedora
   44 Debug / Qt 6.11.2 and Ubuntu 24.04 Release / official Qt 6.11.2 SDK. The
@@ -200,17 +257,14 @@ The environments and test coverage below define the scope of this evidence.
   Ubuntu 26.04 and Fedora 44 containers with no host Qt/Python installed.
 - Fedora native X11 and Wayland launch/preview smoke checks; rendered GUI screenshot
   inspected. The final artifacts also have a no-FUSE AppImage extraction launch.
-- Dense 400 MB, 4 GB and 40 GB fixtures; bounded first views and tail spectra;
-  400 MB/4 GB full averages. See [BENCHMARKS.md](BENCHMARKS.md).
-- Short GUI stress: 499 mixed-operation cycles over 60 seconds, latest-result and
-  palette invariants preserved; memory/timing recorded in the benchmark report.
+- Short GUI stress: mixed operations preserve latest-result and palette invariants.
 - Shared CI pipeline executed locally in fresh Ubuntu 24.04 containers: all
   Release, Debug and ASAN/UBSAN targets build and all four suites pass in each
   configuration. All seven outputs, tar executable permissions and checksums
   were checked. The final CI Release folder/AppImage launch offline on Ubuntu
   24.04/26.04 and Fedora 44. GitHub workflow passes actionlint.
 
-Performance and original sanitizer evidence above was collected for 0.1.0.
+Original sanitizer evidence above was collected for 0.1.0.
 The local CI runs add fresh 0.1.1 Release/Debug and ASAN/UBSAN evidence. TSAN was
 not repeated for the CI change; the numerical algorithms and recording/session
 formats remain unchanged.
@@ -218,7 +272,7 @@ formats remain unchanged.
 The synchronized frame and freeze changes included in 0.1.2 were checked in the
 Fedora Debug build before the version bump. No build or package qualification
 was completed for the version bump; the older sanitizer, Qt 6.4 compatibility,
-packaging, and benchmark evidence does not include these changes.
+and packaging evidence does not include these changes.
 
 Sanitizer checks used the Ubuntu builder with compiler-matched runtimes.
 Build/test logs are generated under the ignored `build/` directory.
@@ -228,9 +282,10 @@ Build/test logs are generated under the ignored `build/` directory.
 Recording checks use synthetic fixtures. Raw-file interpretation must match the
 recording writer's format, component order, byte order, and sample rate.
 
-Native desktop evidence is limited to Fedora X11/Wayland smoke checks. Ubuntu
-launch checks use containers. Native high-DPI and multiple-monitor interaction and
-long-duration stability have not been validated by the recorded runs.
+Native desktop evidence includes Fedora X11/Wayland smoke checks and the focused
+Ubuntu 24.04 XWayland docking checks above. Older Ubuntu package launch checks
+use containers. Comprehensive native high-DPI and multiple-monitor interaction
+and long-duration stability have not been validated by the recorded runs.
 
 The recorded checks do not cover comprehensive disk-full/permission failures,
 broader parser fuzzing, blocked network storage, the sustained-storage ceiling,

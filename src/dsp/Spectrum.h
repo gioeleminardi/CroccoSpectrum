@@ -2,6 +2,7 @@
 
 #include "recording/Recording.h"
 #include <fftw3.h>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -25,6 +26,16 @@ struct DspSettings {
 QString windowName(Window window);
 QString powerUnit(PowerScale scale);
 double powerToDb(double power);
+
+struct BandPower {
+    std::size_t firstBin = 0, lastBin = 0; // Inclusive bin centers.
+    double lowerHz = 0, upperHz = 0, bandwidthHz = 0;
+    double power = 0; // Integrated normalized mean-square power, independent of display scale.
+};
+
+std::optional<BandPower> integrateBand(std::span<const double> frequencies,
+                                     std::span<const double> powers, PowerScale scale,
+                                     double enbwHz, std::size_t first, std::size_t last);
 
 struct SpectrumResult {
     std::vector<double> power; // Linear power; average before taking logarithms.

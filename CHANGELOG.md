@@ -4,6 +4,28 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.5.0 — 2026-10-14 — Band power and SNR measurements
+
+- Round UI dB, dBFS and dBFS/Hz readouts to one decimal place, including band
+  power, SNR, cursors and plot limits. Keep calculations and numeric exports at
+  full precision.
+- Use dynamic s/ms/µs/ns units for time readouts and whole-Hz precision for
+  frequency labels, retaining compact kHz/MHz/GHz units in plots and measurements.
+- Report integrated selected-band power in dBFS, correcting spectrum scaling for
+  window ENBW. Add explicit signal/noise bands and noise-subtracted SNR normalized
+  to the signal bandwidth on displayed FFTs and completed averages. Include band
+  bounds, units and SNR metadata in CSV/PNG exports and CLI band measurements.
+- Refresh the dense-file benchmark for automatic parallel analysis, with two FFT
+  lengths, repeated warm runs, CPU/wall and memory reporting, and recorded build
+  context. Update the performance report and README, keeping only the current
+  benchmark results.
+- Fix panels failing to detach or jumping to the main window's center on
+  Ubuntu 24.04 Wayland sessions by preferring XWayland when available. Preserve
+  explicit Qt platform overrides and other systems' default backend selection.
+- Fix manual spectrum and waterfall limits being ignored while Automatic range
+  is enabled. Editing Minimum or Maximum now disables Automatic range and
+  applies the entered limits immediately without recomputing analysis.
+
 ## 0.4.0 — 2026-10-12 — Waveform and waterfall navigation
 
 - Shorten the waveform scan button and menu action to Exact Waveform. Add

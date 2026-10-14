@@ -63,6 +63,34 @@ double powerToDb(double power)
     return power > 0 ? 10.0 * std::log10(power) : -std::numeric_limits<double>::infinity();
 }
 
+std::optional<BandPower> integrateBand(std::span<const double> frequencies,
+                                     std::span<const double> powers, PowerScale scale,
+                                     double enbwHz, std::size_t first, std::size_t last)
+{
+    if (first > last)
+        std::swap(first, last);
+    if (frequencies.size() < 2 || frequencies.size() != powers.size() || last >= powers.size())
+        return {};
+    const double spacing = frequencies[1] - frequencies[0];
+    if (!std::isfinite(spacing) || spacing <= 0 ||
+        (scale == PowerScale::Spectrum && (!std::isfinite(enbwHz) || enbwHz <= 0)))
+        return {};
+    // Spectrum bins have coherent-gain normalization. Divide by ENBW to get
+    // PSD, then integrate using the FFT spacing, including DC/Nyquist once.
+    const double factor = scale == PowerScale::Density ? spacing : spacing / enbwHz;
+    double total = 0;
+    for (auto bin = first; bin <= last; ++bin) {
+        if (!std::isfinite(powers[bin]) || powers[bin] < 0)
+            return {};
+        total += powers[bin] * factor;
+    }
+    const double bandwidth = static_cast<double>(last - first + 1) * spacing;
+    if (!std::isfinite(total) || !std::isfinite(bandwidth) ||
+        !std::isfinite(frequencies[first]) || !std::isfinite(frequencies[last]))
+        return {};
+    return BandPower{first, last, frequencies[first], frequencies[last], bandwidth, total};
+}
+
 SpectrumEngine::SpectrumEngine(SampleKind kind, double sampleRate, DspSettings settings)
     : kind_(kind), sampleRate_(sampleRate), settings_(settings)
 {

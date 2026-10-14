@@ -1,122 +1,95 @@
-# Performance evidence — 2026-10-06
+# Performance evidence
 
-Reference machine: AMD Ryzen 9 9950X3D (16 cores/32 threads), 32 GiB RAM,
-Samsung 9100 PRO NVMe, local Btrfs, Fedora 44 KDE. Release application built
-with GCC 13.3 on Ubuntu 24.04; bundled Qt 6.11.2 and FFTW 3.3.10. DSP uses one
-worker and single-threaded FFTW. These results are measurements on this machine,
-not guaranteed performance on other storage/CPUs or encodings.
+## Current threaded analysis — 2026-10-14
 
-Dense synthetic int16 complex I/Q at 100 MS/s, known +6.25 MHz tone plus noise.
-Sizes are decimal bytes. The allocated sizes match the logical sizes: these
-are dense fixtures, separate from the 100 GiB sparse address test. Every checked
-spectrum/average finds the tone within one bin and power within 0.1 dB.
-The complete machine-readable run is [benchmarks.json](benchmarks.json).
+Reference machine: AMD Ryzen 9 9950X3D (16 cores/32 threads), 32 GiB installed RAM
+(30.94 GiB visible to Linux), Samsung 9100 PRO NVMe, local Btrfs with zstd
+compression, Fedora 44. Release build `0.4.1-dev.local.g69c4ea4.dirty`, GCC 16.2.1,
+system Qt 6.11.2 and FFTW 3.3.10. The full build identity, host, settings and
+individual measurements are in [benchmarks.json](benchmarks.json).
 
-| Workload | Advised cold | Warm | Peak process RSS |
-| --- | --- | --- | --- |
-| Average 400 MB, Hann 4096, 50% overlap | 1.029 s / 388.5 MB/s | 1.012 s / 395.1 MB/s | ~22.5 MiB |
-| Average 4 GB, same settings | 10.160 s / 393.7 MB/s | 10.007 s / 399.7 MB/s | ~22.5 MiB |
-| Spectrum at end of dense 40 GB | 17 ms process wall time | 3.4 ms process wall time | ~20.2 MiB |
-| GUI open/preview/paint, 400 MB | 138 ms total | — | See GUI stress run |
-| GUI open/preview/paint, 4 GB | 131 ms total | — | See GUI stress run |
-| GUI open/preview/paint, 40 GB | 150 ms total | — | See GUI stress run |
+Large analysis passes now distribute independent FFT windows across bounded
+workers, with reductions consumed in window order. Each FFTW transform remains
+single-threaded. For these long average workloads on this host, the policy in
+`src/app/Analysis.cpp` selects seven workers at FFT 4,096 and six at FFT 65,536.
+Short jobs remain serial; larger FFT buffers can lower the worker count. These
+policy counts are derived from the implementation, not a thread-count profiler.
 
-GUI timings include the smoke command's intentional 100 ms paint/layout settling
-delay and are offscreen. The file cache was warmed before these GUI measurements.
-The initial preview reads bounded, distributed windows, not the whole file.
-There was no full 40 GB average measurement in this run.
+### Exact whole-file averages
 
-“Advised cold” means `fsync` then `POSIX_FADV_DONTNEED` on this fixture only.
-This is advisory eviction, not proof that every layer of the storage stack was
-cold. The following complete pass warms the fixture for the warm measurement.
-Whole-average throughput corresponds to about 0.97–1.00 recording seconds per
-wall-clock second for this workload; arbitrary FFT lengths/overlaps and FP64
-inputs need their own measurements.
+Dense synthetic signed int16 complex I/Q at 100 MS/s, little-endian, known
++6.25 MHz tone at approximately −6.02 dBFS plus seeded noise. Hann windows,
+50% overlap, spectrum scaling, no DC removal or conjugation. Each workload has
+one fixture-advised cold pass followed by **three warm repeats**. Warm columns
+show the median and the observed range; throughput uses logical file bytes
+divided by the median CLI elapsed time. Peak RSS is the maximum across all four
+passes of that workload.
 
-A 60.071-second offscreen GUI mixed-operation run completed 499 cycles:
-first preview 16 ms, seek-result p95 113 ms, peak RSS 73.1 MiB. The run alternates
-FFTs/ranges/colors, replaces whole-file averages with local previews and checks
-that the displayed result belongs to the latest range/settings. This is a short
-stress test; it does not measure long-duration stability or native-desktop latency.
+| Whole-file average | Advised cold | Warm median (range) | Warm throughput | Peak process RSS |
+| --- | --- | --- | --- | --- |
+| 400 MB, FFT 4,096 | 0.340 s | **0.309 s** (0.210–0.314 s) | **1,296 MB/s** | 109.8 MiB |
+| 4 GB, FFT 4,096 | 2.320 s | **2.865 s** (2.066–2.969 s) | **1,396 MB/s** | 122.4 MiB |
+| 400 MB, FFT 65,536 | 0.453 s | **0.444 s** (0.435–0.495 s) | **901 MB/s** | 110.2 MiB |
+| 4 GB, FFT 65,536 | 5.104 s | **4.299 s** (4.228–5.062 s) | **930 MB/s** | 109.8 MiB |
 
-The largest FFT (1,048,576), single int16 complex window, took 36.8 ms of CLI
-analysis time with 78.5 MiB peak RSS. Its independent tone/normalization test also
-passes. GUI/cache memory for many largest-FFT snapshots is a separate workload.
+Warm average runs reported zero disk input blocks. Their median process CPU/wall
+ratios range from **5.76 to 6.64**, confirming execution across multiple CPUs;
+these ratios are average CPU use, not worker counts. CPU seconds include all
+threads and are measured separately from elapsed time. The CLI elapsed timer
+excludes file opening and final JSON serialization; complete process wall time
+also includes the small shell launcher, startup and output serialization.
 
-CPU sampling with `perf` attributed about 27% of baseline scan samples to
-`hypot`, 25% to decoding, and 5.5% to integer scale calculation. A guarded ordinary
-power calculation and a portable signed-int16 decoder path improved the same
-400 MB average from ~133 MB/s to ~395 MB/s. Extreme floating-point PSD retains
-scaled magnitude arithmetic and has dedicated regression cases. No fast-math,
-GPU, architecture-specific SIMD requirement, or approximate averaging was added.
+The harness launches the CLI from a small shell parent before reading its
+`getrusage` peak RSS. Direct launches from Python can inherit the launcher's
+larger pre-exec memory peak, especially after parsing large numeric arrays.
+The reported values include the analyzer's libraries, results, coordinator and
+worker buffers; the 128 MiB worker-storage estimate is not a process RSS limit.
 
-The reference system uses NVMe storage; a separate sustained sequential-read
-ceiling was not measured. Network/HDD blocked-I/O cancellation, native interaction
-p95, recorder-produced files, and long-duration stability were not measured in
-this run.
+### Bounded large-file access and GUI startup
 
-## Waterfall upgrade regression checks — 2026-10-09
+Three warm tail-spectrum repeats and three offscreen GUI smoke launches per
+fixture. Spectrum rows measure complete process wall time; GUI cache state is
+uncontrolled. GUI times include the intentional 100 ms layout/paint settling
+delay and the first preview, rather than a completed whole-recording minimap.
 
-Fedora 44 Release build, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10; offscreen rendering.
-The updated soak harness uses a dense 400 MB synthetic I/Q fixture, waits for
-its initial whole-recording minimap, and then changes FFTs, analysis ranges,
-colors, and independent waterfall viewports. FFTs include 1,048,576 points.
+| Workload | Median process wall time | Observed range |
+| --- | --- | --- |
+| Tail spectrum of 40 GB, FFT 4,096 | 4.04 ms | 3.89–4.42 ms |
+| Tail spectrum of 40 GB, FFT 65,536 | 20.75 ms | 20.35–20.87 ms |
+| GUI open/preview/paint, 400 MB | 153 ms | 151–155 ms |
+| GUI open/preview/paint, 4 GB | 154 ms | 153–154 ms |
+| GUI open/preview/paint, 40 GB | 156 ms | 149–285 ms |
 
-A separate 10.198-second run completed 46 mixed cycles: first preview **12 ms**,
-initial minimap complete **1,179 ms**, viewport-result p95 **105 ms**, selection
-preview p95 **126 ms**, and peak process RSS **408.8 MiB**. The largest FFT and
-concurrent analysis workers make this workload different from the earlier
-60-second run above. Cache/grid limits bound retained data; active FFT buffers
-and allocator retention contribute additional process memory.
+The 40 GB tail spectra used up to 16.4 MiB RSS at FFT 4,096 and 20.3 MiB at
+FFT 65,536. Their median CLI elapsed times were 0.453 ms and 4.281 ms respectively;
+process startup, file opening and JSON output account for the additional wall
+time. No full 40 GB average was run. Fixtures were written densely, synced and
+removed on completion; they are separate from sparse addressing tests.
 
-The existing dense-file benchmark also passed tone/power checks for 400 MB and
-4 GB files. GUI initial preview/paint process times were **160 ms** and **143 ms**,
-including the intentional 100 ms settling delay. These are local regression
-measurements, not native-desktop latency or long-duration stability evidence.
-
-Reproduce the new interaction workload with:
+### Reproduce and interpret the results
 
 ```sh
-QT_QPA_PLATFORM=offscreen RF_SOAK_SECONDS=10 build/release/rf-soak-test
+cmake --preset release -DPython3_EXECUTABLE=/usr/bin/python3
+cmake --build --preset release --parallel 2
+python3 tests/benchmark.py --cli build/release/croccospectrum-cli \
+  --gui build/release/croccospectrum --output build/benchmarks.json \
+  --fft-sizes 4096 65536 --repeats 3
 ```
 
-## Parallel FFT windows — 2026-10-09
+The default maximum fixture is 40 decimal GB. Add `--max-bytes 4000000000` to
+limit the run to 4 GB. The output is a JSON object with metadata and a `results`
+array, including tone frequency/power, valid-window counts, CPU/wall, disk input
+blocks and RSS for each CLI pass. Each CLI pass checked tone sign/power and
+complete coverage; averages reported no invalid or capture-boundary windows.
 
-Same Ryzen 9 9950X3D reference machine, local NVMe/Btrfs, Fedora 44. Release
-working tree based on `ac1bd26`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10. Input was
-the local `mega.dat`: 4,000,000,000 bytes / one billion signed int16 complex
-I/Q frames at 100 MS/s (10 seconds). Hann windows, 50% overlap, no DC removal
-or conjugation. Every measured pass reported zero disk input blocks: these are
-warm-cache computation measurements, excluding GUI painting and file-open latency.
+“Advised cold” means `fsync` followed by `POSIX_FADV_DONTNEED` on this fixture
+before each cold workload. It is advisory eviction, not proof of uncached I/O.
+There is no global cache drop, CPU pinning, frequency control or exclusive host
+reservation. The observed timing ranges reflect this ordinary desktop run;
+cold runs can be faster than some warm runs. No other project performance test
+ran concurrently with the recorded matrix.
 
-| Workload | Serial | Parallel |
-| --- | --- | --- |
-| Exact minimap, whole 4 GB, FFT 65,536, 192 columns × 1,024 rows | 22.22 s | 4.88 s; final-build follow-up 4.31 s |
-| Sampled viewport, whole file, FFT 65,536, 1,024 columns × 4,096 rows | 3.114 s | 0.655 s; final-build follow-up 0.641 s |
-| Automatic viewport, whole file, FFT 65,536, 1,024 columns × 128 actual rows | 0.104 s | 0.025 s |
-| Exact average, first 400 MB, FFT 4,096 | 1.197 s | 0.233 s |
-| Exact average, first 400 MB, FFT 65,536 | 2.245 s | 0.490 s |
-| Exact overview + average, first 400 MB, FFT 65,536, default 1,024 × 128 grid | 2.508 s | 0.484 s |
-
-A temporary headless C++ harness called `analyzeWaterfall` and `analyzeAverage`
-directly. Exact minimap calls included progressive immutable-snapshot copying.
-The original serial `Analysis.cpp` and the parallel implementation used the same
-recording/DSP code, compiler, and FFTW library. The machine-readable results and
-scope are in [fft-benchmarks.json](fft-benchmarks.json). These are individual local
-passes and follow-ups, not statistical latency guarantees or cold-storage tests.
-
-The automatic policy selected six workers for FFT 65,536 and seven for FFT 4,096.
-Final-build peak RSS was 106.7 MiB for the full exact minimap, 83.8 MiB for the
-4,096-row viewport, and 92–106.5 MiB for the prefix average/overview jobs. Parallel
-processing uses more memory and aggregate CPU time than the serial implementation;
-worker-local buffers and one bounded pending batch per worker keep storage
-independent of recording length. Short jobs stay serial, and the memory estimate
-also keeps the largest FFT serial. Original numerical calculations and window-order
-reductions are retained; no approximation or reduced overlap was introduced.
-
-A separate 10.154-second offscreen GUI mixed-operation run completed 45 cycles:
-first preview 16 ms, initial minimap complete 323 ms, viewport-result p95 104 ms,
-seek-result p95 127 ms, and peak RSS 517.5 MiB. This workload includes concurrent
-controllers, caches, and the 1,048,576-point FFT; its RSS is not the headless
-scan's worker-memory estimate. It is a short regression check, not evidence of
-native-desktop latency or long-duration stability.
+These results cover synthetic int16 recordings, two FFT lengths and one machine.
+They do not establish native-desktop latency, long-duration stability, network/HDD
+cancellation behavior, exact minimap/overview latency, or the sustained storage
+ceiling.

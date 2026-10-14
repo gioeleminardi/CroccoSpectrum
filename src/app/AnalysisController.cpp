@@ -298,7 +298,8 @@ void AnalysisController::execute(Job job)
         } else if (job.kind == Kind::Csv) {
             const auto &csv = *job.csv;
             exportSpectrumCsv(csv.recording, csv.identity, csv.range, csv.settings, csv.frequencies,
-                              csv.power, csv.method, csv.coverage, csv.output, cancelled, progress);
+                              csv.power, csv.method, csv.coverage, csv.output, cancelled, progress,
+                              csv.bandMeasurements);
             emit finished(job.generation, "Spectrum CSV exported");
         } else if (job.kind == Kind::Png) {
             const auto &png = *job.png;

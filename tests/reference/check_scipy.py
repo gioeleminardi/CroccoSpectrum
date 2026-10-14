@@ -79,6 +79,118 @@ with tempfile.TemporaryDirectory(prefix="rf-reference-") as directory:
                         assert int(result["valid_windows"]) == 1 + (len(data) - fft) // (fft // 2)
                         checks += 1
 
+    # Integrated channel power and SNR use an independent SciPy PSD oracle.
+    # Exercise real endpoints, negative complex frequencies, leakage, noise,
+    # unequal bandwidths, and nonzero analyzed intervals in both trace modes.
+    band_fs, band_fft = 8192.0, 1024
+    spacing = band_fs / band_fft
+    count = 16 * band_fft
+    time = np.arange(count)
+    for real in [False, True]:
+        tone_bin = 97 if real else -97
+        phase = 2 * np.pi * tone_bin * time / band_fft
+        tone = 0.25 * (np.cos(phase) if real else np.exp(1j * phase))
+        off_phase = 2 * np.pi * (tone_bin + 0.37) * time / band_fft
+        off_tone = 0.25 * (np.cos(off_phase) if real else np.exp(1j * off_phase))
+        noise = rng.normal(scale=0.015, size=count)
+        if not real:
+            noise = noise + 1j * rng.normal(scale=0.015, size=count)
+        fixtures = [("tone", tone), ("off-bin", off_tone), ("noise", noise),
+                    ("tone-noise", tone + noise), ("DC", np.full(count, 0.25)),
+                    ("Nyquist", 0.25 * (-1.0) ** time), ("silence", np.zeros(count))]
+        full_bounds = (0 if real else -band_fs / 2,
+                       band_fs / 2 if real else band_fs / 2 - spacing)
+        signal_bounds = (88 * spacing, 106 * spacing) if real else (-106 * spacing, -88 * spacing)
+        noise_bounds = (160 * spacing, 215 * spacing)
+        for fixture, data in fixtures:
+            path.write_bytes(np.asarray(data, dtype="<f8" if real else "<c16").tobytes())
+            for window in ["hann", "rectangular", "hamming", "blackman-harris"]:
+                scipy_window = {"rectangular": "boxcar", "blackman-harris": "blackmanharris"}.get(window, window)
+                for command in ["spectrum", "average"]:
+                    start, end = 257, count - 101
+                    analyzed_end = start + band_fft if command == "spectrum" else end
+                    analyzed = data[start:analyzed_end]
+                    if command == "spectrum":
+                        frequency, psd = signal.periodogram(analyzed, fs=band_fs,
+                            window=scipy_window, detrend=False, return_onesided=real, scaling="density")
+                    else:
+                        frequency, psd = signal.welch(analyzed, fs=band_fs,
+                            window=scipy_window, nperseg=band_fft, noverlap=band_fft // 2,
+                            detrend=False, return_onesided=real, scaling="density", average="mean")
+                    if not real:
+                        frequency, psd = np.fft.fftshift(frequency), np.fft.fftshift(psd)
+                    expected = {}
+                    for name, bounds in [("selected", full_bounds), ("signal", signal_bounds), ("noise", noise_bounds)]:
+                        mask = (frequency >= bounds[0]) & (frequency <= bounds[1])
+                        expected[name] = (float(psd[mask].sum() * spacing), int(mask.sum()) * spacing)
+                    if fixture in ["tone", "DC", "Nyquist"]:
+                        analytic = 0.25 ** 2 * (0.5 if real and fixture == "tone" else 1.0)
+                        np.testing.assert_allclose(expected["selected"][0], analytic, atol=1e-13, rtol=1e-12)
+                    for scale in ["spectrum", "density"]:
+                        options = ["--encoding", "float", "--bits", "64", "--kind", "real" if real else "complex",
+                                   "--sample-rate", str(band_fs), "--fft", str(band_fft), "--window", window,
+                                   "--scale", scale, "--overlap", "50", "--start", str(start), "--end", str(end)]
+                        for option, bounds in [("band", full_bounds), ("signal-band", signal_bounds), ("noise-band", noise_bounds)]:
+                            options += ["--" + option, f"{bounds[0]}:{bounds[1]}"]
+                        csv_path = pathlib.Path(directory) / f"band-{checks}.csv"
+                        if fixture == "tone-noise":
+                            options += ["--output", str(csv_path)]
+                        result = run(command, path, *options)
+                        measured = result["band_measurements"]
+                        assert measured["power_unit"] == "dBFS"
+                        for name, (integrated, bandwidth) in expected.items():
+                            band = measured[name]
+                            assert band["available"]
+                            np.testing.assert_allclose(band["linear_power"], integrated, atol=1e-17, rtol=5e-10)
+                            assert band["bandwidth_hz"] == bandwidth
+                            if band["linear_power"] == 0:
+                                assert band["power_dbfs"] == "-inf"
+                            else:
+                                np.testing.assert_allclose(band["power_dbfs"], 10 * np.log10(band["linear_power"]), atol=1e-12, rtol=0)
+                                # Different FFT/window implementations can differ at roundoff-only leakage.
+                                if integrated > 1e-25:
+                                    np.testing.assert_allclose(band["power_dbfs"], 10 * np.log10(integrated), atol=1e-8, rtol=0)
+                        total, signal_bw = expected["signal"]
+                        noise_total, noise_bw = expected["noise"]
+                        normalized_noise = noise_total * signal_bw / noise_bw
+                        net_signal = max(0, total - normalized_noise)
+                        snr = measured["snr"]
+                        if fixture in ["tone", "DC", "Nyquist"]:
+                            pass  # Pure-tone out-of-band roundoff is not a measurable noise floor.
+                        elif normalized_noise == 0 and net_signal == 0:
+                            assert not snr["available"]
+                        else:
+                            assert snr["available"]
+                            np.testing.assert_allclose(snr["noise_in_signal_band_linear"], normalized_noise, atol=1e-17, rtol=5e-10)
+                            np.testing.assert_allclose(snr["net_signal_linear"], net_signal, atol=1e-17, rtol=5e-10)
+                            if net_signal == 0:
+                                assert snr["snr_db"] == "-inf"
+                            elif normalized_noise == 0:
+                                assert snr["snr_db"] == "inf"
+                            # Roundoff-only leakage has no physically useful SNR.
+                            elif fixture in ["noise", "tone-noise", "off-bin"]:
+                                np.testing.assert_allclose(snr["snr_db"], 10 * np.log10(net_signal / normalized_noise), atol=1e-8)
+                        if fixture == "tone-noise":
+                            metadata = json.loads(csv_path.read_text().splitlines()[0][2:])
+                            assert metadata["band_measurements"] == measured
+                            assert metadata["start"] == str(start) and metadata["end"] == str(analyzed_end)
+                            assert metadata["fft_size"] == band_fft and metadata["hop_frames"] == str(band_fft // 2)
+                            assert metadata["window"] == {"hann": "Hann", "rectangular": "Rectangular", "hamming": "Hamming", "blackman-harris": "Blackman-Harris"}[window]
+                            assert metadata["remove_dc"] is False and metadata["conjugate"] is False
+                            assert metadata["unit"] == ("dBFS" if scale == "spectrum" else "dBFS/Hz")
+                        checks += 1
+
+    # Reject ambiguous/empty/out-of-range requested bounds; overlap has an explicit status.
+    for band in ["100:0", "nan:0", "1:2", "-5000:0", "0:5000"]:
+        run("spectrum", path, "--encoding", "float", "--bits", "64", "--kind", "real",
+            "--sample-rate", str(band_fs), "--fft", str(band_fft), "--band", band, success=False)
+    overlap = run("spectrum", path, "--encoding", "float", "--bits", "64", "--kind", "real",
+        "--sample-rate", str(band_fs), "--fft", str(band_fft),
+        "--signal-band", "0:80", "--noise-band", "80:160")
+    assert not overlap["band_measurements"]["snr"]["available"]
+    assert "overlap" in overlap["band_measurements"]["snr"]["reason"]
+    checks += 6
+
     # Every supported power of two, including the largest allocation, must
     # preserve complex tone power and its signed bin location.
     for exponent in range(8, 21):

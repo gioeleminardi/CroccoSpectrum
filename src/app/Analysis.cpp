@@ -655,11 +655,91 @@ void exportSamples(const Recording &recording, FrameRange range, const QString &
     }
 }
 
+QJsonObject measureBands(std::span<const double> frequencies, std::span<const double> powers,
+                        PowerScale scale, double enbwHz,
+                        std::optional<std::pair<std::size_t, std::size_t>> selected,
+                        std::optional<std::pair<std::size_t, std::size_t>> signal,
+                        std::optional<std::pair<std::size_t, std::size_t>> noise)
+{
+    if (!selected && !signal && !noise)
+        return {};
+    const auto dbValue = [](double value) -> QJsonValue {
+        if (std::isfinite(value))
+            return value;
+        return value > 0 ? "inf" : "-inf";
+    };
+    QJsonObject result{{"frequency_unit", "Hz"},
+                       {"frequency_reference", "baseband"},
+                       {"bounds", "inclusive bin centers"},
+                       {"bandwidth_definition", "included bin count * FFT bin spacing"},
+                       {"power_unit", "dBFS"},
+                       {"linear_power_unit", "normalized mean-square"},
+                       {"density_unit", "dBFS/Hz"},
+                       {"enbw_hz", enbwHz}};
+    const auto addBand = [&](const QString &name, const auto &bins) -> std::optional<BandPower> {
+        if (!bins)
+            return {};
+        const auto band = integrateBand(frequencies, powers, scale, enbwHz,
+                                        bins->first, bins->second);
+        QJsonObject object{{"available", band.has_value()}};
+        if (band) {
+            object.insert("first_bin", QString::number(band->firstBin));
+            object.insert("last_bin", QString::number(band->lastBin));
+            object.insert("lower_hz", band->lowerHz);
+            object.insert("upper_hz", band->upperHz);
+            object.insert("bandwidth_hz", band->bandwidthHz);
+            object.insert("linear_power", band->power);
+            object.insert("power_dbfs", dbValue(powerToDb(band->power)));
+        }
+        result.insert(name, object);
+        return band;
+    };
+    addBand("selected", selected);
+    const auto signalBand = addBand("signal", signal);
+    const auto noiseBand = addBand("noise", noise);
+    if (signal && noise) {
+        QJsonObject snr{{"available", false},
+                        {"unit", "dB"},
+                        {"formula", "10*log10(max(Psignal-Nsignal,0)/Nsignal)"},
+                        {"noise_normalization", "Nsignal=Pnoise*Bsignal/Bnoise"},
+                        {"assumption", "noise PSD is representative of the signal band"}};
+        if (!signalBand || !noiseBand)
+            snr.insert("reason", "Invalid or unavailable band power");
+        else if (signalBand->firstBin <= noiseBand->lastBin &&
+                 noiseBand->firstBin <= signalBand->lastBin)
+            snr.insert("reason", "Signal and noise bands overlap");
+        else {
+            const double density = noiseBand->power / noiseBand->bandwidthHz;
+            const double normalizedNoise = density * signalBand->bandwidthHz;
+            const double netSignal = std::max(0.0, signalBand->power - normalizedNoise);
+            if (!std::isfinite(density) || !std::isfinite(normalizedNoise))
+                snr.insert("reason", "Noise normalization is not representable");
+            else if (normalizedNoise == 0 && netSignal == 0)
+                snr.insert("reason", "Both signal and noise powers are zero");
+            else {
+                // Subtract logarithms to avoid overflowing/underflowing a power ratio.
+                const double snrDb = netSignal == 0 ? -std::numeric_limits<double>::infinity()
+                                    : normalizedNoise == 0 ? std::numeric_limits<double>::infinity()
+                                    : powerToDb(netSignal) - powerToDb(normalizedNoise);
+                snr.insert("available", true);
+                snr.insert("noise_density_dbfs_hz", dbValue(powerToDb(density)));
+                snr.insert("noise_in_signal_band_dbfs", dbValue(powerToDb(normalizedNoise)));
+                snr.insert("noise_in_signal_band_linear", normalizedNoise);
+                snr.insert("net_signal_linear", netSignal);
+                snr.insert("snr_db", dbValue(snrDb));
+            }
+        }
+        result.insert("snr", snr);
+    }
+    return result;
+}
+
 void exportSpectrumCsv(const RecordingDescriptor &recording, const QString &identity,
                        FrameRange range, const DspSettings &settings,
                        std::span<const double> frequencies, std::span<const double> powers,
                        const QString &method, const QJsonObject &coverage, const QString &output,
-                       const CancelCheck &cancelled, const Progress &progress)
+                       const CancelCheck &cancelled, const Progress &progress,
+                       const QJsonObject &bandMeasurements)
 {
     if (frequencies.size() != powers.size())
         throw std::runtime_error("Frequency/power size mismatch");
@@ -671,13 +751,17 @@ void exportSpectrumCsv(const RecordingDescriptor &recording, const QString &iden
                          {"end", QString::number(range.end)},
                          {"fft_size", settings.fftSize},
                          {"window", windowName(settings.window)},
+                         {"overlap_percent", settings.overlapPercent},
                          {"hop_frames", QString::number(settings.hop())},
+                         {"scale", settings.scale == PowerScale::Spectrum ? "spectrum" : "density"},
                          {"remove_dc", settings.removeDc},
                          {"conjugate", settings.conjugate},
                          {"unit", powerUnit(settings.scale)},
                          {"power_reference", "1 normalized mean-square unit"},
                          {"method", method},
                          {"coverage", coverage}};
+    if (!bandMeasurements.isEmpty())
+        metadata.insert("band_measurements", bandMeasurements);
     // CSV is atomic, so a crash cannot leave a truncated file labeled complete.
     ExportFile file(output);
     QTextStream stream(&file.file());

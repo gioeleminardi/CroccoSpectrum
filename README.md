@@ -5,21 +5,22 @@
 <h1 align="center">CroccoSpectrum</h1>
 
 <p align="center">
-  <strong>Explore your spectrum. Find your signals. Understand your recordings.</strong><br>
-  Native Linux analysis for large offline RF recordings.
+  <strong>Big recordings. Small details. Clear signals.</strong><br>
+  Explore offline RF recordings with a native Linux spectrum analyzer.
 </p>
 
 <p align="center">
-  <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&amp;logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
-  <a href="#features"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?style=for-the-badge&amp;logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
-  <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
-  <a href="https://github.com/gioeleminardi/CroccoSpectrum/releases/latest"><img src="https://img.shields.io/github/v/release/gioeleminardi/CroccoSpectrum?style=for-the-badge&amp;label=stable&amp;color=3B82F6" alt="Latest stable release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B?style=for-the-badge" alt="GPL-3.0-or-later"></a>
+  <a href="https://github.com/gioeleminardi/CroccoSpectrum/actions/workflows/ci.yml"><img src="https://github.com/gioeleminardi/CroccoSpectrum/actions/workflows/ci.yml/badge.svg" alt="Build, test and package"></a>
+  <a href="https://github.com/gioeleminardi/CroccoSpectrum/releases/latest"><img src="https://img.shields.io/github/v/release/gioeleminardi/CroccoSpectrum?label=stable&amp;color=3B82F6" alt="Latest stable release"></a>
+  <a href="#build-from-source"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
+  <a href="#build-from-source"><img src="https://img.shields.io/badge/Qt-6_Widgets-06B6D4?logo=qt&amp;logoColor=white" alt="Qt 6 Widgets"></a>
+  <a href="#linux-support"><img src="https://img.shields.io/badge/Linux-x86__64-8B5CF6?logo=linux&amp;logoColor=white" alt="Linux x86_64"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-F59E0B" alt="GPL-3.0-or-later"></a>
 </p>
 
 <p align="center">
+  <a href="https://gioeleminardi.github.io/CroccoSpectrum/#download"><strong>Download</strong></a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#features">Features</a> ·
   <a href="#recording-formats">Formats</a> ·
   <a href="#command-line-tools">CLI</a> ·
   <a href="#build-from-source">Build</a> ·
@@ -28,124 +29,115 @@
 
 ---
 
-CroccoSpectrum turns real and complex I/Q recordings into interactive spectrum,
-waterfall, and waveform views. Open a recording, review its interpretation, and
-move from a quick overview to an exact analysis of the interval that matters.
+**Turn a recording into a signal you can understand.** CroccoSpectrum brings
+spectrum, waterfall, and waveform views together: find an event, zoom to its
+samples, measure its frequency or duration, and export the result.
 
-Recordings are read in bounded blocks, so a larger file does not require loading
-it into RAM. FFTs, scans, and data exports run in the background with cancellation.
-The application analyzes completed recordings or the downloaded portion of a
-growing file without requiring RF hardware or an acquisition driver.
-
-## In action
+Real and complex I/Q recordings are read in bounded blocks, so file size does not
+dictate how much RAM you need. FFTs, scans, and data exports run in cancellable
+background jobs. Work with completed recordings or the downloaded portion of a
+growing file, without RF hardware or an acquisition driver.
 
 ![CroccoSpectrum showing spectrum, waterfall, and waveform views](docs/screenshot.png)
 
 <p align="center">
-  <em>A synthetic 100 MS/s I/Q recording, with a shared time selection and dockable analysis panels.</em>
+  <em>A synthetic 100 MS/s I/Q recording, explored through dockable analysis panels.</em>
 </p>
 
-## Features
+## What you can do
 
-| | Capability | What you can do |
+| | Capability | From recording to insight |
 | --- | --- | --- |
-| 📡 | **Spectrum & waterfall** | Inspect frequency content immediately after opening a recording; zoom and pan through time and frequency |
-| 🔬 | **Configurable DSP** | Choose power-of-two FFTs, four window functions, overlap, DC removal, and spectral inversion |
-| 📊 | **Exact analysis** | Calculate interval or whole-recording averages, max hold, and a waterfall overview that scans every required window |
-| 🌊 | **Waveform inspection** | View I/Q, magnitude, or I-only samples; scan exact min/max envelopes to preserve isolated peaks |
-| 🎨 | **Display controls** | Adjust color limits and switch between Viridis, Inferno, Grayscale, Turbo, and Baudline (black to `#00F9AB`) without recomputing FFTs |
-| 🧭 | **Flexible workspace** | Dock or float panels, seek by sample or time, and navigate with linked views and cursor readouts |
-| 💾 | **Sessions & exports** | Save interpretation, settings, selections, and bookmarks; export numeric CSV, plot PNG, or original sample bytes |
-| 📦 | **Portable Linux packages** | Run an AppImage or extractable folder with bundled application libraries, Qt plugins, and fonts |
-| 🛠️ | **Headless tools** | Inspect recordings and generate spectra, averages, waveforms, and sample exports from the command line |
+| 📡 | **Explore the spectrum** | Linked spectrum and waterfall views, cursor readouts, frequency/time zoom, and a whole-recording minimap |
+| 🔬 | **Choose your analysis** | FFTs from 256 to 1,048,576 points, four windows, overlap, DC removal, spectral inversion, and dBFS or PSD |
+| 📊 | **Measure with exact passes** | Interval or whole-recording averages, max hold, exact waterfall overviews, and waveform min/max scans |
+| 🌊 | **Inspect individual samples** | Independent waveform zoom down to one sample, connected I/Q traces, and shared hover/freeze controls |
+| 🎨 | **Make the workspace yours** | Dockable panels, dark/light controls, saved layouts, and five palettes that recolor without rerunning FFTs |
+| 💾 | **Keep and share your work** | Sessions, bookmarks, numeric CSV, plot PNG with metadata, and byte-exact recording excerpts |
+| 🛠️ | **Automate offline analysis** | A headless CLI for inspection, spectra, averages, waveforms, and sample exports |
 
-The [feature-status table](FEATURE_STATUS.md) lists implemented capabilities,
-supported formats, and verification results.
+CroccoSpectrum is in early development. [Feature status](FEATURE_STATUS.md) lists
+capabilities; [Validation](docs/VALIDATION.md) records the versions, environments,
+and limits of the available test evidence.
 
 ## Quick start
 
-### Download a release
+### 1. Download and launch
 
-Open [Releases](https://github.com/gioeleminardi/CroccoSpectrum/releases) and
-download the AppImage or portable tarball from **Assets**. New releases and
-development prereleases are published with packages, accompanying sources,
-checksums, and build information after their verification workflow succeeds.
+Get a **stable release** or a **development build** from the
+[download page](https://gioeleminardi.github.io/CroccoSpectrum/#download), or browse
+[GitHub Releases](https://github.com/gioeleminardi/CroccoSpectrum/releases).
+Development builds use `VERSION-dev.BUILD.gCOMMIT` and are intended for beta testing.
 
-The [download website](https://gioeleminardi.github.io/CroccoSpectrum/#download)
-offers the stable release and latest successful development build separately.
-Development versions use `VERSION-dev.BUILD.gCOMMIT` to identify the planned release,
-CI run, and source commit. They are intended for beta testing. See [release workflow](docs/CI.md#publish-a-stable-release)
-for development and stable publication instructions.
+Packages include the GUI, CLI, application libraries, Qt plugins, and fonts.
+The host supplies Linux, glibc, the display server, and graphics drivers. See
+[Linux support](#linux-support) for the platform baseline.
 
-### Download a CI build
+Replace `VERSION` below with the version in your downloaded filename, including
+any development suffix.
 
-On GitHub, open **Actions → a successful workflow run → Artifacts** and
-download **CroccoSpectrum-linux-amd64-AppImage** or
-**CroccoSpectrum-linux-amd64-portable**. Each artifact ZIP contains one file:
-the AppImage or the extract-and-run tarball. Accompanying sources are in
-**CroccoSpectrum-linux-amd64-sources**; checksums are in **reports-release**.
-Debug and ASAN/UBSAN builds can be run locally for development. See [CI builds](docs/CI.md)
-for artifact contents, retention, and runner setup.
-
-### Update notifications
-
-The GUI checks GitHub for stable releases five seconds after each startup and
-every 24 hours while running. A newer version is announced only after both Linux
-packages and their checksums are uploaded. The notification opens the
-[CroccoSpectrum website](https://gioeleminardi.github.io/CroccoSpectrum); download
-and install the package yourself.
-
-Use **Help → Automatically check for updates** to disable background checks, or
-**Help → Check for updates…** to check manually. Automatic failures stay quiet;
-manual checks report connection errors and rate limits. Each version is announced
-automatically once per app session until you install it. Startup checks respect
-GitHub's retry limits. Checking sends a request to GitHub; recordings and sessions
-are not included. The CLI, tests, screenshots, and smoke tests stay offline.
-
-### Run an AppImage
-
-In the package commands below, replace `VERSION` with the version in your
-downloaded filename, including any development suffix.
-
-With a packaged AppImage in the current directory:
+**AppImage**
 
 ```sh
 chmod +x croccospectrum-VERSION-x86_64.AppImage
 ./croccospectrum-VERSION-x86_64.AppImage
 ```
 
-To launch without FUSE:
+On a system without FUSE, launch with `--appimage-extract-and-run`.
 
-```sh
-./croccospectrum-VERSION-x86_64.AppImage --appimage-extract-and-run
-```
-
-### Run the portable folder
+**Portable folder**
 
 ```sh
 tar -xzf croccospectrum-VERSION-x86_64.tar.gz
 ./croccospectrum-VERSION-x86_64/AppRun
 ```
 
-Packaged builds include their application dependencies. The host supplies Linux,
-glibc, the display server, and graphics drivers. To compile the application,
-follow [Build from source](#build-from-source).
+<details>
+<summary><strong>CI artifacts and checksums</strong></summary>
 
-### Open your first recording
+Open [Actions](https://github.com/gioeleminardi/CroccoSpectrum/actions/workflows/ci.yml)
+and select a successful run. Download `CroccoSpectrum-linux-amd64-AppImage` or
+`CroccoSpectrum-linux-amd64-portable`, then extract its artifact ZIP. Each contains
+one AppImage or portable tarball. Accompanying sources are in
+`CroccoSpectrum-linux-amd64-sources`; checksums are in the `checksums/` directory
+after extracting the `reports-release` artifact.
 
-1. Select **File → Open recording**.
-2. Review the sample format, byte order, I/Q order, and sample rate in the import
-   dialog. The decoded preview helps verify the interpretation.
-3. Explore the default spectrum and waterfall. Select an interval and use the
-   **Analysis** menu for averages, an exact overview, or an exact waveform scan.
+Place the matching `.sha256` beside the package and run:
 
-The initial raw-file preset is **signed int16 · complex I/Q · little-endian ·
-100 MS/s**. Raw files do not describe their own layout: use the recording
-writer's format and rate. At this preset, 400 MB of samples represents one second.
+```sh
+sha256sum --check PACKAGE_FILENAME.sha256
+```
 
-Use **File → Open recent** to reopen the ten most recent recordings and sessions
-across launches. Recording entries open the interpretation dialog; session
-entries restore their saved settings. Use **Clear recent files** to reset the list.
+Replace `PACKAGE_FILENAME` with the downloaded package's filename. Published
+releases also carry source archives, checksums, and build information. See
+[CI builds](docs/CI.md) for artifact contents and publication details.
+
+</details>
+
+### 2. Open a recording
+
+Select **File → Open recording** and review the import preview. Set the sample
+format, byte order, I/Q order, and sample rate to match the recording writer.
+Open `.sigmf-meta` or `.rfmeta.json` metadata when available.
+
+> **Raw files need an interpretation.** The initial preset is signed int16,
+> complex I/Q, little-endian, at 100 MS/s. At this preset, 400 MB represents one
+> second. A wrong format or rate changes what the plots mean.
+
+### 3. Find an event and measure it
+
+Navigate with the waterfall and minimap, then zoom into the event. Hover over the
+waterfall or waveform to inspect a frame's spectrum; click to freeze or resume.
+Use **Analysis** for exact averages, an exact waterfall overview, or **Exact
+Waveform**. Save a session to return to the same interpretation and analysis.
+
+The **Analysis interval** controls averages and sample exports. Waterfall
+navigation changes the viewport independently; **Use waterfall view** applies its
+bounds to the analysis interval. Waveform time follows waterfall navigation and
+can then be zoomed independently, down to individual samples.
+
+Press **F1** for keyboard shortcuts, or open **Help → Plot controls** for the
+gesture guide. **View** shows or hides panels, including **Baseband waveform**.
 
 ## Recording formats
 
@@ -161,41 +153,58 @@ entries restore their saved settings. Use **Clear recent files** to reset the li
 | Metadata | Supported single-stream SigMF core subset and exported `.rfmeta.json` descriptors |
 
 The DSP core uses double precision. Floating-point inputs have an explicit
-full-scale reference; 64-bit integer inputs are decoded with the precision limits
-of double-precision analysis.
+full-scale reference; 64-bit integers are subject to double-precision analysis
+limits. Required unsupported SigMF extensions, multiple streams, and later
+embedded capture headers are rejected explicitly.
 
-Open a `.sigmf-meta` file to use its recording metadata, or a `.rfmeta.json` file
-to reopen an exported sample range. Required unsupported SigMF extensions,
-multiple streams, and later embedded capture headers are rejected explicitly.
+Optional capture timestamps and center frequencies provide UTC and absolute
+frequency readouts. Sample indices remain the exact time reference; UTC aids are
+labeled at millisecond resolution. Aggregates spanning retunes or unknown center
+frequencies use baseband axes.
 
-For a recording still downloading through scp or rsync, enable **Open partial /
-growing file** in the import dialog, or pass `--partial` to the CLI. This opens a
-fixed snapshot of the complete sample frames currently available, ignores an
-incomplete final frame, and limits declared data lengths, captures, and
-annotations to that snapshot. At least one complete frame must be present;
-metadata JSON must already be complete.
+<details>
+<summary><strong>Analyze a recording while it is still downloading</strong></summary>
 
-The transfer may append bytes and update timestamps while analysis continues.
-The downloaded prefix must remain unchanged: this mode does not detect edits
-within that prefix and cannot identify undownloaded regions in preallocated
-files. Truncation below the opening file size or path replacement stops reads.
-Reopen the original file to include newly downloaded samples; saved sessions
-retain their snapshot length and metadata. Ordinary imports retain strict
+Enable **Open partial / growing file** in the import dialog, or pass `--partial`
+to the CLI. This opens a fixed snapshot of the complete sample frames available
+at import, ignores an incomplete final frame, and clips declared data lengths,
+captures, and annotations to that snapshot. At least one complete frame must
+exist, and metadata JSON must already be complete.
+
+The transfer may append bytes and update timestamps. The downloaded prefix must
+remain unchanged: this mode does not detect edits within that prefix or missing
+regions in preallocated files. Truncation below the opening file size or path
+replacement stops reads. Reopen the original file to include newly downloaded
+samples; sessions retain their snapshot bounds. Ordinary imports use strict
 file-change and frame validation.
 
-Optional capture timestamps and center frequencies add UTC and absolute-frequency
-readouts. Exact sample indices remain the reference for time selection; UTC aids
-are labeled at millisecond resolution. Aggregates spanning retunes or unknown
-center frequencies use baseband axes.
+</details>
 
-## Analysis workflow
+## From preview to exact analysis
 
-### Choose your resolution
+Fast navigation and complete measurement passes have different coverage:
 
-FFT lengths range from **256 to 1,048,576**, in powers of two. The default is
-4,096. Available windows are Hann, rectangular, Hamming, and Blackman–Harris.
+| View or operation | What it covers |
+| --- | --- |
+| **Spectrum** | The exact displayed FFT window; initially the first complete window in the analysis interval |
+| **Waterfall viewport** | Bounded FFT work at display resolution; explicitly labeled when sampled |
+| **Waterfall minimap** | Every required whole-recording window, reduced to temporal/frequency maxima in the background |
+| **Spectral average / max hold** | Every eligible complete window in the selected interval or entire recording; the average uses linear power |
+| **Exact waterfall overview + average** | A complete pass producing bounded maxima and an exact numeric average |
+| **Waveform preview** | Up to 131,072 frames distributed across its visible interval |
+| **Exact Waveform** | Every sample in the visible waveform interval, preserving min/max extrema |
 
-At 100 MS/s:
+Sampled previews can miss short events or isolated peaks. Use the minimap to
+locate events, narrow the viewport for detail, and run exact analysis for
+measurements. Invalid samples, capture-boundary windows, and incomplete trailing
+windows are counted. Obsolete work is cancelled; incomplete averages are discarded
+and older requests cannot replace newer results.
+
+<details>
+<summary><strong>FFT resolution and display controls</strong></summary>
+
+FFT lengths are powers of two from **256 to 1,048,576**; the default is **4,096**.
+Windows are Hann, rectangular, Hamming, and Blackman–Harris. At 100 MS/s:
 
 | FFT length | Bin spacing | Window duration |
 | --- | --- | --- |
@@ -203,301 +212,168 @@ At 100 MS/s:
 | 65,536 | 1.526 kHz | 655.36 µs |
 | 1,048,576 | 95.367 Hz | 10.486 ms |
 
-Bin spacing is not the same as window-adjusted resolution bandwidth. Longer FFTs
+Bin spacing is distinct from window-adjusted resolution bandwidth. Longer FFTs
 provide finer bins and cover longer time intervals.
 
-### Move from preview to exact analysis
+**Settings → Waterfall rows** selects automatic display resolution or 128–4,096
+rows. Higher densities can take longer and remain subject to memory and available
+window limits. The initial 128-row preview is refined asynchronously; navigation
+does not restart the whole-recording minimap scan. New recordings and DSP settings
+do. Unprocessed minimap rows are blue-gray; invalid completed rows are magenta.
 
-| View or operation | Coverage |
-| --- | --- |
-| **Spectrum** | Exact first complete FFT window in the selected interval |
-| **Waterfall viewport** | Pixel-sized frequency/time cells; bounded FFT work, explicitly labeled when sampled |
-| **Waterfall minimap** | Automatic background pass over every required window in the whole recording; temporal/frequency maxima |
-| **Average selected interval / entire recording** | Every eligible complete window; mean calculated in linear power |
-| **Exact waterfall overview + average** | Every required window; bounded temporal/frequency maxima and an exact average |
-| **Waveform preview** | Starts with the waterfall interval; independent zoom reads up to 131,072 frames across the visible waveform interval |
-| **Exact waveform** | Every sample in the visible waveform interval, reduced to min/max envelopes |
+Viridis, Inferno, Grayscale, Turbo, and Baudline palettes recolor cached data
+without rerunning FFTs. Baudline runs from black to `#00F9AB`. With **Automatic
+range** enabled, **Adapt waterfall colors on zoom** can follow the displayed data
+or keep the current limits fixed. Editing Minimum or Maximum disables Automatic
+range and applies manual limits immediately.
 
-A sampled waterfall can miss short events. The minimap scans the complete recording
-in the background and preserves short events through maximum aggregation. Use it
-to locate events and narrow the waterfall viewport for finer detail.
-**Analysis → Exact waterfall overview + average** remains available for an exact
-pass over the analysis interval with its numeric average.
-Invalid samples, capture-boundary windows, and incomplete trailing windows are
-counted rather than silently treated as valid measurements.
+</details>
 
-Changing the interval or DSP settings cancels obsolete work. An incomplete
-average is discarded, and an older request cannot replace the latest result.
-
-### Navigate the workspace
-
-Open **Help → Keyboard shortcuts** or press **F1** for an at-a-glance cheatsheet
-of all assigned shortcuts, plot gestures, and keyboard navigation. It can stay
-open while you work in the main window.
-
-Open **Help → Plot controls** for dedicated spectrum, waterfall, and waveform
-instructions. Plots show no hover tooltips; this guide can stay open while you work.
+<details>
+<summary><strong>Navigation and measurement reference</strong></summary>
 
 | Action | Control |
 | --- | --- |
-| Zoom frequency | Mouse wheel over the spectrum; `Ctrl` + mouse wheel over the waterfall |
+| Zoom frequency | Wheel over the spectrum; `Ctrl` + wheel over the waterfall |
 | Pan frequency | Drag the spectrum or waterfall |
-| Zoom / pan waterfall time | Mouse wheel / drag inside the waterfall |
-| Pan only waterfall time | `Ctrl` + left-button drag inside the waterfall |
-| Zoom / pan waveform time independently | Mouse wheel / left-button drag inside the waveform |
+| Zoom / pan waterfall time | Wheel / drag inside the waterfall |
+| Pan only waterfall time | `Ctrl` + left-button drag |
+| Zoom / pan waveform time independently | Wheel / left-button drag inside the waveform |
 | Move / resize the waterfall viewport | Drag the minimap box / its top or bottom handle |
-| Inspect frequency and power coordinates | Hover over the spectrum |
-| Measure spectrum width and mean power | `Shift` + left-click the start, then left-click the end |
-| Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
-| Move / resize a measurement | `Shift` + drag its shaded band / boundary marker |
-| Clear a plot measurement | `Escape` in that plot |
 | Inspect a frame's spectrum | Hover over the waterfall or waveform |
-| Freeze / resume following the pointer | Click inside the waterfall or waveform |
-| Seek to a sample | Double-click the waterfall or waveform |
-| Seek to an exact time | **View → Seek to time…** |
-| Select an exact interval | Enter 64-bit `[start, end)` sample indices |
-| Analyze the visible waterfall interval | **Use waterfall view** in **Analysis interval** |
-| Show the whole recording | `Home` |
-| Reset frequency zoom | `Ctrl+0` |
-| Zoom time | `Ctrl++` / `Ctrl+-` |
-| Pan time | `Alt+Left` / `Alt+Right` |
+| Freeze / resume the shared frame | Click inside either time plot |
+| Seek to a sample / exact time | Double-click a time plot / **View → Seek to time…** |
+| Select an exact analysis interval | Enter 64-bit `[start, end)` frame bounds and apply |
+| Measure spectrum width and integrated power | `Shift` + left-click the start, then left-click the end |
+| Measure waterfall duration | `Shift` + left-click the start row, then left-click the end row |
+| Move / resize a measurement | `Shift` + drag its band / boundary marker |
+| Clear a measurement | `Escape` in that plot |
+| Show the whole recording / reset frequency zoom | `Home` / `Ctrl+0` |
+| Zoom / pan time | `Ctrl++` or `Ctrl+-` / `Alt+Left` or `Alt+Right` |
 | Add a bookmark or note | `Ctrl+B` |
 
-Waterfall wheel zoom follows the pointer in time; hold `Ctrl` to zoom only frequency.
-Dragging pans both axes.
-Hold `Ctrl` when starting a drag to pan only time, keeping frequency unchanged.
-Waterfall navigation changes only the visible time interval; the **Analysis interval**
-Start/End frame fields control averages and sample exports. The waveform follows
-the visible waterfall interval automatically. Enter exact
-frame bounds and click **Apply analysis interval**, or click **Use waterfall view**
-to apply the currently visible time span. The minimap handles visual navigation;
-the analysis controls no longer include a separate timeline or zoom buttons. Cached pixels
-move immediately, and denser data loads asynchronously for the visible time and
-frequency bounds. Resolution follows the plot's physical pixels, within bounded
-FFT-work and memory limits. Changing the analysis interval or DSP settings clears
-measurements and frame freeze; viewport navigation preserves them.
+Spectrum endpoints snap to FFT bins and include both endpoints. Integrated band
+power is reported in **dBFS**, using `sum(PSD × bin spacing)` or the equivalent
+`sum(spectrum power × bin spacing / ENBW)`. The bandwidth is the included bin
+count times the bin spacing, so a single-bin selection still has nonzero
+bandwidth. Include the tone's window main lobe/leakage when measuring its power.
+Frequency labels round to the nearest Hz, retaining compact kHz/MHz/GHz units.
+Time readouts use s, ms, µs or ns according to magnitude. Numeric exports retain
+the full frequency precision used by analysis. UI dB, dBFS and dBFS/Hz values use
+one decimal place; power/SNR calculations and numeric exports retain full precision.
+Waterfall duration uses the exact difference between row-start frames. Sampled
+and aggregated rows limit event-boundary resolution.
 
-The minimap on the right covers the whole recording and full frequency band.
-Its box marks the visible time interval. Drag the box to move it, click elsewhere
-to center it there, or drag the top/bottom handles to change that boundary while
-keeping the opposite boundary fixed. The box stops at recording bounds and
-always spans at least one FFT window. Unprocessed minimap rows remain blue-gray;
-invalid completed rows use the existing magenta indication. Progress appears
-below the map. Navigation does not restart its background scan; new files and DSP
-settings do. Partial imports scan only the snapshot available when opened.
-**Settings → Waterfall rows** selects Automatic (display resolution), or 128,
-256, 512, 1024, 2048, or 4096 rows for the detailed view and exact overviews.
-The initial 128-row preview appears quickly and is then refined asynchronously.
-The actual count can be lower when fewer complete FFT windows are available or
-the memory limit applies. Explicit row choices allow enough FFT work to compute
-that density, including with large FFT sizes; higher counts can take longer.
-Automatic resolution keeps the fast FFT work limit. Increasing rows improves time detail; zooming into
-a shorter interval reveals individual windows. The choice is saved in preferences
-and sessions and does not change the analysis range or restart the minimap.
-An animated spinner in the lower status bar remains visible while any background
-analysis, waterfall refinement, minimap scan, or export is processing.
-It disappears once those tasks finish or are cancelled. Hovering over frames
-updates the spectrum without triggering the spinner.
-Palette changes recolor both views without rerunning FFTs. Frequency navigation
-stays linked to the spectra. Waterfall PNGs record the displayed viewport bounds.
-With **Automatic range** enabled, **Adapt waterfall colors on zoom** recalculates
-the color limits for the displayed data. Turn it off to freeze the current limits
-while zooming, panning, or navigating the minimap. A new recording, analysis range,
-or DSP setting establishes a new range. The choice is saved in preferences and
-sessions; with Automatic range off, the Minimum and Maximum fields set fixed limits.
+Right-click a completed spectrum selection and choose **Use selection as signal
+band** or **Use selection as noise band**. Assign two separate bands on the same
+single-frame spectrum or completed interval average. Assignments copy the bounds;
+reassign after editing them. Noise is normalized to the signal bandwidth:
+`N = Pnoise × Bsignal / Bnoise`; **SNR** is
+`10 log10(max(Psignal_band − N, 0) / N)`. This assumes representative additive
+noise density; choose a noise-only band away from tones, leakage, DC and Nyquist.
+Overlapping bands report SNR unavailable. Nonpositive net signal reports −∞ dB;
+zero measured noise with positive signal reports +∞ dB. Both zero is unavailable.
+Interval SNR uses the average trace; max-hold bins can come from different times.
+**Clear signal and noise bands** keeps the ordinary selection; Escape clears all
+bands. See [the numerical contract](docs/ARCHITECTURE.md#units-and-numerical-contract).
 
-The frequency spectrum initially shows the FFT window starting at sample frame
-0. Hovering either time plot selects the corresponding waterfall row, highlights
-it horizontally, and shows a vertical bar at its starting sample in the waveform.
-The spectrum displays that row's exact FFT window, preserving frequency zoom and
-pan. Click inside either plot to freeze the shared frame and both markers; click
-again in either plot to resume following the pointer. Leaving the plots hides
-unfrozen markers and keeps the last spectrum. Changing the analysis interval clears
-the freeze and resets the spectrum to its first row. Exact overview rows
-summarize several windows; their hover spectrum is the window at the row's
-starting sample. Spectrum CSV and PNG exports use the displayed window.
+Waterfall markers fill draft Start/End fields without applying the interval.
+The later row's start is the exclusive end. **Average waterfall selection**
+averages the completed marked interval while keeping the current views; it needs
+at least one FFT window and uses the markers even if the fields are later edited.
 
-Changing the waterfall's time interval resets the waveform to match, including
-when zooming, panning, or using the minimap. Within that interval, mouse-wheel
-zoom and left-button drag inspect the waveform independently of the waterfall.
-Zoom can reach a single sample, irrespective of FFT length. Close-up views show
-connected sample traces and markers with I in cyan and Q in amber at the same
-sample indices. Hover reports the sample values without changing the interval.
-Large views use a labeled sampled preview, which can miss isolated peaks;
-**Analysis → Exact Waveform** scans every sample in the visible waveform interval.
-Frequency-only navigation retains the waveform's zoom and exact scan.
+Measurements survive view, palette, and density changes, and clear when the
+recording, analysis interval, or DSP settings change. They are transient and are
+not saved in sessions. Changing waterfall time bounds resets waveform zoom;
+frequency-only navigation retains independent waveform zoom and exact scans.
 
-Use **View** to show or hide analysis panels. Panels can be docked, floated, and
-resized; preferences and workspace layout are restored on the next launch.
-Enable **View → Dark theme** for dark controls and dialogs, or disable it for
-light mode, independently of the desktop theme. The choice is saved between
-launches; analysis plots keep their existing colors.
-Save a session to retain recording interpretation, analysis settings, selection,
-and bookmarks together.
+</details>
 
-## Measurements & exports
+## Measurements and exports
 
-CroccoSpectrum displays **dBFS** spectrum power or **dBFS/Hz** power spectral
-density. Its reference is one normalized mean-square unit: a unit complex tone
-is 0 dBFS, and a real sine with peak amplitude 1 is −3.0103 dBFS. These values are
-not calibrated dBm measurements.
+Spectrum power uses **dBFS**; power spectral density uses **dBFS/Hz**. The reference
+is one normalized mean-square unit: a unit complex tone is 0 dBFS, and a real
+sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readings.
 
-Hover over a spectrum to show a crosshair at the pointer, with its frequency
-and power coordinates labeled on the axes. The status bar also retains the
-exact FFT-bin frequency and power. The crosshair follows the current zoom and
-power scale, works on average and max-hold traces, and hides on pointer exit.
+| Output | Contents |
+| --- | --- |
+| **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR, settings, and coverage metadata |
+| **PNG** | Plot snapshot with embedded recording and analysis metadata |
+| **Raw sample range** | Original sample bytes plus a `.rfmeta.json` sidecar |
+| **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
 
-**Shift + left-click** inside the spectrum to start measuring a frequency interval.
-Moving the pointer previews the end; **left-click again** to complete the
-measurement, without needing Shift. Endpoints snap to the nearest FFT
-bins. The readout shows both frequencies, their absolute difference, and the
-mean spectral power across all bins between the endpoints, including both ends.
-Power is averaged in linear units before conversion to dB; this is the mean of
-the selected spectral values, rather than integrated signal power. The same
-gesture works on the average and max-hold traces, with the source identified.
-Zero mean power is shown as −∞; invalid data is unavailable.
-
-In the waterfall, **Shift + left-click the start row**, then **left-click the end
-row** to measure elapsed time between their window-start sample frames. The
-readout shows exact frame indices, start and end times, and duration calculated
-from the frame difference and sample rate. Sampled previews and aggregated
-overviews limit how precisely event
-boundaries can be located; zoom into the event for finer row spacing. Selecting
-the same row gives zero duration.
-
-Waterfall markers also fill the **Start frame** and **End frame** fields live,
-ordered from earlier to later, without applying the range. The later row's
-start is the exclusive end. Use **Apply analysis interval** to change the displayed
-interval, or **Average waterfall selection** in **Recording and analysis** to
-average just the marked interval while keeping the current views. That button
-requires a completed selection spanning at least one FFT window and uses the
-markers even if you subsequently edit the frame fields.
-
-Measurements use yellow boundary markers and shaded bands. **Shift + drag the
-shaded band** to move both endpoints, or **Shift + drag a boundary marker** to
-increase or decrease the selection. Values update during the drag, and endpoints
-stop at the data boundaries. Moving a spectrum band preserves its frequency
-width; moving a waterfall band preserves its displayed row span and recalculates
-duration from the new row timestamps. Markers can cross, and overlapping markers
-allow the end marker to be dragged. A Shift-click without dragging starts a
-replacement measurement; **Escape** clears it. Either endpoint order works.
-Shared frame following pauses while placing or dragging endpoints, preserving
-the current freeze state, then resumes its previous behavior. A completed spectrum
-selection follows the displayed FFT frame and recalculates its mean power.
-Zoom, pan, resize, and palette changes preserve completed measurements; changing
-the recording, analysis interval, or DSP settings clears them. Measurements are
-temporary and are not saved in sessions.
+Recordings are opened read-only. Exports refuse existing output paths, and
+cancelled writes are not published as completed outputs. Application JSON stores
+sample indices as decimal strings to preserve 64-bit values. Spectrum CSV and PNG
+use the displayed FFT window; average exports use the completed analyzed interval.
+Band metadata includes baseband bounds in Hz, bandwidth, dBFS power, SNR/noise
+normalization, ENBW and status; bin columns keep their spectrum/PSD units. JSON
+represents infinite logarithmic results as `"-inf"`/`"inf"`. Waterfall PNG metadata
+records viewport bounds.
 
 <details>
 <summary><strong>Sample normalization and spectral conventions</strong></summary>
 
 - Complex samples mean `I + jQ`; conjugation reverses frequency sign.
-- Real input uses a one-sided spectrum. Interior-bin power is doubled; DC and
-  Nyquist are not doubled.
-- Signed integers are normalized by `2^(bits−1)`. Unsigned integers are centered
-  around their midpoint.
-- Floating samples use a configurable full-scale reference, initially 1.
-- Spectral averages use linear power before conversion to dB.
-- Window normalization and equivalent noise bandwidth are described in the
-  [architecture documentation](docs/ARCHITECTURE.md).
+- Real input uses one-sided spectra: interior-bin power is doubled, DC and
+  Nyquist are unchanged. Complex spectra are FFT-shifted.
+- Signed integers are normalized by `2^(bits−1)`; unsigned integers are centered
+  around their midpoint. Floating samples use a configurable full scale of 1 by default.
+- Spectral averages use linear power; conversion to dB happens afterward.
+- [Architecture](docs/ARCHITECTURE.md#units-and-numerical-contract) defines window
+  normalization, equivalent noise bandwidth, and numerical edge cases.
 
 </details>
 
-| Output | Contents |
-| --- | --- |
-| **CSV** | Numeric spectrum or average/max-hold bins, settings, and coverage metadata |
-| **PNG** | Plot snapshot with embedded recording and analysis metadata |
-| **Raw sample range** | Original sample bytes plus a `.rfmeta.json` sidecar |
-| **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
-
-Source recordings are opened read-only. Exports refuse existing output paths,
-and cancelled writes are not published as completed outputs. Sample indices in
-application JSON are stored as decimal strings to preserve 64-bit values.
-
 ## Command-line tools
 
-The portable folder includes `croccospectrum-cli`. Source builds place it under
-`build/release/`.
+The portable folder includes `croccospectrum-cli`. The examples below use a
+[source build](#build-from-source); adjust the executable path for a package.
 
 ```sh
-# Inspect the file and decoded sample preview.
+# Inspect metadata and decoded samples; add --partial for a growing download.
 ./build/release/croccospectrum-cli inspect --file capture.iq
 
-# Inspect complete samples while a recording is still downloading.
-./build/release/croccospectrum-cli inspect --file capture.iq --partial
+# Make the raw interpretation explicit: signed int16 IQ, little-endian, 100 MS/s.
+./build/release/croccospectrum-cli spectrum --file capture.iq \
+  --kind complex --encoding signed --bits 16 --endian little --order IQ \
+  --sample-rate 100000000 --fft 65536 --scale density
 
-# Calculate a 65,536-point power spectral density.
-./build/release/croccospectrum-cli spectrum --file capture.iq --fft 65536 --scale density
+# Average the first 100 million frames, without printing every bin.
+./build/release/croccospectrum-cli average --file capture.iq \
+  --start 0 --end 100000000 --summary
 
-# Average the first 100 million frames without printing all numeric bins.
-./build/release/croccospectrum-cli average --file capture.iq --start 0 --end 100000000 --summary
+# Inspect the exact waveform over a sample interval.
+./build/release/croccospectrum-cli waveform --file capture.iq --start 1000 --end 5000
 
-# Export original samples in the half-open interval [1000, 5000).
-./build/release/croccospectrum-cli export-samples --file capture.iq --start 1000 --end 5000 --output excerpt.iq
+# Export original bytes in [1000, 5000), plus their metadata sidecar.
+./build/release/croccospectrum-cli export-samples --file capture.iq \
+  --start 1000 --end 5000 --output excerpt.iq
 ```
 
-Use `--help` for raw-format, sample-rate, window, overlap, and other options.
-Raw files use the default import preset unless flags specify another layout.
-Metadata inputs use their saved interpretation; raw-format flags apply to raw
-binary files.
-
-## Linux support
-
-Portable builds target **Linux x86_64 with glibc 2.39 or later**, using X11 or
-Wayland. They are built against an Ubuntu 24.04 baseline and bundle Qt 6.11.2.
-
-| System | Recorded package checks |
-| --- | --- |
-| Ubuntu 24.04 | Offline portable-folder and AppImage launch checks |
-| Ubuntu 26.04 | Offline portable-folder and AppImage launch checks |
-| Fedora 44 | Offline package launch checks and native X11/Wayland smoke checks |
-
-Package launch checks do not cover every desktop configuration. The full support
-and qualification scope is recorded in [Validation](docs/VALIDATION.md).
-
-## Performance
-
-Large FFT scans automatically use bounded parallel workers. Short jobs stay
-serial, and large FFT buffers reduce the worker count. Ordered reductions retain
-the same numerical results. On a local 4 GB recording with 65,536-point FFTs and
-50% overlap, parallel processing reduced the exact minimap from 22.2 s to 4.3–4.9 s
-and a 4,096-row viewport from 3.1 s to 0.64–0.66 s in Release. These warm-cache
-computation timings exclude GUI painting; details are in [Benchmarks](docs/BENCHMARKS.md).
-
-Measured with dense synthetic int16 I/Q recordings at 100 MS/s on a Ryzen 9
-9950X3D workstation with NVMe storage:
-
-| Operation | Measured result |
-| --- | --- |
-| Full average of 400 MB | 1.01 s, about 395 MB/s |
-| Full average of 4 GB | 10.01 s, about 400 MB/s |
-| Peak memory for those average passes | About 22.5 MiB RSS |
-| Initial GUI preview of a 40 GB file | 150 ms |
-
-These earlier baseline average timings use one worker, a warm file cache,
-Hann 4,096-point FFTs, and 50% overlap.
-The GUI measurement is offscreen, uses a warm cache, and includes a 100 ms layout
-settling delay. Initial previews read bounded regions rather than scanning the
-whole file. See [Benchmarks](docs/BENCHMARKS.md) for hardware, methodology, and
-the scope of these measurements.
+Run `--help` for all format, rate, window, overlap, and output options. Commands
+emit JSON; spectrum and average also support CSV through `--output`. Add
+`--band lower:upper`, `--signal-band lower:upper` and `--noise-band lower:upper`
+to `spectrum` or `average` for integrated power/SNR. Bounds are inclusive baseband
+Hz, must lie within the FFT bin-center domain, and must include at least one bin.
+For example, `--signal-band 10000:20000 --noise-band 30000:50000` uses different
+signal/noise bandwidths with the normalization above. Raw files
+use the initial import preset unless flags specify another layout. Metadata
+inputs use their saved interpretation; raw-format flags apply to raw binaries.
 
 ## Build from source
 
-Required development tools:
-
-- C++20 compiler and CMake 3.22 or later.
-- Ninja and pkg-config.
-- Qt 6.4 or later: Core, Gui, Widgets, and Test development files.
-- FFTW 3 double-precision development files.
-- Python with NumPy/SciPy for independent numerical checks; Python is not an
-  application runtime dependency.
+Use a **C++20 compiler**, **CMake 3.22+**, Ninja, pkg-config, **Qt 6.4+** development
+files (Core, Gui, Widgets, Network, and Test), and **FFTW 3** double precision.
+Python with NumPy/SciPy enables independent numerical checks; Node.js enables
+website release-selection tests. Neither is an application runtime dependency.
 
 <details>
 <summary><strong>Ubuntu development dependencies</strong></summary>
 
 ```sh
 sudo apt install build-essential cmake ninja-build pkg-config \
-  qt6-base-dev qt6-wayland libfftw3-dev python3-numpy python3-scipy
+  qt6-base-dev qt6-wayland libfftw3-dev python3-numpy python3-scipy nodejs
 ```
 
 </details>
@@ -507,98 +383,136 @@ sudo apt install build-essential cmake ninja-build pkg-config \
 
 ```sh
 sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config \
-  qt6-qtbase-devel qt6-qtwayland fftw-devel python3-numpy python3-scipy
+  qt6-qtbase-devel qt6-qtwayland fftw-devel python3-numpy python3-scipy nodejs
 ```
 
 </details>
 
-From the source directory:
+From the repository root:
 
 ```sh
-cmake --preset release
-cmake --build --preset release -j 6
+cmake --preset release -DPython3_EXECUTABLE=/usr/bin/python3
+cmake --build --preset release --parallel 2
 ctest --preset release
 ./build/release/croccospectrum
 ```
 
-Source builds show a development version with the commit ID, and `.dirty` for
-modified checkouts. `CMakeLists.txt` holds the next planned release version;
-feature notes remain under `Unreleased` until release preparation. The build
-directory's `BUILD-INFO.json` records the exact build identity.
+For development, substitute the `debug` preset and launch from `build/debug/`.
+Separate `asan` and `tsan` configure/build presets support sanitizer work; see
+[Testing](docs/TESTING.md) for their runtime requirements and TSAN commands.
+The independent reference suite skips when NumPy/SciPy are missing; a skipped
+oracle does not establish numerical correctness.
+
+`CMakeLists.txt` defines the planned release version. Source builds default to a
+development identity with the commit ID and `.dirty` for modified checkouts.
+`BUILD-INFO.json` in the build directory records the generated identity; release
+optimization and a stable release channel are separate choices.
 
 <details>
-<summary><strong>Build portable release packages</strong></summary>
+<summary><strong>Build portable packages with the baseline container</strong></summary>
 
-Use the Ubuntu 24.04 builder to retain the release ABI baseline. The Qt SDK and
-packaging dependencies are pinned in [dependencies.json](packaging/dependencies.json).
+With Docker installed, run the same release pipeline used by CI:
 
 ```sh
-python3 -m venv .cache/qt-tools
-.cache/qt-tools/bin/pip install aqtinstall==3.3.0
-.cache/qt-tools/bin/python -m aqt install-qt linux desktop 6.11.2 linux_gcc_64 \
-  --outputdir .cache/qt --archives qtbase qtwayland qtsvg icu
-
-podman build -t localhost/croccospectrum-builder:24.04 -f packaging/Containerfile .
-podman run --rm -v "$PWD:$PWD:z" -w "$PWD" localhost/croccospectrum-builder:24.04 \
-  sh -c 'cmake -S . -B build/ubuntu24 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PWD/.cache/qt/6.11.2/gcc_64" -DPython3_EXECUTABLE=/usr/bin/python3 && cmake --build build/ubuntu24 -j 6 && ctest --test-dir build/ubuntu24 --output-on-failure'
-podman run --rm -v "$PWD:$PWD:z" -w "$PWD" localhost/croccospectrum-builder:24.04 \
-  python3 packaging/portable.py --build build/ubuntu24 --qt .cache/qt/6.11.2/gcc_64
+bash ci/build.sh release
 ```
 
-The bundler records dependency versions, notices, and SHA-256 hashes, and refuses
-to replace an existing generated bundle. Before distribution:
+For Podman, use `RF_CI_ENGINE=podman bash ci/build.sh release`. The pipeline needs
+network access to obtain its pinned tools, Qt SDK, and dependency sources. It
+builds against Ubuntu 24.04, runs tests, packages the application, and checks the
+final packages in offline Ubuntu 24.04/26.04 and Fedora 44 containers.
 
-1. Enable `deb-src` in the builder and run
-   `packaging/sources.py --bundle dist/croccospectrum-VERSION-x86_64` there to collect
-   the pinned upstream sources and exact Ubuntu source packages.
-2. Run `packaging/finalize.py --bundle dist/croccospectrum-VERSION-x86_64` to refresh
-   documentation, manifests, and binary/source archives.
-3. Create the AppImage with
-   `packaging/appimage.sh APPIMAGETOOL dist/croccospectrum-VERSION-x86_64 OUTPUT.AppImage`.
-   Supply the pinned tool and the verified runtime at
-   `.cache/appimage-runtime-x86_64`; the script checks the runtime hash and uses
-   it explicitly.
-
-Replace `VERSION` with the generated version in `build/ubuntu24/BUILD-INFO.json`.
-Source archives and license provisions accompany distributed binaries. See
-[Third-party components](docs/THIRD_PARTY.md) for the complete provisions.
+Packages appear in `dist/ci/release/packages/`, sources in `sources/`, and reports
+and checksums in `reports/` beneath `dist/ci/release/`. Dependency pins live in
+[packaging/dependencies.json](packaging/dependencies.json). See [CI builds](docs/CI.md)
+for configuration and [Third-party components](docs/THIRD_PARTY.md) for notices
+and accompanying source provisions.
 
 </details>
 
-## Status and validation
+## Linux support
 
-**CroccoSpectrum is in early development.** The recorded checks include 167
-independent NumPy/SciPy numerical checks, core and GUI integration tests, parser
-stress, ASAN/UBSAN, and TSAN with an instrumented Qt build.
+Portable builds target **Linux x86_64 with glibc 2.39+**, using X11 or Wayland.
+They use an Ubuntu 24.04 baseline and bundle Qt 6.11.2. Recorded package checks
+cover offline portable-folder and AppImage launches on Ubuntu 24.04, Ubuntu 26.04,
+and Fedora 44, plus native Fedora X11/Wayland smoke checks.
 
-[Validation](docs/VALIDATION.md) records the tested application versions,
-environments, coverage, and limitations.
+On Ubuntu 24.04 Wayland sessions, the GUI prefers XWayland when an X11 display is
+available to support panel dragging and docking. Explicit `QT_QPA_PLATFORM` or
+`-platform` overrides take precedence; use `QT_QPA_PLATFORM=wayland` to select
+native Wayland there. Other systems retain Qt's default backend selection.
 
-For a source build, run `ctest --preset release`. The independent reference suite
-reports a skip if the selected Python interpreter lacks NumPy/SciPy. Sanitizers
-use separate builds and require matching compiler runtimes; see
-[Testing](docs/TESTING.md) for commands, benchmark tools, and sustained-use tests.
+These checks do not cover every desktop, high-DPI, or multiple-monitor setup.
+See [Validation](docs/VALIDATION.md) for the qualification scope.
+
+<details>
+<summary><strong>Update checks and network behavior</strong></summary>
+
+Normal GUI launches check GitHub for stable releases five seconds after startup
+and every 24 hours while running. A version is offered only when both Linux
+packages and their checksums are present, once per app session. The notification
+opens the project website for manual download and installation.
+
+Use **Help → Automatically check for updates** to disable background checks, or
+**Help → Check for updates…** for a manual check. Automatic failures stay quiet;
+manual checks report errors and rate limits. Requests respect retry limits and
+do not include recordings or sessions. The CLI, routine tests, screenshots, and
+smoke launches do not perform update requests.
+
+</details>
+
+## Performance
+
+Bounded reads and caches keep navigation independent of whole-file loading.
+Large FFT scans use bounded parallel workers and preserve ordered reductions;
+short jobs and memory-heavy FFTs use fewer workers.
+
+Current Release measurements on a Ryzen 9 9950X3D with NVMe storage
+(2026-10-14; medians of three runs):
+
+| Workload | Measured result |
+| --- | --- |
+| Initial GUI preview of a 40 GB file | 156 ms, including a 100 ms layout delay |
+| Full average of 400 MB / 4 GB, FFT 4,096 | 0.309 s / 2.865 s; about 1.3–1.4 GB/s |
+| Full average of 400 MB / 4 GB, FFT 65,536 | 0.444 s / 4.299 s; about 0.9 GB/s |
+| Peak process RSS for these threaded averages | About 110–122 MiB |
+
+The average passes use automatic parallel workers, warm-cache synthetic int16
+I/Q at 100 MS/s, Hann windows, and 50% overlap. Observed 4 GB timings span
+2.066–2.969 s at FFT 4,096 and 4.228–5.062 s at FFT 65,536. The GUI preview is
+offscreen. [Benchmarks](docs/BENCHMARKS.md) records settings, CPU use, memory,
+timing ranges, and measurement scope; these figures are not performance guarantees.
+
+## Contributing
+
+Start with [AGENTS.md](AGENTS.md) for repository context, coding conventions,
+numerical and threading rules, and checks matched to the change. Keep patches
+focused and verify behavior with the relevant core, UI, or independent reference
+tests. Changes to user-visible behavior should also update the relevant docs and
+the changelog's **Unreleased** section.
+
+Report bugs or suggest improvements through
+[GitHub Issues](https://github.com/gioeleminardi/CroccoSpectrum/issues). Include the
+build version, OS/Qt environment, recording interpretation, steps to reproduce,
+and expected versus observed behavior. A small synthetic fixture is useful for
+reproducing a signal-processing issue.
 
 ## Documentation
 
-| Guide | Contents |
+| Guide | What you will find |
 | --- | --- |
+| [Agent and contributor guide](AGENTS.md) | Current architecture, working practices, invariants, and verification commands |
 | [Architecture](docs/ARCHITECTURE.md) | Recording access, DSP conventions, ownership, scheduling, and resource bounds |
-| [Feature status](FEATURE_STATUS.md) | Implemented capabilities, supported formats, and verification results |
-| [Validation](docs/VALIDATION.md) | Test evidence, environments, and coverage limitations |
-| [Testing](docs/TESTING.md) | Numerical verification, sanitizers, benchmarks, and sustained-use checks |
-| [CI builds](docs/CI.md) | GitHub automation, artifact downloads, and runner setup |
-| [Benchmarks](docs/BENCHMARKS.md) | Measured performance and reference hardware |
+| [Feature status](FEATURE_STATUS.md) | Capability inventory and supported formats |
+| [Testing](docs/TESTING.md) | Numerical checks, sanitizers, benchmarks, and sustained-use tests |
+| [Validation](docs/VALIDATION.md) | Recorded evidence, tested environments, and coverage limitations |
+| [CI builds](docs/CI.md) | Artifacts, packaging, build identities, and release publication |
+| [Benchmarks](docs/BENCHMARKS.md) | Performance measurements and reference hardware |
 | [Changelog](CHANGELOG.md) | Release history and behavior changes |
 | [Third-party components](docs/THIRD_PARTY.md) | Dependency licenses, notices, and source provisions |
-
-The code is organized into recording, DSP, analysis/session, and UI modules.
-Comments explain numerical units, ownership, concurrency, and memory bounds.
-Changes to behavior should include corresponding updates to the changelog,
-feature status, and validation evidence.
 
 ## License
 
 CroccoSpectrum is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
-Qt, FFTW, and other bundled components retain their respective licenses and
-notices, documented in [Third-party components](docs/THIRD_PARTY.md).
+Bundled components retain their respective licenses and notices, documented in
+[Third-party components](docs/THIRD_PARTY.md).

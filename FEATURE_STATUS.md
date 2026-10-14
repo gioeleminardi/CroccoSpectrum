@@ -23,7 +23,8 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Spectrum hover crosshair | Implemented | Pointer frequency/power axis labels; zoom, absolute frequency and dBFS/Hz supported; exact FFT-bin readout retained |
 | Waterfall hover spectrum | Implemented | One-row highlight; exact FFT at row start; initial frame 0; zoom/pan retained; exports follow displayed frame |
 | Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; waterfall time navigation resets waveform bounds |
-| Shift-click spectrum and waterfall measurements | Implemented | Two endpoints; FFT-bin frequency difference and linear-power mean; row-start duration with exact frame differences; Shift-drag band/markers to move/resize with live updates; Escape clears |
+| Shift-click spectrum and waterfall measurements | Implemented | Two endpoints; FFT-bin frequency difference and integrated band power in dBFS; row-start duration with exact frame differences; Shift-drag band/markers to move/resize with live updates; Escape clears |
+| Signal/noise band power and SNR | Implemented | Explicit bands on displayed FFT or completed average; ENBW-corrected integration; bandwidth-normalized noise subtraction; CSV/PNG metadata and CLI band bounds |
 | Average waterfall selection | Implemented | Markers update draft frame fields without applying; exact average over ordered row-start bounds; requires a completed interval with one FFT window |
 | User-selected power-of-two FFT | Implemented | 256 through 1,048,576 |
 | Window, overlap, DC removal, conjugation | Implemented | Hann, rectangular, Hamming, Blackman-Harris |
@@ -52,5 +53,5 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Self-contained portable folder / AppImage | Implemented | Bundled libraries/plugins/font; tar folder and no-FUSE AppImage extraction path |
 | Ubuntu 24.04/26.04 and Fedora 44 package checks | Smoke checks passed | Clean offline containers; Fedora native X11/Wayland smoke; coverage in docs/VALIDATION.md |
 | Large-file benchmarks | Measured locally | Dense 400 MB / 4 GB / 40 GB; benchmark report records scope and hardware |
-| Numerical verification | Passed | 167 independent NumPy/SciPy checks; core and GUI integration checks |
+| Numerical verification | Passed | 397 independent NumPy/SciPy checks, including integrated band power/SNR across all windows; core and GUI integration checks; dated scope in Validation |
 | Sanitizers and parser stress | Passed | ASAN/UBSAN; TSAN with instrumented Qt; 301 metadata stress cases + decoder stress |

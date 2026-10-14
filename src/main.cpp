@@ -4,11 +4,22 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QSslSocket>
+#include <QSysInfo>
 #include <QTimer>
 #include <iostream>
 
 int main(int argc, char **argv)
 {
+#ifdef Q_OS_LINUX
+    // Ubuntu 24.04's Wayland compositor cannot position/drag floating Qt docks
+    // reliably. Prefer XWayland there, while honoring explicit Qt overrides.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM") &&
+        !qEnvironmentVariableIsEmpty("DISPLAY") &&
+        (qgetenv("XDG_SESSION_TYPE") == "wayland" ||
+         !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")) &&
+        QSysInfo::productType() == "ubuntu" && QSysInfo::productVersion() == "24.04")
+        qputenv("QT_QPA_PLATFORM", "xcb;wayland");
+#endif
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("CroccoSpectrum");
     QCoreApplication::setApplicationName("CroccoSpectrum");
