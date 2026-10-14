@@ -446,6 +446,12 @@ binary files.
 Portable builds target **Linux x86_64 with glibc 2.39 or later**, using X11 or
 Wayland. They are built against an Ubuntu 24.04 baseline and bundle Qt 6.11.2.
 
+On Ubuntu 24.04 Wayland sessions, the GUI prefers XWayland when an X11 display
+is available so panels can be dragged out of the main window and docked back
+without jumping to its center. Other systems keep Qt's default backend selection.
+An explicit `QT_QPA_PLATFORM` or `-platform` option takes precedence; use
+`QT_QPA_PLATFORM=wayland` to opt into native Wayland on Ubuntu 24.04.
+
 | System | Recorded package checks |
 | --- | --- |
 | Ubuntu 24.04 | Offline portable-folder and AppImage launch checks |

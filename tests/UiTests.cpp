@@ -22,6 +22,7 @@
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QProcess>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QScreen>
@@ -30,6 +31,7 @@
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QSysInfo>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QWheelEvent>
@@ -729,6 +731,86 @@ class UiTests : public QObject
         QCoreApplication::processEvents();
         QCOMPARE(label->height(), label->heightForWidth(label->width()));
         QCOMPARE(bottom(plot), bottom(waterfall));
+    }
+    void ubuntuWaylandStartup_data()
+    {
+        QTest::addColumn<QByteArray>("platform");
+        QTest::addColumn<QStringList>("arguments");
+        QTest::addColumn<QByteArray>("plugin");
+        QTest::newRow("default") << QByteArray() << QStringList() << QByteArray("libqxcb.so");
+        QTest::newRow("environment-override") << QByteArray("offscreen") << QStringList()
+                                              << QByteArray("libqoffscreen.so");
+        QTest::newRow("command-line-override") << QByteArray()
+                                               << QStringList{"-platform", "offscreen"}
+                                               << QByteArray("libqoffscreen.so");
+    }
+    void ubuntuWaylandStartup()
+    {
+        if (QSysInfo::productType() != "ubuntu" || QSysInfo::productVersion() != "24.04" ||
+            qEnvironmentVariableIsEmpty("DISPLAY") || qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY"))
+            QSKIP("Requires Ubuntu 24.04 with a live Wayland and XWayland display");
+        QFETCH(QByteArray, platform);
+        QFETCH(QStringList, arguments);
+        QFETCH(QByteArray, plugin);
+        QTemporaryDir directory;
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.remove("QT_QPA_PLATFORM");
+        if (!platform.isEmpty())
+            environment.insert("QT_QPA_PLATFORM", QString::fromLatin1(platform));
+        environment.insert("QT_DEBUG_PLUGINS", "1");
+        environment.insert("XDG_SESSION_TYPE", "wayland");
+        environment.insert("XDG_CONFIG_HOME", directory.path());
+        QProcess process;
+        process.setProcessEnvironment(environment);
+        arguments.append("--smoke-test");
+        process.start(QCoreApplication::applicationDirPath() + "/croccospectrum", arguments);
+        QVERIFY(process.waitForFinished(10000));
+        const auto errors = process.readAllStandardError();
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QVERIFY2(process.exitCode() == 0, errors.constData());
+        QVERIFY2(errors.contains(plugin + "\" loaded library"), errors.constData());
+    }
+    void dockDragPlacement_data()
+    {
+        QTest::addColumn<QString>("dockName");
+        QTest::newRow("controls") << QString("controlsDock");
+        QTest::newRow("average") << QString("averageDock");
+        QTest::newRow("waveform") << QString("waveformDock");
+        QTest::newRow("bookmarks") << QString("bookmarksDock");
+    }
+    void dockDragPlacement()
+    {
+        if (QGuiApplication::platformName() != "xcb")
+            QSKIP("Requires X11/XWayland to verify desktop placement during dock dragging");
+        QFETCH(QString, dockName);
+        QTemporaryDir directory;
+        rf::MainWindow window(nullptr, directory.filePath("preferences.json"));
+        window.resize(1000, 700);
+        window.move(100, 100);
+        window.show();
+        auto *panel = window.findChild<QDockWidget *>(dockName);
+        QVERIFY(panel);
+        panel->show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QTest::qWait(100);
+        const QPoint press(100, 10);
+        const QPoint outside = window.mapToGlobal(QPoint(window.width() + 200, 100));
+        QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, press);
+        moveMouse(panel, panel->mapFromGlobal(outside), Qt::LeftButton);
+        QTest::mouseRelease(panel, Qt::LeftButton, Qt::NoModifier, panel->mapFromGlobal(outside));
+        QTRY_VERIFY(panel->isFloating());
+        QTRY_VERIFY((panel->mapToGlobal(press) - outside).manhattanLength() < 40);
+        QVERIFY(!window.frameGeometry().contains(panel->frameGeometry().center()));
+        QCOMPARE(QWidget::mouseGrabber(), nullptr);
+
+        const QPoint target = window.mapToGlobal(QPoint(20, window.height() / 2));
+        QTest::mousePress(panel, Qt::LeftButton, Qt::NoModifier, press);
+        moveMouse(panel, panel->mapFromGlobal(target), Qt::LeftButton);
+        QTest::qWait(300);
+        QTest::mouseRelease(panel, Qt::LeftButton, Qt::NoModifier, panel->mapFromGlobal(target));
+        QTRY_VERIFY(!panel->isFloating());
+        QCOMPARE(window.dockWidgetArea(panel), Qt::LeftDockWidgetArea);
+        QVERIFY(panel->isVisible());
     }
     void maximizedFloatingDock_data()
     {
@@ -2758,6 +2840,78 @@ class UiTests : public QObject
         QVERIFY(cursor.last().at(0).toString().contains("Cursor: -95 Hz"));
         moveMouse(&plot, QPoint(576, 60));
         QVERIFY(cursor.last().at(0).toString().contains("Cursor: 191 Hz"));
+    }
+    void manualDisplayRange_data()
+    {
+        QTest::addColumn<QString>("controlName");
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<double>("minimum");
+        QTest::addColumn<double>("maximum");
+        QTest::newRow("minimum") << QString("colorMinimum") << QString("-120") << -120.0 << 0.0;
+        QTest::newRow("maximum") << QString("colorMaximum") << QString("-20") << -100.0 << -20.0;
+    }
+    void manualDisplayRange()
+    {
+        QFETCH(QString, controlName);
+        QFETCH(QString, text);
+        QFETCH(double, minimum);
+        QFETCH(double, maximum);
+        QTemporaryDir directory;
+        const auto preferences = directory.filePath("preferences.json");
+        rf::Preferences saved;
+        saved.dsp.fftSize = 256;
+        saved.view.autoRange = true;
+        rf::savePreferences(preferences, saved);
+        rf::MainWindow window(nullptr, preferences);
+        window.show();
+        auto *automatic = window.findChild<QCheckBox *>("automaticRange");
+        auto *adaptColors = window.findChild<QCheckBox *>("waterfallAutoRangeOnZoom");
+        auto *spin = window.findChild<QDoubleSpinBox *>(controlName);
+        auto *spectrum = window.findChild<rf::SpectrumPlot *>("spectrumPlot");
+        auto *waterfall = window.findChild<rf::WaterfallPlot *>("waterfallPlot");
+        QVERIFY(automatic && adaptColors && spin && spectrum && waterfall);
+        QVERIFY(automatic->isChecked()); // Restoring values must retain automatic scaling.
+        window.openRecording(toneRecording(directory.filePath("tones.iq"), {8, 32, 64}));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        auto *fft = window.findChild<QComboBox *>("fftSize");
+        fft->setCurrentIndex(fft->findData(512));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.spectrumResult() &&
+                                    window.spectrumResult()->spectrum.power.size() == 512,
+                                10000);
+        QTest::qWait(150);
+        QTRY_VERIFY_WITH_TIMEOUT(waterfall->snapshot() && waterfall->snapshot()->complete, 10000);
+        QVERIFY(automatic->isChecked());
+        const auto preview = window.previewResult();
+        const auto spectrumImage = spectrum->grab().toImage();
+        const auto waterfallImage = waterfall->grab().toImage();
+        QSignalSpy displayed(&window, &rf::MainWindow::analysisDisplayed);
+        spin->setFocus();
+        spin->selectAll();
+        QTest::keyClicks(spin, text);
+        QTest::keyClick(spin, Qt::Key_Return);
+        QCOMPARE(spin->value(), text.toDouble());
+        QVERIFY(!automatic->isChecked());
+        QVERIFY(!adaptColors->isEnabled());
+        QVERIFY(spectrum->grab().toImage() != spectrumImage);
+        QVERIFY(waterfall->grab().toImage() != waterfallImage);
+        QSignalSpy cursor(spectrum, &rf::SpectrumPlot::cursorChanged);
+        moveMouse(spectrum, QPoint(80, 32));
+        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(maximum)));
+        moveMouse(spectrum, QPoint(80, spectrum->height() - 38));
+        QVERIFY(cursor.last().at(0).toString().endsWith(QString("· %1 dBFS").arg(minimum)));
+        automatic->setChecked(true);
+        QVERIFY(adaptColors->isEnabled());
+        QTest::keyClick(spin, Qt::Key_Up);
+        QVERIFY(!automatic->isChecked());
+        QCOMPARE(spin->value(), text.toDouble() + 5);
+        QTest::qWait(150);
+        QCOMPARE(window.previewResult(), preview);
+        QCOMPARE(displayed.count(), 0); // Display limits must not recompute analysis.
+        window.close();
+        const auto restored = rf::readPreferences(preferences).view;
+        QVERIFY(!restored.autoRange);
+        QCOMPARE(restored.colorMin, minimum + (controlName == "colorMinimum" ? 5 : 0));
+        QCOMPARE(restored.colorMax, maximum + (controlName == "colorMaximum" ? 5 : 0));
     }
     void latestRequestAndPalette()
     {

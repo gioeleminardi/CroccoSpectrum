@@ -6,6 +6,15 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Ubuntu 24.04 docking workaround (2026-10-14 working tree): all seven local
+  Debug CTest suites pass with system Qt 6.4.2 and GNOME 46. Native XWayland
+  checks drag all four panels outside the main window and back into its left
+  dock area, verify pointer placement and released mouse grabs, and exercise
+  maximized floating panels across the available screens. Startup checks
+  reproduce the previous Wayland default and pass after the workaround,
+  including environment and command-line overrides. The local Release build
+  and offline smoke launches also pass. Portable packages were not rebuilt.
+
 - Independent waveform zoom (2026-10-12 working tree): all seven local Fedora 44
   Release CTest suites pass with Qt 6.11.2. GUI regressions cover zooming below
   FFT length to individual samples, decoded I/Q values at matching sample
@@ -228,9 +237,10 @@ Build/test logs are generated under the ignored `build/` directory.
 Recording checks use synthetic fixtures. Raw-file interpretation must match the
 recording writer's format, component order, byte order, and sample rate.
 
-Native desktop evidence is limited to Fedora X11/Wayland smoke checks. Ubuntu
-launch checks use containers. Native high-DPI and multiple-monitor interaction and
-long-duration stability have not been validated by the recorded runs.
+Native desktop evidence includes Fedora X11/Wayland smoke checks and the focused
+Ubuntu 24.04 XWayland docking checks above. Older Ubuntu package launch checks
+use containers. Comprehensive native high-DPI and multiple-monitor interaction
+and long-duration stability have not been validated by the recorded runs.
 
 The recorded checks do not cover comprehensive disk-full/permission failures,
 broader parser fuzzing, blocked network storage, the sustained-storage ceiling,

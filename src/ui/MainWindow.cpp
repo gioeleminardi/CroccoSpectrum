@@ -907,6 +907,7 @@ void MainWindow::buildControls()
         spin->setRange(-3000, 3000);
         spin->setDecimals(1);
         spin->setSingleStep(5);
+        spin->setToolTip("Changing this limit turns off Automatic range.");
     }
     colorMin_->setObjectName("colorMinimum");
     colorMax_->setObjectName("colorMaximum");
@@ -1002,7 +1003,13 @@ void MainWindow::buildControls()
     for (auto *check : {autoRange_, waterfallAutoRangeOnZoom_, absoluteFrequency_})
         connect(check, &QCheckBox::toggled, this, &MainWindow::updateView);
     for (auto *spin : {colorMin_, colorMax_})
-        connect(spin, &QDoubleSpinBox::valueChanged, this, &MainWindow::updateView);
+        connect(spin, &QDoubleSpinBox::valueChanged, this, [this] {
+            if (applying_)
+                return;
+            const QSignalBlocker blocker(autoRange_);
+            autoRange_->setChecked(false);
+            updateView();
+        });
 }
 
 void MainWindow::connectWorker()

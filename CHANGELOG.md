@@ -4,6 +4,15 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Fix panels failing to detach or jumping to the main window's center on
+  Ubuntu 24.04 Wayland sessions by preferring XWayland when available. Preserve
+  explicit Qt platform overrides and other systems' default backend selection.
+- Fix manual spectrum and waterfall limits being ignored while Automatic range
+  is enabled. Editing Minimum or Maximum now disables Automatic range and
+  applies the entered limits immediately without recomputing analysis.
+
 ## 0.4.0 — 2026-10-12 — Waveform and waterfall navigation
 
 - Shorten the waveform scan button and menu action to Exact Waveform. Add

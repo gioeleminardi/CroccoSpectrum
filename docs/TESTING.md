@@ -12,6 +12,17 @@ The Python selected above must have NumPy/SciPy. CTest explicitly skips the orac
 when those modules are missing; a skipped oracle is not a numerical pass.
 The metadata stress test uses only Python's standard library.
 
+On an Ubuntu 24.04 Wayland desktop with XWayland available, the UI suite also
+checks that a normal GUI launch selects XWayland and that environment and
+command-line platform overrides still work. Check panel placement and dragging
+back into the main window through the native XWayland backend:
+
+```sh
+QT_QPA_PLATFORM=xcb build/debug/rf-ui-tests dockDragPlacement maximizedFloatingDock
+```
+
+These desktop checks require a live display; headless runs skip them.
+
 ASAN/UBSAN require the runtime matching the compiler. Use the Ubuntu container
 from README when the host compiler installation lacks matching sanitizer libs.
 Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run the CTest suites.
