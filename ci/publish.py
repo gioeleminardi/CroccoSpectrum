@@ -64,7 +64,10 @@ def release_files(assets, info):
         checksum = assets / "reports-release/checksums" / (file.name + ".sha256")
         digest, name = checksum.read_text().strip().split(maxsplit=1)
         with file.open("rb") as stream:
-            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            checksum_hash = hashlib.sha256()
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                checksum_hash.update(block)
+            actual = checksum_hash.hexdigest()
         if name != file.name or digest != actual:
             raise ValueError(f"Checksum mismatch for {file.name}")
         checksums.append(checksum)

@@ -419,8 +419,9 @@ bash ci/build.sh release
 
 For Podman, use `RF_CI_ENGINE=podman bash ci/build.sh release`. The pipeline needs
 network access to obtain its pinned tools, Qt SDK, and dependency sources. It
-builds against Ubuntu 24.04, runs tests, packages the application, and checks the
-final packages in offline Ubuntu 24.04/26.04 and Fedora 44 containers.
+builds against Ubuntu 22.04, runs tests, checks the bundled ELF glibc requirements,
+and checks the final packages in offline Ubuntu 22.04/24.04/26.04 and Fedora 44
+containers.
 
 Packages appear in `dist/ci/release/packages/`, sources in `sources/`, and reports
 and checksums in `reports/` beneath `dist/ci/release/`. Dependency pins live in
@@ -432,10 +433,13 @@ and accompanying source provisions.
 
 ## Linux support
 
-Portable builds target **Linux x86_64 with glibc 2.39+**, using X11 or Wayland.
-They use an Ubuntu 24.04 baseline and bundle Qt 6.11.2. Recorded package checks
-cover offline portable-folder and AppImage launches on Ubuntu 24.04, Ubuntu 26.04,
-and Fedora 44, plus native Fedora X11/Wayland smoke checks.
+Portable builds target **Linux x86_64 with glibc 2.35+**, using X11 or Wayland.
+They use an Ubuntu 22.04 baseline and bundle Qt 6.11.2. Recorded package checks
+cover offline portable-folder and AppImage launches on Ubuntu 22.04, Ubuntu 24.04,
+Ubuntu 26.04 and Fedora 44, plus Ubuntu 22.04 headless X11 startup at normal and
+doubled scale.
+
+Published packages through v0.5.0 use the Ubuntu 24.04/glibc 2.39 baseline.
 
 On Ubuntu 24.04 Wayland sessions, the GUI prefers XWayland when an X11 display is
 available to support panel dragging and docking. Explicit `QT_QPA_PLATFORM` or

@@ -4,6 +4,14 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.5.1 — 2026-10-17 — Ubuntu 22.04 AppImage compatibility
+
+- Lower the portable Linux baseline to Ubuntu 22.04/glibc 2.35 while retaining
+  Qt 6.11.2. Check all bundled ELF glibc requirements and add offline Ubuntu 22.04
+  AppImage and portable-folder smoke tests to the release pipeline.
+- Register the bundled DejaVu Sans font on all Qt backends so portable X11
+  launches render text on minimal systems with Ubuntu 22.04's Fontconfig.
+
 ## 0.5.0 — 2026-10-14 — Band power and SNR measurements
 
 - Round UI dB, dBFS and dBFS/Hz readouts to one decimal place, including band

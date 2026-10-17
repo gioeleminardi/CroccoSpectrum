@@ -51,7 +51,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Headless CLI | Implemented | Inspection, spectra, averages, waveform, exports |
 | GitHub automatic builds and downloadable artifacts | Implemented | All targets in Release/Debug/ASAN; separate AppImage and portable tarball downloads, sources, checksums/reports; runner/retention details in docs/CI.md |
 | Self-contained portable folder / AppImage | Implemented | Bundled libraries/plugins/font; tar folder and no-FUSE AppImage extraction path |
-| Ubuntu 24.04/26.04 and Fedora 44 package checks | Smoke checks passed | Clean offline containers; Fedora native X11/Wayland smoke; coverage in docs/VALIDATION.md |
+| Ubuntu 22.04/24.04/26.04 and Fedora 44 package checks | Smoke checks passed | Clean offline containers; Ubuntu 22.04 headless X11 at normal/doubled scale; coverage in docs/VALIDATION.md |
 | Large-file benchmarks | Measured locally | Dense 400 MB / 4 GB / 40 GB; benchmark report records scope and hardware |
 | Numerical verification | Passed | 397 independent NumPy/SciPy checks, including integrated band power/SNR across all windows; core and GUI integration checks; dated scope in Validation |
 | Sanitizers and parser stress | Passed | ASAN/UBSAN; TSAN with instrumented Qt; 301 metadata stress cases + decoder stress |

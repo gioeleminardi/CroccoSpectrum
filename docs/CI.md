@@ -3,7 +3,7 @@
 GitHub is the primary host and runs `.github/workflows/ci.yml`.
 The workflow runs on pushes to `devel` and `main`, pull requests targeting either
 branch, manual dispatch, and stable `vX.Y.Z` tag pushes. Automatically generated
-development tags are excluded. It uses the CI scripts and Ubuntu 24.04 build
+development tags are excluded. It uses the CI scripts and Ubuntu 22.04 build
 container, regardless of the runner's host OS.
 
 ## Downloads
@@ -28,8 +28,14 @@ Debug and ASAN/UBSAN builds remain available through the local pipeline commands
 below. Development archives require matching Qt/FFTW/compiler runtimes. For a
 portable application, use the Release AppImage or folder archive, which includes
 both the GUI and CLI with their dependencies. Release packages are checked in clean,
-network-disabled Ubuntu 24.04/26.04 and Fedora 44 containers before upload.
-GUI smoke tests also require a usable TLS backend without contacting GitHub.
+network-disabled Ubuntu 22.04/24.04/26.04 and Fedora 44 containers before upload.
+Before final packaging, `packaging/check_abi.py` checks every bundled ELF file's
+required glibc versions against `minimum_host_glibc` (2.35) in
+`packaging/dependencies.json`; a newer requirement fails the build. The ABI
+report is included as `abi.log` in `reports-release`.
+GUI smoke tests also require a usable TLS backend and font glyphs for text and
+measurement units without contacting GitHub. The GUI registers its bundled
+DejaVu Sans directly with Qt, including on X11 with Ubuntu 22.04's Fontconfig.
 The update suite uses simulated replies, so routine CI remains offline during
 tests. Packages include Qt's TLS backend and OpenSSL runtime libraries; online
 checks use the host's CA certificate store.
@@ -155,6 +161,11 @@ CI rebuilds the Ubuntu builder without the container layer cache on every run.
 Persistent runners can otherwise retain older binary dependencies after Ubuntu
 mirrors stop indexing their exact source versions. Dependency installation runs
 each time to keep the bundled libraries and accompanying sources aligned.
+
+The builder copies Node.js 24.22.0 from a digest-pinned official image for the
+website tests; Ubuntu 22.04's packaged Node.js predates `node:test`. Node.js is a
+build tool and is not shipped with the application. The Qt SDK remains pinned to
+6.11.2; its x86_64 binaries are checked together with all bundled dependencies.
 
 Builds fetch the pinned Qt SDK and checksum-verified packaging tools. The runtime
 asset has an upstream continuous URL; if it changes, CI fails the pinned hash

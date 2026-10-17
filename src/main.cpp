@@ -3,6 +3,8 @@
 #include <QCommandLineParser>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
+#include <QFontMetrics>
 #include <QSslSocket>
 #include <QSysInfo>
 #include <QTimer>
@@ -21,6 +23,11 @@ int main(int argc, char **argv)
         qputenv("QT_QPA_PLATFORM", "xcb;wayland");
 #endif
     QApplication app(argc, argv);
+    // Register the bundled font on every backend. Jammy's Fontconfig does not
+    // support resolving font directories relative to its configuration file.
+    const auto bundledFont = QCoreApplication::applicationDirPath() + "/../fonts/DejaVuSans.ttf";
+    if (QFileInfo::exists(bundledFont))
+        QFontDatabase::addApplicationFont(bundledFont);
     QCoreApplication::setOrganizationName("CroccoSpectrum");
     QCoreApplication::setApplicationName("CroccoSpectrum");
     // Match the installed desktop entry, including Wayland's application ID.
@@ -49,6 +56,15 @@ int main(int argc, char **argv)
     if (smoke && !QSslSocket::supportsSsl()) {
         std::cerr << "No usable TLS backend for update checks\n";
         return 1;
+    }
+    if (smoke) {
+        const QFontMetrics metrics(app.font());
+        for (const auto glyph : {U'A', U'µ', U'∞'}) {
+            if (!metrics.inFontUcs4(glyph)) {
+                std::cerr << "No usable UI font for text and measurement units\n";
+                return 1;
+            }
+        }
     }
     rf::MainWindow window;
     app.setWindowIcon(window.windowIcon());

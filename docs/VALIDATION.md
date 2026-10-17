@@ -6,6 +6,26 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Ubuntu 22.04 portable baseline (2026-10-17, local Docker Release
+  `0.5.0-dev.local.g562d3ba.dirty`, GCC 11.4.0, official Qt 6.11.2 x86_64 SDK,
+  FFTW 3.3.8, glibc 2.35): all seven CTest suites pass, including 25 release
+  pipeline checks and 397 independent NumPy/SciPy comparisons/invalid-input
+  checks. Core reports 36 passed; UI reports 96 passed and seven desktop skips;
+  updates reports 21 passed and the two expected Wayland/live HTTPS skips.
+  The published v0.5.0 AppImage's missing GLIBC_2.38 errors were reproduced
+  offline on Ubuntu 22.04. The new ABI guard rejects that AppImage's extracted
+  libraries and accepts all 103 new bundled ELF files with a maximum glibc
+  requirement of 2.35. Fixtures also reject newer and nonnumeric ABI requirements
+  while ignoring exported version definitions. The complete local release
+  pipeline collects 110 dependency source archives/patches/descriptors and
+  passes GUI/CLI portable-folder and no-FUSE AppImage extraction smoke checks
+  in clean network-disabled Ubuntu 22.04/24.04/26.04 and Fedora 44 containers,
+  including TLS and text/unit glyph availability. Normal zero-argument AppImage
+  startup stays open offline under Ubuntu 22.04 Xvfb/X11; screenshots at normal
+  and doubled scale were inspected with readable bundled DejaVu Sans text.
+  Removing the bundled font makes the smoke test fail as intended. These are
+  local container/headless X11 checks, not a rerun of AppImage's catalog CI or
+  new native GNOME/KDE, Wayland docking, FUSE mount, or live HTTPS qualification.
 - UI decibel rounding (2026-10-14, Fedora 44 Debug
   `0.4.1-dev.local.gaa6d677.dirty`, GCC 16.2.1, Qt 6.11.2, FFTW 3.3.10):
   all seven CTest suites pass. One-decimal readouts cover spectrum power, PSD,

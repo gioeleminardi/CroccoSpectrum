@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("publish", ROOT / "ci/publish.py")
 publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
+spec = importlib.util.spec_from_file_location("check_abi", ROOT / "packaging/check_abi.py")
+abi = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(abi)
 COMMIT = "233be51" + "a" * 33
 
 
@@ -63,6 +66,52 @@ class BuildVersionTests(unittest.TestCase):
                                  "-DRF_BUILD_COMMIT=short"], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("full Git commit hash", result.stdout + result.stderr)
+
+
+class PackagingAbiTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.bundle = self.root / "bundle"
+        self.bundle.mkdir()
+        (self.root / "provider.c").write_text("int fixture(void) { return 0; }\n")
+        (self.root / "consumer.c").write_text(
+            "extern int fixture(void); int use_fixture(void) { return fixture(); }\n")
+
+    def make_dependency(self, version):
+        (self.root / "versions.map").write_text(f"GLIBC_{version} {{ global: fixture; }};\n")
+        subprocess.run(["cc", "-shared", "-fPIC", str(self.root / "provider.c"),
+                        "-Wl,--version-script=" + str(self.root / "versions.map"),
+                        "-o", str(self.bundle / "libfixture.so")], check=True)
+        subprocess.run(["cc", "-shared", "-fPIC", str(self.root / "consumer.c"),
+                        "-L" + str(self.bundle), "-lfixture",
+                        "-o", str(self.bundle / "libconsumer.so")], check=True)
+
+    def test_accepts_baseline_and_compares_versions_numerically(self):
+        for version in ("2.9", "2.35"):
+            with self.subTest(version=version):
+                self.make_dependency(version)
+                (self.bundle / "README").write_text("GLIBC_9.99 is only documentation\n")
+                count, _ = abi.check_glibc(self.bundle, "2.35")
+                self.assertEqual(count, 2)
+
+    def test_rejects_newer_requirement_in_a_bundled_library(self):
+        self.make_dependency("2.38")
+        with self.assertRaisesRegex(ValueError, r"libconsumer.so requires GLIBC_2\.38"):
+            abi.check_glibc(self.bundle, "2.35")
+        # A version exported by a library is not a host requirement.
+        (self.bundle / "libconsumer.so").unlink()
+        self.assertEqual(abi.check_glibc(self.bundle, "2.35")[0], 1)
+
+    def test_empty_bundle_cannot_pass(self):
+        with self.assertRaisesRegex(ValueError, "No ELF files"):
+            abi.check_glibc(self.bundle, "2.35")
+
+    def test_rejects_non_numeric_glibc_abi_requirements(self):
+        self.make_dependency("ABI_DT_RELR")
+        with self.assertRaisesRegex(ValueError, "unsupported GLIBC_ABI_DT_RELR"):
+            abi.check_glibc(self.bundle, "2.35")
 
 
 class PublicationTests(unittest.TestCase):

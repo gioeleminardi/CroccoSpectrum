@@ -49,7 +49,7 @@ info=json.loads((build/'BUILD-INFO.json').read_text())
 info.update({'configuration':mode,'qt':os.environ['RF_CI_QT'],
       'run_url':os.environ.get('RF_CI_RUN_URL',''),
       'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-      'platform':'Ubuntu 24.04 x86_64','runtime_note':'Debug/ASAN outputs require matching Qt/FFTW and compiler runtimes. Use the Release AppImage or portable folder for bundled dependencies.'})
+      'platform':'Ubuntu 22.04 x86_64','runtime_note':'Debug/ASAN outputs require matching Qt/FFTW and compiler runtimes. Use the Release AppImage or portable folder for bundled dependencies.'})
 (build/'BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 (output/'reports/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 if mode != 'release':
@@ -68,6 +68,7 @@ PY
 if [[ $mode == release ]]; then
     python3 packaging/portable.py --build "$build" --qt "$qt" --output dist/release
     bundle="$PWD/dist/release/croccospectrum-$version-x86_64"
+    python3 packaging/check_abi.py "$bundle" | tee "$output/reports/abi.log"
     apt-get update # Include deb-src indexes for the exact bundled Ubuntu packages.
     python3 packaging/sources.py --bundle "$bundle"
     python3 packaging/finalize.py --bundle "$bundle"

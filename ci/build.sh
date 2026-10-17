@@ -58,7 +58,7 @@ if [[ $mode == release ]]; then
     staging=$(mktemp -d)
     trap 'cleanup; rm -rf "$staging"' EXIT
     tar -xzf "$output/packages/"*-x86_64.tar.gz -C "$staging"
-    for image in docker.io/library/ubuntu:24.04 docker.io/library/ubuntu:26.04 registry.fedoraproject.org/fedora:44; do
+    for image in docker.io/library/ubuntu:22.04 docker.io/library/ubuntu:24.04 docker.io/library/ubuntu:26.04 registry.fedoraproject.org/fedora:44; do
         target=${image##*/}
         target=${target/:/-}
         container=$("$engine" create --network none -e LANG=C.UTF-8 \

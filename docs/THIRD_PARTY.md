@@ -34,8 +34,9 @@ for the required source. The generated `dist/` artifacts include:
 
 Keep these source provisions with a redistributed release. The folder's shared
 libraries remain replaceable. Qt's SDK is an official prebuilt Linux gcc_64 SDK;
-the application and Ubuntu libraries target the Ubuntu 24.04 ABI. A reproducible
-build procedure is provided; bit-for-bit identical binary archives are not claimed.
+the application and Ubuntu libraries target the Ubuntu 22.04/glibc 2.35 ABI.
+A reproducible build procedure is provided; bit-for-bit identical binary archives
+are not claimed.
 
 Upstream references: [Qt licensing](https://doc.qt.io/qt-6/licensing.html),
 [Qt source archives](https://download.qt.io/archive/qt/6.11/6.11.2/submodules/),

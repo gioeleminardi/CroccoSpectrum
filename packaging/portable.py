@@ -121,7 +121,9 @@ if font.exists():
     copy(font, destination / "fonts" / font.name)
     copy(pathlib.Path("/usr/share/doc/fonts-dejavu-core/copyright"), destination / "share" / "licenses" / "dejavu" / "copyright")
 
-(destination / "fonts" / "fonts.conf").write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir prefix="relative">.</dir><cachedir prefix="xdg">croccospectrum/fontconfig</cachedir></fontconfig>\n')
+# The GUI registers DejaVu Sans through Qt. Avoid Fontconfig's newer relative
+# directory syntax, which Jammy treats as a scan of the launch directory.
+(destination / "fonts" / "fonts.conf").write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><cachedir prefix="xdg">croccospectrum/fontconfig</cachedir></fontconfig>\n')
 
 launcher = '''#!/bin/sh
 set -eu
