@@ -4,7 +4,7 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## 0.6.0 — 2026-10-20 — Audio, text and compressed recording imports
+## Unreleased
 
 - Add WAV/AIFF/AIFC PCM and floating-point imports, preserving header sample rates
   with explicit real/I/Q channel selection. Add numeric ASCII/CSV/TSV imports
