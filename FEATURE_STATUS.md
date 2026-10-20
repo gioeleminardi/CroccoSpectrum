@@ -28,6 +28,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Shared waveform/waterfall cursor and freeze | Implemented | Vertical waveform bar; hover either plot; click either to freeze/resume; waterfall time navigation resets waveform bounds |
 | Shift-click spectrum and waterfall measurements | Implemented | Two endpoints; FFT-bin frequency difference and integrated band power in dBFS; row-start duration with exact frame differences; Shift-drag band/markers to move/resize with live updates; Escape clears |
 | Signal/noise band power and SNR | Implemented | Explicit bands on displayed FFT or completed average; ENBW-corrected integration; bandwidth-normalized noise subtraction; CSV/PNG metadata and CLI band bounds |
+| Automatic spectral peaks | Implemented | Spectrum/average context menu; twelve strongest local maxima in visible/selected range; bin power/frequency, approximate sub-bin estimates and two-peak differences; weak/nearby/boundary limits |
 | Average waterfall selection | Implemented | Markers update draft frame fields without applying; exact average over ordered row-start bounds; requires a completed interval with one FFT window |
 | User-selected power-of-two FFT | Implemented | 256 through 1,048,576 |
 | Window, overlap, DC removal, conjugation | Implemented | Hann, rectangular, Hamming, Blackman-Harris |

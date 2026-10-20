@@ -63,6 +63,95 @@ double powerToDb(double power)
     return power > 0 ? 10.0 * std::log10(power) : -std::numeric_limits<double>::infinity();
 }
 
+std::vector<SpectralPeak> findSpectralPeaks(std::span<const double> frequencies,
+                                         std::span<const double> powers, double lowerHz,
+                                         double upperHz, Window window)
+{
+    std::vector<SpectralPeak> peaks;
+    if (frequencies.size() != powers.size() || powers.size() < 2 ||
+        !std::isfinite(lowerHz) || !std::isfinite(upperHz) || lowerHz > upperHz)
+        return peaks;
+    const double spacing = frequencies[1] - frequencies[0];
+    if (!std::isfinite(spacing) || spacing <= 0)
+        return peaks;
+    const auto first = static_cast<std::size_t>(
+        std::lower_bound(frequencies.begin(), frequencies.end(), lowerHz) - frequencies.begin());
+    const auto end = static_cast<std::size_t>(
+        std::upper_bound(frequencies.begin(), frequencies.end(), upperHz) - frequencies.begin());
+    std::vector<double> background;
+    background.reserve(end - first);
+    const auto localMaximum = [powers](std::size_t bin) {
+        const double value = powers[bin];
+        // Keep one representative of an equal two-bin peak. Wider flat tops
+        // have no unique peak and are omitted. Range edges use full-trace neighbors.
+        return std::isfinite(value) && value > 0 &&
+               (bin == 0 || value > powers[bin - 1]) &&
+               (bin + 1 == powers.size() || value > powers[bin + 1] ||
+                (value == powers[bin + 1] && bin + 2 < powers.size() &&
+                 value > powers[bin + 2]));
+    };
+    for (auto bin = first; bin < end; ++bin) {
+        if (std::isfinite(powers[bin]) && powers[bin] >= 0)
+            background.push_back(powers[bin]);
+        if (!localMaximum(bin))
+            continue;
+        SpectralPeak peak{bin, frequencies[bin], powers[bin], {}, {}};
+        const auto position = std::find_if(peaks.begin(), peaks.end(), [&peak](const auto &other) {
+            return peak.power > other.power;
+        });
+        peaks.insert(position, peak);
+        if (peaks.size() > 12)
+            peaks.pop_back();
+    }
+    if (background.empty())
+        return peaks;
+    const auto middle = background.begin() + static_cast<std::ptrdiff_t>(background.size() / 2);
+    std::nth_element(background.begin(), middle, background.end());
+    const double floor = *middle;
+    // Conservative main-lobe separation guard, in bins. It cannot detect two
+    // carriers that have already merged into one local maximum.
+    const std::size_t separation = window == Window::Rectangular ? 2
+                                 : window == Window::BlackmanHarris ? 8 : 4;
+    for (auto &peak : peaks) {
+        const auto bin = peak.bin;
+        if (bin == 0 || bin + 1 == powers.size()) {
+            peak.limitation = "FFT boundary";
+            continue;
+        }
+        if (background.size() < 5 || (floor > 0 && powerToDb(peak.power) - powerToDb(floor) < 15)) {
+            peak.limitation = "Weak / insufficient background";
+            continue;
+        }
+        bool nearby = false;
+        for (auto other = bin > separation ? bin - separation + 1 : 0;
+             other < std::min(powers.size(), bin + separation); ++other)
+            if (other != bin && localMaximum(other) &&
+                powerToDb(powers[other]) >= powerToDb(peak.power) - 20)
+                nearby = true;
+        if (nearby) {
+            peak.limitation = "Nearby peak / possibly unresolved";
+            continue;
+        }
+        if (!std::isfinite(powers[bin - 1]) || !std::isfinite(powers[bin + 1]) ||
+            powers[bin - 1] <= 0 || powers[bin + 1] <= 0) {
+            peak.limitation = "Missing positive neighbors";
+            continue;
+        }
+        // Julius O. Smith, Quadratic Interpolation of Spectral Peaks:
+        // p = (alpha - gamma) / (2 * (alpha - 2*beta + gamma)).
+        const double left = powerToDb(powers[bin - 1]) - powerToDb(peak.power);
+        const double right = powerToDb(powers[bin + 1]) - powerToDb(peak.power);
+        const double curvature = left + right;
+        const double offset = 0.5 * (left - right) / curvature;
+        if (curvature < 0 && std::isfinite(offset) && std::abs(offset) <= 0.5) {
+            peak.estimatedHz = peak.frequencyHz + offset * spacing;
+            peak.limitation = "Approximate";
+        } else
+            peak.limitation = "Flat / invalid fit";
+    }
+    return peaks;
+}
+
 std::optional<BandPower> integrateBand(std::span<const double> frequencies,
                                      std::span<const double> powers, PowerScale scale,
                                      double enbwHz, std::size_t first, std::size_t last)

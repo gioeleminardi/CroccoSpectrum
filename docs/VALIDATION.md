@@ -6,6 +6,19 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Spectral peaks (2026-10-20, Ubuntu 24.04 Debug
+  `0.6.0-dev.local.gb5f96ee.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
+  all nine CTest suites pass. Core reports 86 passed, including 48 tone cases
+  across all four windows, real/complex input, spectrum/PSD scaling, on-bin,
+  off-bin and half-bin frequencies, plus noise, close/merged carriers, range
+  filtering, boundary/invalid bins and bounded peak counts. UI reports 109 passed
+  with four expected offscreen docking skips; updates retain the two expected
+  Wayland URL/live HTTPS skips. The six peak UI cases also pass through native
+  X11/XWayland at normal and doubled scale, with inspected plot/dialog renders
+  and difference-readout geometry assertions. These cover visible/selected
+  ranges, fractional/absolute frequency, FFT/average/max-hold traces, comparisons,
+  trace updates and clearing. The existing 397 numerical and 108 import reference
+  checks pass. Sanitizers, portable packaging and live HTTPS were not rerun.
 - Recording imports (2026-10-20, Ubuntu 24.04 Debug
   `0.5.2-dev.local.gb5f96ee.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10,
   libsndfile 1.2.2, zlib 1.3, libbzip2 1.0.8): all nine CTest suites pass.

@@ -4,6 +4,11 @@
 #include <QWidget>
 #include <utility>
 
+class QComboBox;
+class QDialog;
+class QLabel;
+class QTableWidget;
+
 namespace rf
 {
 struct MeasurementDrag {
@@ -24,7 +29,8 @@ class SpectrumPlot : public QWidget
     explicit SpectrumPlot(QWidget *parent = nullptr);
     void setPreview(std::shared_ptr<const PreviewResult> result, bool resetZoom = true);
     void setAverage(std::shared_ptr<const AverageResult> result, bool maxHold);
-    void setView(ViewSettings view, PowerScale scale, double centerFrequency);
+    void setView(ViewSettings view, PowerScale scale, double centerFrequency,
+                 Window window = Window::Hann);
     void clear();
     void resetFrequency();
     void setFrequencyRange(double left, double right);
@@ -62,6 +68,10 @@ class SpectrumPlot : public QWidget
     void paintMeasurement(QPainter &painter);
     void updateHover(const QPointF &position);
     void paintCrosshair(QPainter &painter, double minimum, double maximum);
+    void showPeaks();
+    void updatePeaks();
+    void updatePeakDifference();
+    void paintPeaks(QPainter &painter, double minimum, double maximum);
     std::shared_ptr<const PreviewResult> preview_;
     std::shared_ptr<const AverageResult> average_;
     ViewSettings view_;
@@ -78,6 +88,12 @@ class SpectrumPlot : public QWidget
     bool measuring_ = false;
     MeasurementDrag measurementDrag_;
     std::optional<QPointF> hoverPosition_;
+    QDialog *peaksDialog_ = nullptr;
+    QTableWidget *peaksTable_ = nullptr;
+    QComboBox *peaksRange_ = nullptr;
+    QLabel *peaksSource_ = nullptr, *peaksDifference_ = nullptr;
+    Window peakWindow_ = Window::Hann;
+    std::vector<SpectralPeak> peaks_;
 };
 
 class WaterfallPlot : public QWidget

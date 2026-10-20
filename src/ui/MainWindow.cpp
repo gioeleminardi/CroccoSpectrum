@@ -779,7 +779,11 @@ void MainWindow::showPlotControls()
                "Left-click again to finish. Shift-drag the band to move it or a marker to resize "
                "it. Right-click to assign the selection as a signal or noise band. SNR subtracts "
                "noise scaled to the signal bandwidth. Interval SNR uses the average trace. Escape "
-               "clears the measurement and both assigned bands.");
+               "clears the measurement and both assigned bands.\n\n"
+               "Right-click > Spectral peaks: label local maxima in the visible range or "
+               "completed frequency selection. Select two table rows to compare frequency and "
+               "power. Sub-bin estimates are approximate; weak or unresolved carriers may not "
+               "have a reliable estimate.");
     addSection("Waterfall",
                "Mouse wheel: zoom only time around the pointer. Ctrl + mouse wheel: zoom only "
                "frequency around the pointer. Left-button drag: pan "
@@ -1577,7 +1581,7 @@ void MainWindow::updateSpectrumView()
     const auto frame = spectrumPreview_ ? spectrumPreview_->spectrumStart : range_.begin;
     effective.absoluteFrequency = effective.absoluteFrequency && recording_ &&
                                   recording_->descriptor().hasFrequencyAt(frame);
-    spectrum_->setView(effective, preferences_.dsp.scale, displayCenter());
+    spectrum_->setView(effective, preferences_.dsp.scale, displayCenter(), preferences_.dsp.window);
 }
 
 void MainWindow::updateView()
@@ -1625,7 +1629,8 @@ void MainWindow::updateView()
     minimap_->setView(view);
     const auto averageCenter = uniformCenter(average_ ? average_->range : range_);
     effective.absoluteFrequency = view.absoluteFrequency && averageCenter.has_value();
-    averagePlot_->setView(effective, preferences_.dsp.scale, averageCenter.value_or(0));
+    averagePlot_->setView(effective, preferences_.dsp.scale, averageCenter.value_or(0),
+                         preferences_.dsp.window);
     updateSpectrumView();
     waveform_->setMode(view.waveformMode);
     saveTimer_->start();

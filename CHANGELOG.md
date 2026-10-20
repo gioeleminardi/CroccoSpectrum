@@ -6,6 +6,11 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add a Spectral peaks view to the spectrum/average context menus: label the
+  strongest twelve local maxima in the visible range or completed frequency
+  selection, compare two peaks, and show approximate sub-bin frequencies beside
+  original FFT-bin frequencies/powers. Flag weak, nearby and boundary peaks;
+  explain window bias and unresolved-carrier limits.
 - Refresh the AppImage runtime binary and matching source pins after an upstream
   reproducible-build update, restoring release packaging with checksum verification.
 - Add WAV/AIFF/AIFC PCM and floating-point imports, preserving header sample rates

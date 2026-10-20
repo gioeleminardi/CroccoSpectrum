@@ -2,10 +2,19 @@
 #include "DisplayUnits.h"
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QHeaderView>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QScreen>
+#include <QSignalBlocker>
+#include <QTableWidget>
+#include <QVBoxLayout>
 #include <QWheelEvent>
 #include <algorithm>
 #include <array>
@@ -59,6 +68,13 @@ QRectF area(const QWidget &widget)
 QString number(double value)
 {
     return QString::number(value, 'g', 10);
+}
+
+QString estimatedFrequencyText(double value, double spacing)
+{
+    // Display roughly 1/1000 bin, without implying machine-precision accuracy.
+    const int decimals = static_cast<int>(std::clamp(std::ceil(3 - std::log10(spacing)), 0.0, 12.0));
+    return QString::number(value, 'f', decimals);
 }
 
 void measurementReadout(QPainter &painter, const QRectF &plot, const QString &text)
@@ -186,6 +202,10 @@ SpectrumPlot::SpectrumPlot(QWidget *parent) : QWidget(parent)
     clearBandsAction_ = new QAction("Clear signal and noise bands", this);
     clearBandsAction_->setObjectName("clearPowerBands");
     addActions({signalBandAction_, noiseBandAction_, clearBandsAction_});
+    auto *peaks = new QAction("Spectral peaks…", this);
+    peaks->setObjectName("showSpectralPeaks");
+    addAction(peaks);
+    connect(peaks, &QAction::triggered, this, &SpectrumPlot::showPeaks);
     connect(signalBandAction_, &QAction::triggered, this, [this] {
         signalBins_ = measurementBins_;
         updateMeasurementPower();
@@ -228,14 +248,19 @@ void SpectrumPlot::setAverage(std::shared_ptr<const AverageResult> result, bool 
     resetFrequency();
     update();
 }
-void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFrequency)
+void SpectrumPlot::setView(ViewSettings view, PowerScale scale, double centerFrequency, Window window)
 {
+    const bool peaksChanged = scale_ != scale || center_ != centerFrequency || peakWindow_ != window ||
+                              view_.absoluteFrequency != view.absoluteFrequency;
     if (scale_ != scale)
         clearMeasurement();
     view_ = std::move(view);
     scale_ = scale;
     center_ = centerFrequency;
+    peakWindow_ = window;
     updateMeasurementHeight();
+    if (peaksChanged)
+        updatePeaks();
     update();
 }
 void SpectrumPlot::clear()
@@ -245,6 +270,7 @@ void SpectrumPlot::clear()
     dragX_ = -1;
     preview_.reset();
     average_.reset();
+    updatePeaks();
     update();
 }
 void SpectrumPlot::clearMeasurement()
@@ -279,6 +305,169 @@ void SpectrumPlot::updateMeasurementPower()
     noiseBandAction_->setEnabled(selected);
     clearBandsAction_->setEnabled(signalBins_.has_value() || noiseBins_.has_value());
     updateMeasurementHeight();
+    updatePeaks();
+}
+
+void SpectrumPlot::showPeaks()
+{
+    if (!peaksDialog_) {
+        peaksDialog_ = new QDialog(this);
+        peaksDialog_->setObjectName("spectralPeaksDialog");
+        peaksDialog_->setWindowTitle("Spectral peaks");
+        auto *layout = new QVBoxLayout(peaksDialog_);
+        peaksSource_ = new QLabel(peaksDialog_);
+        peaksSource_->setWordWrap(true);
+        layout->addWidget(peaksSource_);
+        peaksRange_ = new QComboBox(peaksDialog_);
+        peaksRange_->setObjectName("peaksRange");
+        peaksRange_->addItems({"Visible frequency range", "Completed frequency selection"});
+        layout->addWidget(peaksRange_);
+        peaksTable_ = new QTableWidget(0, 6, peaksDialog_);
+        peaksTable_->setObjectName("spectralPeaksTable");
+        peaksTable_->setHorizontalHeaderLabels(
+            {"Peak", "FFT bin", "Bin frequency (Hz)", "Estimate ≈ (Hz)", "Bin power",
+             "Estimate status"});
+        peaksTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        peaksTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        peaksTable_->setSelectionMode(QAbstractItemView::MultiSelection);
+        peaksTable_->verticalHeader()->hide();
+        peaksTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+        peaksTable_->horizontalHeader()->setStretchLastSection(true);
+        layout->addWidget(peaksTable_, 1);
+        peaksDifference_ = new QLabel(peaksDialog_);
+        peaksDifference_->setObjectName("peakDifference");
+        peaksDifference_->setWordWrap(true);
+        peaksDifference_->setMinimumHeight(2 * peaksDifference_->fontMetrics().lineSpacing());
+        peaksDifference_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        layout->addWidget(peaksDifference_);
+        auto *limits = new QLabel(
+            "Strongest 12 local maxima; candidates may be noise or window sidelobes. "
+            "Power is the original FFT-bin level, not integrated carrier power.\n"
+            "≈ uses a three-bin log-power parabola with window-dependent bias. "
+            "Weak means <15 dB above the range median; fitting also needs five valid bins. "
+            "Weak peaks and nearby maxima have no estimate. Unresolved carriers can merge "
+            "into one peak; interpolation adds no resolving power or accuracy guarantee. "
+            "Interval-trace estimates assume stationary carriers.", peaksDialog_);
+        limits->setWordWrap(true);
+        layout->addWidget(limits);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, peaksDialog_);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::rejected, peaksDialog_, &QDialog::reject);
+        connect(peaksDialog_, &QDialog::finished, this, [this] { update(); });
+        connect(peaksRange_, &QComboBox::currentIndexChanged, this, [this] { updatePeaks(); });
+        connect(peaksTable_, &QTableWidget::itemSelectionChanged, this, [this] {
+            updatePeakDifference();
+            update();
+        });
+        const auto available = peaksDialog_->screen()->availableGeometry();
+        peaksDialog_->resize(std::min(960, available.width() - 60),
+                             std::min(580, available.height() - 80));
+    }
+    peaksDialog_->show();
+    updatePeaks();
+    peaksDialog_->raise();
+}
+
+void SpectrumPlot::updatePeaks()
+{
+    if (!peaksDialog_ || !peaksDialog_->isVisible())
+        return;
+    std::vector<std::size_t> selected;
+    for (const auto &row : peaksTable_->selectionModel()->selectedRows())
+        selected.push_back(peaks_[static_cast<std::size_t>(row.row())].bin);
+    peaks_.clear();
+    const bool valid = (preview_ && preview_->spectrum.valid) ||
+                       (average_ && average_->validWindows > 0);
+    const auto frequency = frequencies();
+    double lower = left_, upper = right_;
+    const bool selection = peaksRange_->currentIndex() == 1;
+    const bool hasSelection = measurementBins_ && !isMeasuring();
+    if (selection && hasSelection) {
+        const auto bounds = std::minmax(measurementBins_->first, measurementBins_->second);
+        lower = frequency[bounds.first];
+        upper = frequency[bounds.second];
+    }
+    if (valid && (!selection || hasSelection))
+        peaks_ = findSpectralPeaks(frequency, powers(), lower, upper, peakWindow_);
+    const QString source = preview_ ? QString("FFT frame %1").arg(preview_->spectrumStart)
+                           : average_ ? (maxHold_ ? "Max-hold trace" : "Average trace") : "No trace";
+    peaksSource_->setText(source + " · " + powerUnit(scale_) + " · " + windowName(peakWindow_) +
+        (selection && !hasSelection ? " · Shift-click two endpoints in the plot first."
+         : peaks_.empty() ? " · No local peaks in this range." : " · Select two rows to compare."));
+    const QSignalBlocker blocker(peaksTable_);
+    peaksTable_->clearContents();
+    peaksTable_->setRowCount(static_cast<int>(peaks_.size()));
+    for (std::size_t row = 0; row < peaks_.size(); ++row) {
+        const auto &peak = peaks_[row];
+        const double center = view_.absoluteFrequency ? center_ : 0;
+        const QStringList cells{
+            QString("P%1").arg(row + 1), QString::number(peak.bin),
+            QString::number(peak.frequencyHz + center, 'g', 15),
+            peak.estimatedHz ? estimatedFrequencyText(*peak.estimatedHz + center,
+                                                       frequency[1] - frequency[0]) : "unavailable",
+            decibelText(powerToDb(peak.power)) + " " + powerUnit(scale_), peak.limitation};
+        for (int column = 0; column < cells.size(); ++column)
+            peaksTable_->setItem(static_cast<int>(row), column, new QTableWidgetItem(cells[column]));
+        if (std::find(selected.begin(), selected.end(), peak.bin) != selected.end())
+            peaksTable_->selectRow(static_cast<int>(row));
+    }
+    updatePeakDifference();
+    update();
+}
+
+void SpectrumPlot::updatePeakDifference()
+{
+    const auto rows = peaksTable_->selectionModel()->selectedRows();
+    if (rows.size() != 2) {
+        peaksDifference_->setText("Select exactly two peaks for frequency and power differences.");
+        return;
+    }
+    const auto &first = peaks_[static_cast<std::size_t>(std::min(rows[0].row(), rows[1].row()))];
+    const auto &second = peaks_[static_cast<std::size_t>(std::max(rows[0].row(), rows[1].row()))];
+    peaksDifference_->setText(QString("P%1 − P%2: Δf (bins) = %3 Hz · Δpower = %4 dB\n"
+                                     "Δf (estimates) = %5")
+        .arg(std::max(rows[0].row(), rows[1].row()) + 1)
+        .arg(std::min(rows[0].row(), rows[1].row()) + 1)
+        .arg(QString::number(second.frequencyHz - first.frequencyHz, 'g', 15),
+             decibelText(powerToDb(second.power) - powerToDb(first.power)),
+             first.estimatedHz && second.estimatedHz
+                 ? "≈ " + estimatedFrequencyText(*second.estimatedHz - *first.estimatedHz,
+                                                   frequencies()[1] - frequencies()[0]) + " Hz"
+                 : "unavailable"));
+}
+
+void SpectrumPlot::paintPeaks(QPainter &painter, double minimum, double maximum)
+{
+    if (!peaksDialog_ || !peaksDialog_->isVisible())
+        return;
+    const auto plot = area(*this);
+    painter.save();
+    painter.setClipRect(plot);
+    std::vector<QRectF> labels;
+    for (std::size_t row = 0; row < peaks_.size(); ++row) {
+        const auto &peak = peaks_[row];
+        if (peak.frequencyHz < left_ || peak.frequencyHz > right_)
+            continue;
+        const QPointF point(plot.left() + (peak.frequencyHz - left_) / (right_ - left_) * plot.width(),
+            plot.bottom() - (std::clamp(powerToDb(peak.power), minimum, maximum) - minimum) /
+                                (maximum - minimum) * plot.height());
+        painter.setPen(measurementColor);
+        painter.drawEllipse(point, 3, 3);
+        const auto text = QString("P%1").arg(row + 1);
+        const double width = painter.fontMetrics().horizontalAdvance(text) + 8;
+        const double height = painter.fontMetrics().height() + 2;
+        QRectF label(std::clamp(point.x() - width / 2, plot.left(), plot.right() - width),
+                     std::max(plot.top(), point.y() - height - 5), width, height);
+        // Retain every marker; omit text only when labels would overlap.
+        if (std::none_of(labels.begin(), labels.end(), [&label](const auto &other) {
+                return label.intersects(other);
+            })) {
+            labels.push_back(label);
+            painter.fillRect(label, background);
+            painter.drawText(label, Qt::AlignCenter, text);
+        }
+    }
+    painter.restore();
 }
 void SpectrumPlot::updateMeasurementHeight()
 {
@@ -430,6 +619,7 @@ void SpectrumPlot::resetFrequency()
         right_ = frequency.back() + (left_ < 0 ? frequency[1] - frequency[0] : 0);
         emit frequencyRangeChanged(left_, right_);
     }
+    updatePeaks();
     if (hoverPosition_)
         updateHover(*hoverPosition_);
     update();
@@ -439,6 +629,7 @@ void SpectrumPlot::setFrequencyRange(double left, double right)
     if (std::isfinite(left) && std::isfinite(right) && left < right) {
         left_ = left;
         right_ = right;
+        updatePeaks();
         if (hoverPosition_)
             updateHover(*hoverPosition_);
         update();
@@ -535,6 +726,7 @@ void SpectrumPlot::paintEvent(QPaintEvent *)
     painter.drawPath(path);
     painter.restore();
     paintCrosshair(painter, minimum, maximum);
+    paintPeaks(painter, minimum, maximum);
     paintMeasurement(painter);
 }
 
@@ -589,6 +781,7 @@ void SpectrumPlot::mouseMoveEvent(QMouseEvent *event)
         left_ = dragLeft_ - delta;
         right_ = dragRight_ - delta;
         emit frequencyRangeChanged(left_, right_);
+        updatePeaks();
         update();
     }
     updateHover(event->position());
@@ -661,6 +854,7 @@ void SpectrumPlot::wheelEvent(QWheelEvent *event)
     left_ = std::clamp(anchor - fraction * span, frequency.front(), frequency.back() - span);
     right_ = left_ + span;
     emit frequencyRangeChanged(left_, right_);
+    updatePeaks();
     updateHover(event->position());
     update();
     event->accept();

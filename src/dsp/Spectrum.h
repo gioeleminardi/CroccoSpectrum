@@ -27,6 +27,19 @@ QString windowName(Window window);
 QString powerUnit(PowerScale scale);
 double powerToDb(double power);
 
+struct SpectralPeak {
+    std::size_t bin = 0;
+    double frequencyHz = 0, power = 0;
+    std::optional<double> estimatedHz;
+    QString limitation;
+};
+
+// Strongest twelve local maxima, using original bins and inclusive frequency bounds.
+// Estimates are approximate three-bin log-power parabolas, not extra FFT resolution.
+std::vector<SpectralPeak> findSpectralPeaks(std::span<const double> frequencies,
+                                         std::span<const double> powers, double lowerHz,
+                                         double upperHz, Window window);
+
 struct BandPower {
     std::size_t firstBin = 0, lastBin = 0; // Inclusive bin centers.
     double lowerHz = 0, upperHz = 0, bandwidthHz = 0;

@@ -318,6 +318,24 @@ frequency-only navigation retains independent waveform zoom and exact scans.
 
 ## Measurements and exports
 
+Right-click the spectrum or average plot and choose **Spectral peaks…** to label
+the twelve strongest local maxima. Search the visible frequency range or the
+completed Shift-click frequency selection. The table follows the displayed FFT,
+average or max-hold trace; select two rows to see signed frequency and power
+differences (second row minus first in table order). Closing the view hides labels.
+
+Each row preserves the original FFT-bin frequency and power, with an approximate
+sub-bin frequency alongside it. Peak-table frequencies retain fractional Hz.
+The three-bin log-power fit has window-dependent bias and adds no resolving power.
+Estimates are withheld for peaks less than 15 dB above the search range's median
+bin power, ranges with fewer than five valid bins, nearby maxima, FFT boundaries,
+and missing/invalid fit neighbors. These are conservative heuristics, not a
+confidence interval or carrier detector: noise and sidelobes can produce peaks,
+and unresolved carriers can merge into one maximum. Bin power is not integrated
+carrier power; use a band measurement for that. Interval-trace estimates assume
+stationary carriers; max-hold bins can come from different windows. Peaks are
+transient GUI readouts.
+
 Spectrum power uses **dBFS**; power spectral density uses **dBFS/Hz**. The reference
 is one normalized mean-square unit: a unit complex tone is 0 dBFS, and a real
 sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readings.

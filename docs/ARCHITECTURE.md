@@ -98,7 +98,32 @@ conversion to seconds. Duration is independent of preview row skipping or
 overview aggregation, although those displays limit event-boundary resolution.
 Plot measurement state is transient; Escape also clears signal/noise bands.
 
-UI frequency values round to whole Hz before scaling to compact kHz/MHz/GHz
+The opt-in spectral-peaks dialog uses the original displayed FFT, average or
+max-hold bins, never pixel maxima. It retains at most twelve local maxima in
+descending bin-power order (ties retain frequency order). Search bounds include
+bin centers; neighbors outside the visible/selected range still determine maxima
+and interpolation. A two-bin equal maximum has one representative; wider flat
+tops are omitted. Peak labels/readouts update on trace, range and selection
+changes, outside paint handlers, and disappear when the dialog closes.
+
+Sub-bin estimates fit a parabola through three log-power bins, using
+`offset = (left - right) / (2 * (left - 2*peak + right))`, bounded to half a bin.
+See [Quadratic interpolation](https://www.dsprelated.com/freebooks/sasp/Quadratic_Interpolation_Spectral_Peaks.html)
+and [window-dependent bias](https://www.dsprelated.com/freebooks/SASP/Bias_Parabolic_Peak_Interpolation.html).
+The original bin frequency and power are retained; power is not interpolated.
+Estimates are unavailable at FFT edges, with nonpositive/nonfinite neighbors,
+invalid curvature, fewer than five valid search bins, or peak power less than
+15 dB above the median search-bin power. Another local maximum within 2 bins
+(rectangular), 4 (Hann/Hamming), or 8 (Blackman-Harris), and within 20 dB of the
+candidate, suppresses its estimate even outside the search range. These guards
+are heuristics: weak or merged carriers, noise and sidelobes cannot be reliably
+classified from three bins. The dialog always states that interpolation gives
+neither additional resolving power nor an accuracy guarantee. Differences use
+the original numerical values, with the lower table row minus the upper row.
+Average/max-hold estimates assume stationary carriers; max-hold bins may come
+from different windows, so a fitted peak need not describe one recorded carrier.
+
+Other UI frequency values round to whole Hz before scaling to compact kHz/MHz/GHz
 labels. This includes axis ticks, cursors, band endpoints/widths, bin spacing and
 ENBW. Time readouts select s/ms/µs/ns by magnitude, including window/hop durations,
 recording/import summaries and waterfall/waveform times. The shared UI formatter

@@ -33,6 +33,7 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QSysInfo>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QWheelEvent>
@@ -1209,6 +1210,124 @@ class UiTests : public QObject
         // Integrate all numerical bins, including a tone between screen sample points.
         QVERIFY(plot.measurementText().contains("0.0 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
+    }
+    void spectralPeaks_data()
+    {
+        QTest::addColumn<int>("trace");
+        QTest::addColumn<bool>("density");
+        for (int trace = 0; trace < 3; ++trace)
+            for (bool density : {false, true})
+                QTest::newRow(qPrintable(QString("%1-%2").arg(trace).arg(density)))
+                    << trace << density;
+    }
+    void spectralPeaks()
+    {
+        QFETCH(int, trace);
+        QFETCH(bool, density);
+        rf::SpectrumPlot plot;
+        plot.resize(700, 320);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->spectrumStart = 256;
+        result->frequencies.resize(64);
+        result->spectrum.power.assign(64, 1e-8);
+        for (std::size_t bin = 0; bin < 64; ++bin)
+            result->frequencies[bin] = (static_cast<double>(bin) - 32) * 0.25;
+        for (const auto [bin, power] : {std::pair{15, 0.002}, {16, 0.01}, {17, 0.004},
+                                       {43, 0.0004}, {44, 0.001}, {45, 0.0002}})
+            result->spectrum.power[static_cast<std::size_t>(bin)] = power;
+        if (density)
+            for (auto &power : result->spectrum.power)
+                power /= 1000;
+        rf::ViewSettings view;
+        view.absoluteFrequency = true;
+        const auto scale = density ? rf::PowerScale::Density : rf::PowerScale::Spectrum;
+        plot.setView(view, scale, 1e9);
+        auto average = std::make_shared<rf::AverageResult>();
+        average->frequencies = result->frequencies;
+        average->averagePower = result->spectrum.power;
+        average->maxPower = result->spectrum.power;
+        average->maxPower[16] *= 2;
+        average->validWindows = 10;
+        if (trace == 0)
+            plot.setPreview(result);
+        else
+            plot.setAverage(average, trace == 2);
+        plot.show();
+        auto *action = plot.findChild<QAction *>("showSpectralPeaks");
+        QVERIFY(action);
+        action->trigger();
+        auto *dialog = plot.findChild<QDialog *>("spectralPeaksDialog");
+        auto *table = plot.findChild<QTableWidget *>("spectralPeaksTable");
+        auto *difference = plot.findChild<QLabel *>("peakDifference");
+        auto *range = plot.findChild<QComboBox *>("peaksRange");
+        QVERIFY(dialog && table && difference && range);
+        QCOMPARE(table->rowCount(), 2);
+        QCOMPARE(table->item(0, 1)->text(), QString("16"));
+        QCOMPARE(table->item(0, 2)->text().toDouble(), 1e9 - 4);
+        QVERIFY(table->item(0, 3)->text().toDouble() > 1e9 - 4);
+        QVERIFY(table->item(0, 4)->text().endsWith(rf::powerUnit(scale)));
+        table->selectRow(0);
+        table->selectionModel()->select(table->model()->index(1, 0),
+                                        QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        QVERIFY(difference->text().contains("Δf (bins) = 7 Hz"));
+        QVERIFY(difference->text().contains(trace == 2 ? "-13.0 dB" : "-10.0 dB"));
+        QVERIFY(!difference->text().contains("unavailable"));
+        plot.setView({}, scale, 0);
+        QCOMPARE(table->item(0, 2)->text().toDouble(), -4.0);
+        QCOMPARE(table->selectionModel()->selectedRows().size(), 2);
+        plot.setFrequencyRange(-5, -2);
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 1)->text(), QString("16"));
+        range->setCurrentIndex(1);
+        QCOMPARE(table->rowCount(), 0);
+        plot.resetFrequency();
+        const auto binPosition = [](int bin) { return QPoint(76 + qRound(bin * 600.0 / 64), 200); };
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, binPosition(10));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, binPosition(24));
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 1)->text(), QString("16"));
+        plot.setFrequencyRange(2, 5);
+        QCOMPARE(table->rowCount(), 1); // Explicit selection takes priority over the viewport.
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QCOMPARE(table->rowCount(), 0);
+        range->setCurrentIndex(0);
+        QCOMPARE(table->rowCount(), 1);
+        QCOMPARE(table->item(0, 1)->text(), QString("44"));
+        plot.resetFrequency();
+        table->selectRow(0);
+        table->selectionModel()->select(table->model()->index(1, 0),
+                                        QItemSelectionModel::Select | QItemSelectionModel::Rows);
+        QCoreApplication::processEvents();
+        const QRect differenceBody(0, 0, difference->width(), 10000);
+        QVERIFY(difference->fontMetrics().boundingRect(
+            differenceBody, Qt::TextWordWrap, difference->text()).height() <= difference->height());
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty() && trace == 0 && !density) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(dialog->grab().save(screenshots + "/spectral-peaks-dialog.png"));
+            QVERIFY(plot.grab().save(screenshots + "/spectral-peaks-plot.png"));
+        }
+        const auto withLabels = plot.grab().toImage();
+        dialog->close();
+        QVERIFY(!dialog->isVisible());
+        QVERIFY(plot.grab().toImage() != withLabels);
+        auto next = std::make_shared<rf::PreviewResult>(*result);
+        next->spectrumStart = 512;
+        next->spectrum.power[16] *= 4;
+        plot.setPreview(next, false);
+        action->trigger();
+        QCOMPARE(table->rowCount(), 2);
+        QVERIFY(table->item(0, 4)->text().startsWith(density ? "-44.0" : "-14.0"));
+        QVERIFY(difference->text().contains("-16.0 dB"));
+        auto invalid = std::make_shared<rf::PreviewResult>(*result);
+        invalid->spectrum.valid = false;
+        plot.setPreview(invalid);
+        action->trigger();
+        QCOMPARE(table->rowCount(), 0);
+        plot.setPreview(result);
+        QCOMPARE(table->rowCount(), 2);
+        plot.clear();
+        QCOMPARE(table->rowCount(), 0);
     }
     void signalAndNoiseBands_data()
     {

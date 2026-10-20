@@ -34,6 +34,149 @@ class CoreTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void spectralPeakTones_data()
+    {
+        QTest::addColumn<int>("window");
+        QTest::addColumn<bool>("real");
+        QTest::addColumn<bool>("density");
+        QTest::addColumn<double>("offset");
+        for (int window = 0; window < 4; ++window)
+            for (bool real : {false, true})
+                for (bool density : {false, true})
+                    for (double offset : {0.0, 0.23, 0.5})
+                        QTest::newRow(qPrintable(QString("%1-%2-%3-%4")
+                            .arg(window).arg(real).arg(density).arg(offset)))
+                            << window << real << density << offset;
+    }
+    void spectralPeakTones()
+    {
+        QFETCH(int, window);
+        QFETCH(bool, real);
+        QFETCH(bool, density);
+        QFETCH(double, offset);
+        rf::DspSettings settings;
+        settings.fftSize = 1024;
+        settings.window = static_cast<rf::Window>(window);
+        settings.scale = density ? rf::PowerScale::Density : rf::PowerScale::Spectrum;
+        // Sub-Hz bins exercise estimates that whole-Hz UI formatting would hide.
+        const double rate = 128;
+        const double spacing = rate / settings.fftSize;
+        const double tone = (real ? 100 + offset : -100 + offset) * spacing;
+        std::vector<std::complex<double>> samples(1024);
+        for (std::size_t index = 0; index < samples.size(); ++index) {
+            const double phase = 2 * std::numbers::pi * tone * static_cast<double>(index) / rate;
+            samples[index] = {0.5 * std::cos(phase), real ? 0 : 0.5 * std::sin(phase)};
+        }
+        rf::SpectrumEngine engine(real ? rf::SampleKind::Real : rf::SampleKind::Complex,
+                                  rate, settings);
+        const auto spectrum = engine.calculate(samples);
+        const auto frequencies = engine.frequencies();
+        const auto peaks = rf::findSpectralPeaks(frequencies, spectrum.power,
+                                                frequencies.front(), frequencies.back(),
+                                                settings.window);
+        QVERIFY(!peaks.empty());
+        const auto &peak = peaks.front();
+        QVERIFY(std::abs(peak.frequencyHz - tone) <= 0.501 * spacing);
+        QCOMPARE(peak.power, spectrum.power[peak.bin]);
+        QVERIFY2(peak.estimatedHz.has_value(), qPrintable(peak.limitation));
+        const double tolerance = settings.window == rf::Window::Rectangular ? 0.18 : 0.025;
+        QVERIFY2(std::abs(*peak.estimatedHz - tone) < tolerance * spacing,
+                 qPrintable(QString("estimate %1, tone %2").arg(*peak.estimatedHz, 0, 'g', 15)
+                                                               .arg(tone, 0, 'g', 15)));
+        if (offset == 0.23)
+            QVERIFY(std::abs(*peak.estimatedHz - tone) < std::abs(peak.frequencyHz - tone));
+    }
+    void spectralPeakLimits()
+    {
+        std::vector<double> frequencies(1024), powers(1024, 1);
+        for (std::size_t bin = 0; bin < frequencies.size(); ++bin)
+            frequencies[bin] = static_cast<double>(bin);
+        powers[0] = 100;
+        powers[100] = 1000;
+        powers[103] = 500;
+        powers[200] = 4;
+        powers[300] = powers[301] = 200;
+        powers[400] = powers[401] = powers[402] = 100;
+        powers[500] = std::numeric_limits<double>::quiet_NaN();
+        powers[600] = std::numeric_limits<double>::infinity();
+        powers[1023] = 100;
+        const auto peaks = rf::findSpectralPeaks(frequencies, powers, 0, 1023, rf::Window::Hann);
+        QCOMPARE(peaks.size(), std::size_t{6});
+        QCOMPARE(peaks[0].bin, std::size_t{100});
+        QVERIFY(!peaks[0].estimatedHz);
+        QVERIFY(peaks[0].limitation.contains("Nearby"));
+        QVERIFY(!peaks[1].estimatedHz);
+        QCOMPARE(peaks[2].bin, std::size_t{300});
+        QVERIFY(peaks[2].estimatedHz);
+        QCOMPARE(*peaks[2].estimatedHz, 300.5);
+        QVERIFY(!peaks.back().estimatedHz);
+        QVERIFY(peaks.back().limitation.contains("Weak"));
+        QCOMPARE(peaks[3].limitation, QString("FFT boundary"));
+        QCOMPARE(peaks[4].limitation, QString("FFT boundary"));
+        const auto selected = rf::findSpectralPeaks(frequencies, powers, 101, 110, rf::Window::Hann);
+        QCOMPARE(selected.size(), std::size_t{1});
+        QCOMPARE(selected[0].bin, std::size_t{103});
+        QVERIFY(selected[0].limitation.contains("Nearby")); // Peak 100 is outside the range.
+        QVERIFY(rf::findSpectralPeaks(frequencies, powers, 101, 102, rf::Window::Hann).empty());
+        QVERIFY(rf::findSpectralPeaks(frequencies, powers, 800, 900, rf::Window::Hann).empty());
+        QVERIFY(rf::findSpectralPeaks(frequencies, {}, 0, 1000, rf::Window::Hann).empty());
+        QVERIFY(rf::findSpectralPeaks(frequencies, powers, 20, 10, rf::Window::Hann).empty());
+        std::fill(powers.begin(), powers.end(), 0);
+        QVERIFY(rf::findSpectralPeaks(frequencies, powers, 0, 1023, rf::Window::Hann).empty());
+        powers[500] = 1;
+        const auto isolated = rf::findSpectralPeaks(frequencies, powers, 490, 510, rf::Window::Hann);
+        QCOMPARE(isolated.size(), std::size_t{1});
+        QVERIFY(!isolated[0].estimatedHz);
+        QVERIFY(isolated[0].limitation.contains("neighbors"));
+        powers[500] = 0;
+        for (std::size_t bin = 10; bin < 1000; bin += 10)
+            powers[bin] = static_cast<double>(bin);
+        const auto bounded = rf::findSpectralPeaks(frequencies, powers, 0, 1023, rf::Window::Hann);
+        QCOMPARE(bounded.size(), std::size_t{12});
+        QCOMPARE(bounded.front().bin, std::size_t{990});
+    }
+    void spectralPeakNoiseAndCarriers()
+    {
+        rf::DspSettings settings;
+        settings.fftSize = 4096;
+        rf::SpectrumEngine engine(rf::SampleKind::Complex, 4096, settings);
+        std::mt19937 random(25);
+        std::normal_distribution<double> noise(0, 0.01);
+        std::vector<std::complex<double>> samples(4096);
+        for (auto &sample : samples)
+            sample = {noise(random), noise(random)};
+        const auto frequencies = engine.frequencies();
+        auto spectrum = engine.calculate(samples);
+        const auto noisePeaks = rf::findSpectralPeaks(frequencies, spectrum.power, -2048, 2047,
+                                                     settings.window);
+        QCOMPARE(noisePeaks.size(), std::size_t{12});
+        for (const auto &peak : noisePeaks)
+            QVERIFY(!peak.estimatedHz);
+        for (double separation : {3.0, 10.0, 0.25}) {
+            for (std::size_t index = 0; index < samples.size(); ++index) {
+                const double phase = 2 * std::numbers::pi * static_cast<double>(index) / 4096;
+                samples[index] = std::polar(0.5, phase * 100.23) +
+                                 std::polar(0.4, phase * (100.23 + separation));
+            }
+            spectrum = engine.calculate(samples);
+            const auto peaks = rf::findSpectralPeaks(frequencies, spectrum.power, 80, 130,
+                                                     settings.window);
+            QVERIFY(!peaks.empty());
+            if (separation == 3) {
+                QVERIFY(peaks.size() >= 2);
+                QVERIFY(peaks[0].limitation.contains("Nearby"));
+                QVERIFY(peaks[1].limitation.contains("Nearby"));
+            } else if (separation == 10) {
+                QVERIFY(peaks.size() >= 2);
+                QVERIFY(peaks[0].estimatedHz && peaks[1].estimatedHz);
+                QVERIFY(std::abs(*peaks[0].estimatedHz - 100.23) < 0.03);
+                QVERIFY(std::abs(*peaks[1].estimatedHz - 110.23) < 0.03);
+            } else {
+                // A merged maximum cannot establish the number of carriers.
+                QCOMPARE(peaks.front().bin, std::size_t{2148});
+            }
+        }
+    }
     void integratedBandAndSnr()
     {
         const std::vector<double> frequency{0, 10, 20, 30, 40, 50};
