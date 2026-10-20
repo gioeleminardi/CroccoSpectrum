@@ -4,7 +4,7 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## Unreleased
+## 0.6.1 — 2026-10-20 — Spectral peaks and recording imports
 
 - Add a Spectral peaks view to the spectrum/average context menus: label the
   strongest twelve local maxima in the visible range or completed frequency
