@@ -12,6 +12,14 @@ The Python selected above must have NumPy/SciPy. CTest explicitly skips the orac
 when those modules are missing; a skipped oracle is not a numerical pass.
 The metadata stress test uses only Python's standard library.
 
+`imports` verifies text mappings, session/export round trips, bounded rows,
+source-change detection and temporary-file cleanup after failure/cancellation.
+`import-reference` checks WAV against SciPy, AIFF against independently encoded
+fixtures (and Python's `aifc` reader when available), text against NumPy, and
+gzip/bzip2 against Python's reference decompressors. It also checks concatenated
+members, corrupt/truncated input, fractional AIFF rates, SIGINT cleanup and peak
+RSS at 1 MiB versus 256 MiB expanded size. These tests stay offline.
+
 On an Ubuntu 24.04 Wayland desktop with XWayland available, the UI suite also
 checks that a normal GUI launch selects XWayland and that environment and
 command-line platform overrides still work. Check panel placement and dragging

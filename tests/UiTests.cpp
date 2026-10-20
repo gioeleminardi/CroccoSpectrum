@@ -342,6 +342,123 @@ class UiTests : public QObject
         QVERIFY(!window.findChild<QCheckBox *>("absoluteFrequency")->isChecked());
         QCOMPARE(errors.count(), 0);
     }
+    void textImportDialog()
+    {
+        QTemporaryDir directory;
+        QFile file(directory.filePath("samples.csv"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        const QByteArray bytes("time,Q,I\n0,-0.25,0.5\n1,0.75,-0.125\n");
+        QCOMPARE(file.write(bytes), bytes.size());
+        file.close();
+        rf::ImportDialog dialog(file.fileName(), {});
+        dialog.show();
+        auto *input = dialog.findChild<QComboBox *>("inputFormat");
+        auto *kind = dialog.findChild<QComboBox *>("sampleKind");
+        auto *first = dialog.findChild<QSpinBox *>("firstColumn");
+        auto *second = dialog.findChild<QSpinBox *>("secondColumn");
+        auto *skip = dialog.findChild<QSpinBox *>("skipRows");
+        auto *buttons = dialog.findChild<QDialogButtonBox *>();
+        auto *preview = dialog.findChild<QPlainTextEdit *>();
+        auto *rate = dialog.findChild<QLineEdit *>("sampleRate");
+        auto *summary = dialog.findChild<QLabel *>("importSummary");
+        QVERIFY(input && kind && first && second && skip && buttons && preview && rate && summary);
+        QCOMPARE(input->currentIndex(), static_cast<int>(rf::InputFormat::Text));
+        QVERIFY(first->isVisible());
+        QVERIFY(!second->isVisible());
+        kind->setCurrentIndex(1);
+        first->setValue(3);
+        second->setValue(2);
+        skip->setValue(1);
+        rate->setText("1000.25");
+        auto *open = buttons->button(QDialogButtonBox::Ok);
+        QTRY_VERIFY_WITH_TIMEOUT(open->isEnabled(), 5000);
+        QVERIFY(preview->toPlainText().contains("I=0.5  Q=-0.25"));
+        QCOMPARE(dialog.descriptor().import.firstColumn, 3);
+        QCOMPARE(dialog.descriptor().sampleRate, 1000.25);
+        second->setValue(3);
+        QTRY_VERIFY_WITH_TIMEOUT(summary->text().contains("different columns"), 5000);
+        QVERIFY(!open->isEnabled());
+        second->setValue(2);
+        QTRY_VERIFY_WITH_TIMEOUT(open->isEnabled(), 5000);
+        auto *notice = dialog.findChild<QLabel *>("importConversion");
+        QVERIFY(notice);
+        QVERIFY2(notice->height() >= notice->heightForWidth(notice->width()),
+                 "Import conversion notice is clipped");
+        const auto image = qEnvironmentVariable("RF_IMPORT_SCREENSHOT");
+        if (!image.isEmpty())
+            QVERIFY(dialog.grab().save(image));
+    }
+    void audioImportDialog()
+    {
+        QTemporaryDir directory;
+        QFile file(directory.filePath("samples.wav"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        // Standard stereo PCM16 WAV: 48 kHz, two frames, I/Q = 0.5/-0.25.
+        const auto bytes = QByteArray::fromHex(
+            "524946462c00000057415645666d7420100000000100020080bb000000ee020004001000"
+            "6461746108000000004000e0004000e0");
+        QCOMPARE(file.write(bytes), bytes.size());
+        file.close();
+        rf::ImportDialog dialog(file.fileName(), {});
+        dialog.show();
+        auto *kind = dialog.findChild<QComboBox *>("sampleKind");
+        auto *rate = dialog.findChild<QLineEdit *>("sampleRate");
+        auto *buttons = dialog.findChild<QDialogButtonBox *>();
+        auto *preview = dialog.findChild<QPlainTextEdit *>();
+        QVERIFY(kind && rate && buttons && preview);
+        QCOMPARE(kind->currentIndex(), 0); // Stereo is not implicitly an RF I/Q stream.
+        QVERIFY(!rate->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(buttons->button(QDialogButtonBox::Ok)->isEnabled(), 5000);
+        QCOMPARE(dialog.descriptor().sampleRate, 48000.0);
+        QVERIFY(preview->toPlainText().contains("I=0.5  Q=0"));
+        kind->setCurrentIndex(1);
+        QTRY_VERIFY_WITH_TIMEOUT(buttons->button(QDialogButtonBox::Ok)->isEnabled(), 5000);
+        QVERIFY(preview->toPlainText().contains("I=0.5  Q=-0.25"));
+        auto *notice = dialog.findChild<QLabel *>("importConversion");
+        QVERIFY(notice);
+        QVERIFY2(notice->height() >= notice->heightForWidth(notice->width()),
+                 "Import conversion notice is clipped");
+        const auto image = qEnvironmentVariable("RF_AUDIO_IMPORT_SCREENSHOT");
+        if (!image.isEmpty())
+            QVERIFY(dialog.grab().save(image));
+    }
+    void importControllerCancellation_data()
+    {
+        QTest::addColumn<bool>("open");
+        QTest::newRow("inspect") << false;
+        QTest::newRow("open") << true;
+    }
+    void importControllerCancellation()
+    {
+        QFETCH(bool, open);
+        QTemporaryDir directory;
+        QFile file(directory.filePath("large.txt"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        const auto bytes = QByteArray("0.5\n").repeated(4000000);
+        QCOMPARE(file.write(bytes), bytes.size());
+        file.close();
+        rf::RecordingDescriptor slow;
+        slow.path = file.fileName();
+        slow.import.input = rf::InputFormat::Text;
+        slow.format.kind = rf::SampleKind::Real;
+        rf::AnalysisController controller;
+        WorkerSignals observed(controller);
+        QSignalSpy opened(&observed, &WorkerSignals::recordingOpened);
+        QSignalSpy finished(&observed, &WorkerSignals::finished);
+        QSignalSpy failed(&observed, &WorkerSignals::failed);
+        if (open)
+            controller.open(slow, {});
+        else
+            controller.inspect(slow);
+        QTest::qWait(30);
+        const auto quick = toneRecording(directory.filePath("quick.iq"), {8});
+        const auto generation = controller.inspect(quick);
+        QTRY_COMPARE_WITH_TIMEOUT(opened.count(), 1, 5000);
+        QCOMPARE(opened.front().front().toULongLong(), generation);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+        QVERIFY(finished.front()[1].toString().contains("Cancelled"));
+        QCOMPARE(failed.count(), 0);
+    }
     void partialImportDialog()
     {
         QTemporaryDir directory;

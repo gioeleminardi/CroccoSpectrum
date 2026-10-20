@@ -1,14 +1,20 @@
 #include "ImportDialog.h"
 #include "DisplayUnits.h"
+#include "recording/Import.h"
 #include "recording/Metadata.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
+#include <QSignalBlocker>
+#include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <cmath>
@@ -30,21 +36,47 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
     : QDialog(parent), base_(std::move(defaults))
 {
     setWindowTitle("Interpret RF recording");
-    resize(640, 710);
+    resize(QSize(680, 760).boundedTo(screen()->availableGeometry().size() - QSize(32, 32)));
     qRegisterMetaType<RecordingDescriptor>();
+    if (base_.path != path) {
+        base_.import = {};
+        base_.import.input = inputFormatForPath(path);
+        const auto suffix = QFileInfo(path).suffix().toLower();
+        base_.import.delimiter = suffix == "csv" ? "," : suffix == "tsv" ? "\t" : "whitespace";
+        if (base_.import.input == InputFormat::Audio || base_.import.input == InputFormat::Text) {
+            base_.format.kind = SampleKind::Real;
+            base_.format.floatFullScale = 1;
+        }
+    }
     base_.path = path;
     auto *layout = new QVBoxLayout(this);
     auto *explanation = new QLabel(
-        "Raw files have no reliable self-description. Verify this interpretation before "
-        "analysis.\nDefault raw format: signed int16 complex I/Q, 100 MS/s, little-endian IQ.",
+        "Verify the input format and decoded preview before analysis. Raw files have no "
+        "reliable self-description. Text columns and audio channels are numbered from 1.",
         this);
     explanation->setWordWrap(true);
     layout->addWidget(explanation);
-    auto *form = new QFormLayout;
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    auto *fields = new QWidget(scroll);
+    auto *form = new QFormLayout(fields);
+    form_ = form;
+    scroll->setWidget(fields);
+    layout->addWidget(scroll, 1);
     auto *fileLabel = new QLabel(path, this);
     fileLabel->setWordWrap(true);
     fileLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     form->addRow("File", fileLabel);
+    input_ = new QComboBox(this);
+    input_->setObjectName("inputFormat");
+    input_->addItems({"Raw binary", "WAV / AIFF audio", "Numeric ASCII / CSV", "gzip raw",
+                      "bzip2 raw"});
+    form->addRow("Input format", input_);
+    conversion_ = new QLabel(this);
+    conversion_->setObjectName("importConversion");
+    conversion_->setWordWrap(true);
+    conversion_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    form->addRow(conversion_);
     kind_ = new QComboBox(this);
     kind_->setObjectName("sampleKind");
     kind_->addItems({"Real (one scalar)", "Complex (I/Q pair)"});
@@ -85,6 +117,25 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
         "Reopen the file to load more samples.");
     fullScale_ = new QLineEdit(this);
     form->addRow("Samples", kind_);
+    firstColumn_ = new QSpinBox(this);
+    firstColumn_->setObjectName("firstColumn");
+    secondColumn_ = new QSpinBox(this);
+    secondColumn_->setObjectName("secondColumn");
+    for (auto *column : {firstColumn_, secondColumn_})
+        column->setRange(1, 1048576);
+    delimiter_ = new QComboBox(this);
+    delimiter_->setObjectName("textDelimiter");
+    delimiter_->addItem("Whitespace", "whitespace");
+    delimiter_->addItem("Comma", ",");
+    delimiter_->addItem("Semicolon", ";");
+    delimiter_->addItem("Tab", "\t");
+    skipRows_ = new QSpinBox(this);
+    skipRows_->setObjectName("skipRows");
+    skipRows_->setRange(0, 1000000000);
+    form->addRow("Real / I column or channel", firstColumn_);
+    form->addRow("Q column or channel", secondColumn_);
+    form->addRow("Text separator", delimiter_);
+    form->addRow("Skip initial text lines", skipRows_);
     form->addRow("Scalar encoding", encoding_);
     form->addRow("Byte order", byteOrder_);
     form->addRow("Component order", componentOrder_);
@@ -95,7 +146,6 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
     form->addRow("Data length (bytes)", length_);
     form->addRow(partial_);
     form->addRow("Float full-scale reference", fullScale_);
-    layout->addLayout(form);
     summary_ = new QLabel(this);
     summary_->setObjectName("importSummary");
     summary_->setWordWrap(true);
@@ -122,20 +172,32 @@ ImportDialog::ImportDialog(QString path, RecordingDescriptor defaults, QWidget *
     };
     for (auto *field : {sampleRate_, centerFrequency_, startUtc_, offset_, length_, fullScale_})
         connect(field, &QLineEdit::textChanged, this, changed);
-    for (auto *combo : {kind_, encoding_, byteOrder_, componentOrder_})
+    for (auto *combo : {kind_, encoding_, byteOrder_, componentOrder_, delimiter_})
         connect(combo, &QComboBox::currentIndexChanged, this, changed);
+    for (auto *spin : {firstColumn_, secondColumn_, skipRows_})
+        connect(spin, &QSpinBox::valueChanged, this, changed);
+    connect(input_, &QComboBox::currentIndexChanged, this, [this, changed] {
+        updateInputControls();
+        changed();
+    });
+    connect(kind_, &QComboBox::currentIndexChanged, this, &ImportDialog::updateInputControls);
     connect(partial_, &QCheckBox::toggled, this, changed);
     connect(&controller_, &AnalysisController::recordingOpened, this,
             [this](quint64 generation, const std::shared_ptr<Recording> &recording, FrameRange) {
                 if (generation != generation_)
                     return;
+                if (recording->descriptor().import.input == InputFormat::Audio) {
+                    const QSignalBlocker blocker(sampleRate_);
+                    sampleRate_->setText(
+                        QString::number(recording->descriptor().sampleRate, 'g', 17));
+                }
                 QString summary = QString("%1 frames · %2 · %3 bytes/frame\nSource: %4")
                                       .arg(recording->frameCount())
                                       .arg(durationText(
                                           static_cast<double>(recording->frameCount()) /
                                           recording->descriptor().sampleRate))
                                       .arg(recording->descriptor().format.frameBytes())
-                                      .arg(base_.metadataSource);
+                                      .arg(recording->descriptor().metadataSource);
                 if (recording->descriptor().allowPartial) {
                     summary += QString("\nPartial snapshot · %1 trailing byte(s) ignored.\n"
                                        "Reopen to load newly downloaded samples.")
@@ -202,6 +264,11 @@ ImportDialog::~ImportDialog()
 void ImportDialog::setDescriptor(const RecordingDescriptor &descriptor)
 {
     base_ = descriptor;
+    input_->setCurrentIndex(static_cast<int>(descriptor.import.input));
+    firstColumn_->setValue(descriptor.import.firstColumn);
+    secondColumn_->setValue(descriptor.import.secondColumn);
+    delimiter_->setCurrentIndex(delimiter_->findData(descriptor.import.delimiter));
+    skipRows_->setValue(descriptor.import.skipRows);
     kind_->setCurrentIndex(descriptor.format.kind == SampleKind::Real ? 0 : 1);
     encoding_->setCurrentIndex(encoding_->findData(
         static_cast<int>(descriptor.format.encoding) * 100 + descriptor.format.bits));
@@ -217,10 +284,44 @@ void ImportDialog::setDescriptor(const RecordingDescriptor &descriptor)
     length_->setText(descriptor.dataBytes ? QString::number(*descriptor.dataBytes) : QString());
     partial_->setChecked(descriptor.allowPartial);
     fullScale_->setText(QString::number(descriptor.format.floatFullScale, 'g', 17));
+    updateInputControls();
+}
+void ImportDialog::updateInputControls()
+{
+    const auto input = static_cast<InputFormat>(input_->currentIndex());
+    const bool audio = input == InputFormat::Audio;
+    const bool text = input == InputFormat::Text;
+    const bool mapped = audio || text;
+    form_->setRowVisible(firstColumn_, mapped);
+    form_->setRowVisible(secondColumn_, mapped && kind_->currentIndex() == 1);
+    form_->setRowVisible(delimiter_, text);
+    form_->setRowVisible(skipRows_, text);
+    for (auto *widget : {encoding_, byteOrder_, componentOrder_})
+        form_->setRowVisible(widget, !mapped);
+    for (auto *field : {offset_, length_})
+        form_->setRowVisible(field, !mapped);
+    form_->setRowVisible(partial_, input == InputFormat::Raw);
+    sampleRate_->setEnabled(!audio);
+    conversion_->setText(
+        input == InputFormat::Raw ? "Raw bytes are read directly; no conversion."
+        : audio ? "Selected channels → temporary float64. PCM integers are normalized; sample rate "
+                  "comes from the header. Allow disk space for all decoded samples. "
+                  "Cancel stops conversion and removes temporary files."
+        : text ? "Selected columns → temporary float64; values are kept as supplied. "
+                 "Allow disk space for all samples. "
+                 "Cancel stops conversion and removes temporary files."
+                 : "The entire file is decompressed to temporary disk storage before analysis. "
+                   "Encoding, offset and length below apply to decompressed raw bytes. "
+                   "Allow disk space for the expanded file; Cancel removes temporary files.");
 }
 RecordingDescriptor ImportDialog::descriptor() const
 {
     auto descriptor = base_;
+    descriptor.import.input = static_cast<InputFormat>(input_->currentIndex());
+    descriptor.import.firstColumn = firstColumn_->value();
+    descriptor.import.secondColumn = secondColumn_->value();
+    descriptor.import.delimiter = delimiter_->currentData().toString();
+    descriptor.import.skipRows = skipRows_->value();
     descriptor.allowPartial = partial_->isChecked();
     descriptor.format.kind = kind_->currentIndex() == 0 ? SampleKind::Real : SampleKind::Complex;
     const int format = encoding_->currentData().toInt();
@@ -242,12 +343,25 @@ RecordingDescriptor ImportDialog::descriptor() const
         length_->text().trimmed().isEmpty()
             ? std::nullopt
             : std::optional<std::uint64_t>(jsonUnsigned(length_->text().trimmed(), "data length"));
+    if (descriptor.import.input != InputFormat::Raw)
+        descriptor.allowPartial = false;
+    if (descriptor.import.input == InputFormat::Audio ||
+        descriptor.import.input == InputFormat::Text) {
+        descriptor.format.encoding = Encoding::FloatingPoint;
+        descriptor.format.bits = 64;
+        descriptor.format.byteOrder = ByteOrder::LittleEndian;
+        descriptor.format.componentOrder = ComponentOrder::IQ;
+        descriptor.dataOffset = 0;
+        descriptor.dataBytes.reset();
+    }
     descriptor.validate();
     return descriptor;
 }
 void ImportDialog::requestPreview()
 {
     try {
+        if (input_->currentIndex() != static_cast<int>(InputFormat::Raw))
+            summary_->setText("Preparing temporary sample file… Cancel stops the import.");
         generation_ = controller_.inspect(descriptor());
     } catch (const std::exception &error) {
         summary_->setText(QString::fromUtf8(error.what()));

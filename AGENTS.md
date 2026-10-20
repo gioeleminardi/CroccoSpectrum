@@ -29,7 +29,8 @@ C++20, Qt 6 Widgets/Network, and double-precision FFTW. The native GUI and headl
 CLI share the recording, DSP, analysis, and persistence code. The application
 does not acquire live RF data or require Python/Node.js at runtime.
 
-Current capabilities include raw real/complex input, a single-stream SigMF core
+Current capabilities include raw real/complex input, WAV/AIFF, numeric text and
+gzip/bzip2 raw imports, a single-stream SigMF core
 subset, partial-download snapshots, linked spectrum/waterfall views, an exact
 whole-recording minimap, independent waveform zoom, exact averages/envelopes,
 sessions, and CSV/PNG/raw-byte exports. Normal GUI launches have optional stable
@@ -69,14 +70,16 @@ feature-status entry as a current qualification result.
 | `site/` | Static download website and release selection; no npm build step |
 | `docs/`, `assets/` | Detailed guides, recorded evidence and existing branding |
 
-`rf_core` depends on Qt Core, FFTW, and Threads. `rf_ui` adds Widgets and Network;
+`rf_core` depends on Qt Core, FFTW, Threads, libsndfile, zlib, and libbzip2.
+`rf_ui` adds Widgets and Network;
 the CLI links only to the core. Preserve that boundary. There is no plugin
 registry or alternate DSP backend to extend speculatively.
 
 ## Build and verification commands
 
 Required: a C++20 compiler, CMake 3.22+, Ninja, pkg-config, Qt 6.4+ development
-files for Core/Gui/Widgets/Network/Test, and FFTW 3 double precision. Python with
+files for Core/Gui/Widgets/Network/Test, FFTW 3 double precision, libsndfile, zlib,
+and libbzip2. Python with
 NumPy/SciPy and Node.js enable all currently registered test suites. Installation
 commands are in [README.md](README.md#build-from-source).
 
@@ -104,6 +107,7 @@ ctest --preset debug -R '^(release-pipeline|website-releases)$'
 | Changed behavior | Relevant checks |
 | --- | --- |
 | Decoding, indexing, metadata, sessions, byte exports | `core`, `parser-stress`; `reference` for supported encodings/CLI behavior |
+| Audio/text/compressed imports, mappings, temporary storage | `imports`, `import-reference`, `ui`; independent audio/text/compression readers and cancellation/cleanup checks |
 | FFT windows, scaling, averaging, coverage or parallel reductions | `core`, independent `reference`; benchmark changed hot paths |
 | Navigation, rendering, controller scheduling, cache identity | `ui`, relevant `core`; inspect the affected GUI interaction |
 | Release checks and update preferences | `updates` with simulated network replies |
@@ -179,6 +183,12 @@ needs that evidence rather than on every edit.
 - Source recordings stay read-only. Use bounded positional reads, preserving
   source mutation/replacement checks; do not replace them with whole-file loading
   or mappings that can fault on truncation.
+- Audio/text conversion and raw decompression use owned temporary files with
+  bounded buffers and cooperative cancellation. Preserve the original source
+  path/identity and saved import mapping. Sample exports reset input format to
+  raw; converted audio/text exports contain float64, compressed raw exports retain
+  decompressed bytes. Partial mode is raw-only. Sessions with import mappings
+  use schema 2; raw sessions and preferences retain schema 1.
 - Partial imports are fixed snapshots of complete frames at open time. Appends
   are allowed, but truncation below the opening file size or path replacement
   fails. This assumes a stable downloaded prefix and does not verify same-size

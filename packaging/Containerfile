@@ -6,7 +6,7 @@ FROM docker.io/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list \
     && apt-get update && apt-get install -y --no-install-recommends \
-    g++ cmake ninja-build pkg-config file desktop-file-utils libfftw3-dev libgl1-mesa-dev libvulkan-dev \
+    g++ cmake ninja-build pkg-config file desktop-file-utils libfftw3-dev libsndfile1-dev zlib1g-dev libbz2-dev libgl1-mesa-dev libvulkan-dev \
     libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
     libxcb-keysyms1 libxcb-render-util0 libxcb-image0 libxcb-xinerama0 \
     libxcb-randr0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1 \

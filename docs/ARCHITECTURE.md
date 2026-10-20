@@ -259,7 +259,30 @@ metadata distinguishes visible bounds from the cached raster's source bounds.
 
 ## Persistence and maintenance
 
-Application settings/session schema version is 1. Treat unknown versions as a
+Audio/text imports use bounded libsndfile/text conversion into an owned
+`QTemporaryFile` containing little-endian float64 samples. gzip/bzip2 raw imports
+use bounded streaming decompression into an owned raw temporary file; offsets
+and lengths apply to decompressed bytes. Audio is limited to WAV/AIFF PCM
+8/16/24/32 and IEEE float32/64. Channel/column mappings are explicit and one-based;
+audio defaults to one real channel. Header rates override manual rates, with
+AIFF's original extended-precision rate retained rather than libsndfile's rounded
+integer. Text rows are capped at 1 MiB and output buffers at 256 KiB; audio uses
+at most 32,768 input doubles, and compression buffers are 256 KiB each.
+
+Conversion checks cancellation between bounded blocks/rows and removes storage
+on failure, cancellation or final recording destruction. The original source
+descriptor/path and stat identity remain authoritative; reads of converted
+storage still verify the original. Conversion needs disk space proportional to
+the expanded input, and completes before analysis. Sample exports reset the
+input format to raw: bytes represent normalized float64 audio, supplied float64
+text values, or unchanged decompressed raw data. Float full scale still applies
+at decoding time. Reopening a session reconverts the original path with the saved
+mapping. Ordinary imports retain their direct positional-read behavior.
+
+Preferences and raw sessions use schema 1; converted/compressed sessions use
+schema 2 so older applications reject them instead of reading container bytes as
+raw samples. Recording import mappings have a separately checked schema 1.
+Both session versions remain readable. Treat unknown versions as a
 recoverable error and preserve the original. Recording-specific settings never
 silently become facts about a new raw file. Preferences save import defaults,
 UI/DSP/view choices, and the application-produced Qt layout state.

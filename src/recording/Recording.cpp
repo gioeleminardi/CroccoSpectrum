@@ -1,7 +1,9 @@
 #include "Recording.h"
+#include "Import.h"
 
 #include <QDateTime>
 #include <QFile>
+#include <QTemporaryFile>
 #include <algorithm>
 #include <bit>
 #include <cerrno>
@@ -110,6 +112,20 @@ std::uint64_t SampleFormat::frameBytes() const
 void RecordingDescriptor::validate() const
 {
     format.validate();
+    if (import.input < InputFormat::Raw || import.input > InputFormat::Bzip2)
+        fail("Unknown input format");
+    if (import.firstColumn < 1 || import.secondColumn < 1 || import.skipRows < 0 ||
+        (import.delimiter != "whitespace" && import.delimiter != "," &&
+         import.delimiter != ";" && import.delimiter != "\t"))
+        fail("Invalid text/audio import mapping");
+    if (import.input != InputFormat::Raw && allowPartial)
+        fail("Partial/growing imports are supported only for raw recordings");
+    if (import.input == InputFormat::Audio || import.input == InputFormat::Text) {
+        if (dataOffset != 0 || dataBytes)
+            fail("Audio/text imports use all samples; select a frame range after import");
+        if (format.kind == SampleKind::Complex && import.firstColumn == import.secondColumn)
+            fail("I and Q must use different columns/channels");
+    }
     if (path.isEmpty())
         fail("Recording path is empty");
     if (!std::isfinite(sampleRate) || sampleRate <= 0 || !std::isfinite(1.0 / sampleRate))
@@ -241,7 +257,8 @@ std::vector<std::complex<double>> decodeSamples(std::span<const std::byte> bytes
     return samples;
 }
 
-Recording::Recording(RecordingDescriptor descriptor) : descriptor_(std::move(descriptor))
+Recording::Recording(RecordingDescriptor descriptor, const CancelCheck &cancelled)
+    : descriptor_(std::move(descriptor))
 {
     descriptor_.validate();
     fd_ = ::open(QFile::encodeName(descriptor_.path).constData(), O_RDONLY | O_CLOEXEC);
@@ -258,9 +275,16 @@ Recording::Recording(RecordingDescriptor descriptor) : descriptor_(std::move(des
         modifiedNanos_ = information.st_mtim.tv_nsec;
         changedSeconds_ = information.st_ctim.tv_sec;
         changedNanos_ = information.st_ctim.tv_nsec;
-        if (descriptor_.dataOffset > fileSize_)
+        if (descriptor_.import.input != InputFormat::Raw) {
+            converted_ = convertRecording(fd_, descriptor_, cancelled);
+            descriptor_.validate();
+            verifyUnchanged();
+        }
+        const auto storageSize = converted_ ? static_cast<std::uint64_t>(converted_->size())
+                                            : fileSize_;
+        if (descriptor_.dataOffset > storageSize)
             fail("Data offset exceeds file length");
-        const auto available = fileSize_ - descriptor_.dataOffset;
+        const auto available = storageSize - descriptor_.dataOffset;
         auto bytes = descriptor_.dataBytes.value_or(available);
         if (descriptor_.allowPartial)
             bytes = std::min(bytes, available);
@@ -363,7 +387,8 @@ std::vector<std::byte> Recording::readBytes(FrameRange range) const
     std::size_t done = 0;
     while (done < count) {
         const auto readCount =
-            ::pread(fd_, bytes.data() + done, count - done, static_cast<off_t>(offset + done));
+            ::pread(converted_ ? converted_->handle() : fd_, bytes.data() + done, count - done,
+                    static_cast<off_t>(offset + done));
         if (readCount < 0 && errno == EINTR)
             continue;
         if (readCount <= 0)

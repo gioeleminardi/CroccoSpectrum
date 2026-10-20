@@ -4,6 +4,18 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## 0.6.0 — 2026-10-20 — Audio, text and compressed recording imports
+
+- Add WAV/AIFF/AIFC PCM and floating-point imports, preserving header sample rates
+  with explicit real/I/Q channel selection. Add numeric ASCII/CSV/TSV imports
+  with explicit column mapping, separators, skipped headers and full scale.
+- Stream audio/text conversion and gzip/bzip2 raw decompression into temporary
+  files with bounded memory, cooperative cancellation and automatic cleanup.
+  Preserve original source checks and session mappings; export converted samples
+  as raw float64 and decompressed raw samples without changing their bytes.
+- Add libsndfile, zlib and libbzip2 build/runtime dependencies and independent
+  import reference checks.
+
 ## 0.5.1 — 2026-10-17 — Ubuntu 22.04 AppImage compatibility
 
 - Lower the portable Linux baseline to Ubuntu 22.04/glibc 2.35 while retaining

@@ -604,6 +604,7 @@ void exportSamples(const Recording &recording, FrameRange range, const QString &
         descriptor.dataOffset = 0;
         descriptor.dataBytes = range.size() * descriptor.format.frameBytes();
         descriptor.allowPartial = false;
+        descriptor.import = {}; // Exported bytes are already decoded/decompressed raw data.
         descriptor.startUtc = recording.descriptor().timestampAt(range.begin);
         descriptor.captures.clear();
         descriptor.annotations.clear();

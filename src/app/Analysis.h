@@ -11,11 +11,7 @@
 
 namespace rf
 {
-using CancelCheck = std::function<bool()>;
 using Progress = std::function<void(double)>;
-struct Cancelled : std::runtime_error {
-    Cancelled() : std::runtime_error("Cancelled") {}
-};
 
 struct WavePoint {
     std::uint64_t first = 0;

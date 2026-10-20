@@ -26,7 +26,8 @@ void requireBooleans(const QJsonObject &object, std::initializer_list<const char
 }
 void requireSchema(const QJsonObject &root, const QString &type)
 {
-    if (root["schema"].toInt() != 1 || root["type"].toString() != type)
+    if ((root["schema"].toInt() != 1 && !(type == "session" && root["schema"].toInt() == 2)) ||
+        root["type"].toString() != type)
         throw std::runtime_error("Unsupported settings/session schema; original file is preserved");
 }
 } // namespace
@@ -155,6 +156,7 @@ void savePreferences(const QString &path, const Preferences &preferences)
     defaults.dataOffset = 0;
     defaults.dataBytes.reset();
     defaults.allowPartial = false;
+    defaults.import = {};
     defaults.centerFrequency.reset();
     defaults.startUtc.clear();
     const QJsonObject updates{
@@ -210,7 +212,7 @@ void saveSession(const QString &path, const Session &session)
         bookmarks.append(QJsonObject{{"start", QString::number(mark.start)},
                                      {"count", QString::number(mark.count)},
                                      {"label", mark.label}});
-    writeJsonAtomic(path, {{"schema", 1},
+    writeJsonAtomic(path, {{"schema", session.recording.import.input == InputFormat::Raw ? 1 : 2},
                            {"type", "session"},
                            {"application_version", RF_VERSION},
                            {"recording", recordingToJson(session.recording)},

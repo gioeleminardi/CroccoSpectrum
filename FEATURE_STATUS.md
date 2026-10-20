@@ -1,7 +1,7 @@
 # Feature status
 
-Updated: 2026-10-09. Target: C++20 + Qt 6 Widgets on amd64 Linux.
-Application: CroccoSpectrum 0.2.0.
+Updated: 2026-10-20. Target: C++20 + Qt 6 Widgets on amd64 Linux.
+Planned release: CroccoSpectrum 0.6.0 (see `CMakeLists.txt`).
 
 This table describes the current implementation. Test environments, evidence,
 and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
@@ -12,6 +12,9 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Application icon and logo | Implemented | Embedded Qt resources; window/Linux launcher icon; full logo in About |
 | Preference compatibility after rename | Implemented | Reads legacy preferences on first launch, retains original file; session formats unchanged |
 | Raw real / single complex I/Q stream | Implemented | One real-valued stream or one interleaved complex stream per recording |
+| WAV / AIFF / AIFC import | Implemented subset | PCM 8/16/24/32 and float32/64; explicit channel mapping; header rate including fractional AIFF; normalized float64 temporary storage |
+| Numeric ASCII / CSV / TSV import | Implemented subset | Explicit columns, real/IQ kind, separator and skipped lines; unquoted numeric fields; bounded rows; float64 temporary storage |
+| gzip / bzip2 raw import | Implemented | Bounded streaming decompression; concatenated members; checksum/truncation rejection; temporary storage with cancellation and cleanup |
 | IQ and QI order, both byte orders | Implemented | Import interpretation must match the writer |
 | Signed/unsigned 8/16/24/32/64-bit | Implemented | Packed 24-bit; double analysis precision for 64-bit inputs |
 | IEEE FP16/FP32/FP64 | Implemented | FP16 conversion needs no hardware FP16 support |
@@ -45,7 +48,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | Update notifications | Implemented | Stable GitHub releases with complete Linux packages/checksums; checks on each startup and daily while running with opt-out; notification once per app session; manual Help action; website download/install; quiet automatic failures |
 | SigMF core recording import | Implemented subset | Single stream; required extensions and embedded later headers rejected |
 | Bookmarks/notes | Implemented | Persist in sessions |
-| Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw + sidecar; cancellable worker writes; refuses overwrite |
+| Numeric CSV, plot PNG, raw range export | Implemented | PNG metadata; byte-exact raw/decompressed bytes or converted float64 + sidecar; cancellable worker writes; refuses overwrite |
 | Background cancellation and stale-result protection | Implemented | Separate analysis and hover controllers, each with one worker and one replaceable pending request |
 | Bounded in-memory preview cache | Implemented | 64 MiB LRU per controller, interpretation/DSP/range/source identity keys |
 | Headless CLI | Implemented | Inspection, spectra, averages, waveform, exports |

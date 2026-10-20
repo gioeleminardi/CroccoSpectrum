@@ -6,6 +6,21 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Recording imports (2026-10-20, Ubuntu 24.04 Debug
+  `0.5.2-dev.local.gb5f96ee.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10,
+  libsndfile 1.2.2, zlib 1.3, libbzip2 1.0.8): all nine CTest suites pass.
+  Core reports 36 passed, imports five, UI 103 with four expected docking skips,
+  and updates 21 with the expected Wayland URL/live HTTPS skips. All 108
+  independent import checks pass, including WAV/AIFF PCM/float decoding,
+  fractional AIFF rates, explicit channel/column mappings, Welch PSDs after
+  conversion, concatenated gzip/bzip2 members, corrupt/truncated inputs, SIGINT
+  cleanup and memory-growth checks at 1 MiB and 256 MiB expanded size. Import
+  unit/reference suites also pass with ASAN/UBSAN. Focused native XWayland
+  audio/text/raw dialog checks pass at normal and doubled scale, with inspected
+  renders and conversion-notice geometry assertions. Sessions and sample exports
+  round-trip import settings and decoded samples; source mutation and temporary
+  cleanup are checked. The Ubuntu 22.04 release container, portable packages,
+  ABI gate, TSAN and live HTTPS were not rerun for these changes.
 - Ubuntu 22.04 portable baseline (2026-10-17, local Docker Release
   `0.5.0-dev.local.g562d3ba.dirty`, GCC 11.4.0, official Qt 6.11.2 x86_64 SDK,
   FFTW 3.3.8, glibc 2.35): all seven CTest suites pass, including 25 release

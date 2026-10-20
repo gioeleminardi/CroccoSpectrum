@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs inside the Ubuntu baseline builder. Compile the default ALL target so
-# GUI, CLI, both libraries, both test executables and the soak tool are covered.
+# GUI, CLI, both libraries, all test executables and the soak tool are covered.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mode=${1:?Missing build configuration}
@@ -49,12 +49,12 @@ info=json.loads((build/'BUILD-INFO.json').read_text())
 info.update({'configuration':mode,'qt':os.environ['RF_CI_QT'],
       'run_url':os.environ.get('RF_CI_RUN_URL',''),
       'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-      'platform':'Ubuntu 22.04 x86_64','runtime_note':'Debug/ASAN outputs require matching Qt/FFTW and compiler runtimes. Use the Release AppImage or portable folder for bundled dependencies.'})
+      'platform':'Ubuntu 22.04 x86_64','runtime_note':'Debug/ASAN outputs require matching Qt/FFTW/libsndfile/zlib/libbzip2 and compiler runtimes. Use the Release AppImage or portable folder for bundled dependencies.'})
 (build/'BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 (output/'reports/BUILD-INFO.json').write_text(json.dumps(info,indent=2)+'\n')
 if mode != 'release':
     stage=build/'artifact'; stage.mkdir(exist_ok=True)
-    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-ui-tests','rf-update-tests','rf-soak-test','librf_core.a','librf_ui.a']:
+    for name in ['croccospectrum','croccospectrum-cli','rf-core-tests','rf-import-tests','rf-ui-tests','rf-update-tests','rf-soak-test','librf_core.a','librf_ui.a']:
         shutil.copy2(build/name,stage/name)
     shutil.copy2(output/'reports/BUILD-INFO.json',stage/'BUILD-INFO.json')
     archive=output/'packages'/f"croccospectrum-{info['version']}-linux-x86_64-{mode}.tar.gz"

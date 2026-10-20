@@ -1,4 +1,5 @@
 #include "app/Session.h"
+#include "recording/Import.h"
 #include "recording/Metadata.h"
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -8,12 +9,18 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <iostream>
 #include <limits>
 #include <sys/resource.h>
 
 namespace
 {
+volatile std::sig_atomic_t interrupted = 0;
+void interrupt(int)
+{
+    interrupted = 1;
+}
 QJsonArray array(std::span<const double> values)
 {
     QJsonArray result;
@@ -50,6 +57,9 @@ int integer(const QCommandLineParser &parser, const QString &name)
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    std::signal(SIGINT, interrupt);
+    std::signal(SIGTERM, interrupt);
+    const auto cancelled = [] { return interrupted != 0; };
     app.setApplicationName("croccospectrum-cli");
     app.setApplicationVersion(RF_VERSION);
     QCommandLineParser parser;
@@ -59,6 +69,13 @@ int main(int argc, char **argv)
                                  "inspect, spectrum, average, waveform, or export-samples");
     parser.addOptions(
         {{{"f", "file"}, "Input recording / SigMF metadata / exported metadata", "path"},
+         {"input-format", "auto, raw, audio (WAV/AIFF), text, gzip, or bzip2; "
+                          "conversions use temporary disk files", "format", "auto"},
+         {"column-i", "One-based real/I text column or audio channel", "column", "1"},
+         {"column-q", "One-based Q text column or audio channel", "column", "2"},
+         {"delimiter", "Text separator: whitespace, comma, semicolon, or tab "
+                       "(default by extension)", "separator"},
+         {"skip-rows", "Number of initial text lines to skip", "count", "0"},
          {"kind", "real or complex", "kind", "complex"},
          {"encoding", "signed, unsigned, or float", "encoding", "signed"},
          {"bits", "Scalar width", "bits", "16"},
@@ -125,10 +142,41 @@ int main(int argc, char **argv)
                 descriptor.dataBytes = rf::jsonUnsigned(parser.value("length"), "length");
             if (parser.isSet("center-frequency"))
                 descriptor.centerFrequency = numeric(parser, "center-frequency");
+            const auto input = checkedChoice(parser, "input-format",
+                                             {"auto", "raw", "audio", "text", "gzip", "bzip2"});
+            descriptor.import.input = input == "auto"    ? rf::inputFormatForPath(path)
+                                      : input == "raw"   ? rf::InputFormat::Raw
+                                      : input == "audio" ? rf::InputFormat::Audio
+                                      : input == "text"  ? rf::InputFormat::Text
+                                      : input == "gzip"  ? rf::InputFormat::Gzip
+                                                         : rf::InputFormat::Bzip2;
+            descriptor.import.firstColumn = integer(parser, "column-i");
+            descriptor.import.secondColumn = integer(parser, "column-q");
+            descriptor.import.skipRows = integer(parser, "skip-rows");
+            const auto suffix = QFileInfo(path).suffix().toLower();
+            descriptor.import.delimiter = suffix == "csv"   ? ","
+                                          : suffix == "tsv" ? "\t" : "whitespace";
+            if (parser.isSet("delimiter")) {
+                const auto separator = checkedChoice(parser, "delimiter",
+                                                      {"whitespace", "comma", "semicolon", "tab"});
+                descriptor.import.delimiter = separator == "comma"     ? ","
+                                              : separator == "semicolon" ? ";"
+                                              : separator == "tab"       ? "\t" : "whitespace";
+            }
+            if (descriptor.import.input == rf::InputFormat::Audio && !parser.isSet("kind"))
+                descriptor.format.kind = rf::SampleKind::Real;
+            if (descriptor.import.input == rf::InputFormat::Text &&
+                (!parser.isSet("kind") || !parser.isSet("column-i") ||
+                 (descriptor.format.kind == rf::SampleKind::Complex && !parser.isSet("column-q"))))
+                throw std::runtime_error("Text import requires --kind and --column-i "
+                                         "(plus --column-q for complex)");
         }
         if (parser.isSet("partial"))
             descriptor.allowPartial = true;
-        rf::Recording recording(descriptor);
+        if (descriptor.import.input != rf::InputFormat::Raw)
+            std::cerr << "Import uses a temporary disk file, removed when the recording closes. "
+                         "Audio/text convert to float64; compressed raw retains its bytes.\n";
+        rf::Recording recording(descriptor, cancelled);
         descriptor = recording.descriptor();
         rf::FrameRange range{rf::jsonUnsigned(parser.value("start"), "start"),
                              parser.isSet("end") ? rf::jsonUnsigned(parser.value("end"), "end")
@@ -186,7 +234,7 @@ int main(int argc, char **argv)
                 output["range_end"] = QString::number(range.end);
             } else {
                 const auto average =
-                    rf::analyzeAverage(recording, range, settings, [] { return false; });
+                    rf::analyzeAverage(recording, range, settings, cancelled);
                 frequencies = average->frequencies;
                 power = average->averagePower;
                 output["valid_windows"] = QString::number(average->validWindows);
@@ -231,9 +279,9 @@ int main(int argc, char **argv)
             if (parser.isSet("output"))
                 rf::exportSpectrumCsv(descriptor, recording.identity(), range, settings,
                                       frequencies, power, command, output, parser.value("output"),
-                                      {}, {}, measurements);
+                                      cancelled, {}, measurements);
         } else if (command == "waveform") {
-            const auto waveform = rf::analyzeWaveform(recording, range, [] { return false; });
+            const auto waveform = rf::analyzeWaveform(recording, range, cancelled);
             output["invalid_samples"] = QString::number(waveform->invalidSamples);
             output["clipped_components"] = QString::number(waveform->clippedComponents);
             QJsonArray points;
@@ -250,10 +298,12 @@ int main(int argc, char **argv)
         } else {
             if (!parser.isSet("output"))
                 throw std::runtime_error("Sample export requires --output");
-            rf::exportSamples(recording, range, parser.value("output"), [] { return false; });
+            rf::exportSamples(recording, range, parser.value("output"), cancelled);
             output["complete"] = true;
         }
         recording.verifyUnchanged();
+        if (cancelled())
+            throw rf::Cancelled();
         output["elapsed_seconds"] =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         struct rusage usage{};

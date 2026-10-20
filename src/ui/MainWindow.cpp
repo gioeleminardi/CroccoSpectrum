@@ -416,7 +416,8 @@ void MainWindow::buildMenus()
     connect(open, &QAction::triggered, this, [this] {
         const auto path = QFileDialog::getOpenFileName(
             this, "Open RF recording", {},
-            "RF recordings (*.iq *.bin *.raw *.dat *.sigmf-meta *.rfmeta.json);;All files (*)");
+            "Recordings (*.iq *.bin *.raw *.dat *.sigmf-meta *.rfmeta.json "
+            "*.wav *.wave *.aif *.aiff *.aifc *.csv *.txt *.asc *.tsv *.gz *.bz2);;All files (*)");
         if (!path.isEmpty())
             openPath(path);
     });
@@ -456,7 +457,7 @@ void MainWindow::buildMenus()
     connect(averageCsv, &QAction::triggered, this, [this] { exportCsv(true); });
     auto *png = file->addAction("Export plot PNG…");
     connect(png, &QAction::triggered, this, &MainWindow::exportPng);
-    auto *samples = file->addAction("Export selected original samples…");
+    auto *samples = file->addAction("Export selected sample bytes…");
     connect(samples, &QAction::triggered, this, &MainWindow::exportSampleRange);
     file->addSeparator();
     auto *quit = file->addAction("Quit");
@@ -1042,7 +1043,9 @@ void MainWindow::connectWorker()
                 recordingLabel_->setToolTip(QString::fromUtf8(
                     QJsonDocument(recordingToJson(descriptor)).toJson(QJsonDocument::Indented)));
                 setWindowTitle(QFileInfo(descriptor.path).fileName() + " — CroccoSpectrum");
-                preferences_.importDefaults = descriptor;
+                if (descriptor.import.input != InputFormat::Audio &&
+                    descriptor.import.input != InputFormat::Text)
+                    preferences_.importDefaults = descriptor;
                 preferences_.recentFiles.removeAll(openingPath_);
                 preferences_.recentFiles.prepend(openingPath_);
                 while (preferences_.recentFiles.size() > 10)
@@ -1244,6 +1247,8 @@ void MainWindow::applyPreferences()
 void MainWindow::openPath(const QString &path)
 {
     auto defaults = preferences_.importDefaults;
+    defaults.path.clear();
+    defaults.import = {};
     defaults.dataOffset = 0;
     defaults.dataBytes.reset();
     defaults.allowPartial = false;
@@ -1845,7 +1850,7 @@ void MainWindow::exportSampleRange()
 {
     if (!recording_)
         return;
-    const auto path = QFileDialog::getSaveFileName(this, "Export original sample bytes (new file)",
+    const auto path = QFileDialog::getSaveFileName(this, "Export sample bytes (new file)",
                                                    {}, "Raw recording (*.iq)");
     if (path.isEmpty())
         return;

@@ -3,17 +3,37 @@
 #include <QString>
 #include <complex>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <vector>
+
+class QTemporaryFile;
 
 namespace rf
 {
+
+using CancelCheck = std::function<bool()>;
+struct Cancelled : std::runtime_error {
+    Cancelled() : std::runtime_error("Cancelled") {}
+};
 
 enum class SampleKind { Real, Complex };
 enum class Encoding { SignedInteger, UnsignedInteger, FloatingPoint };
 enum class ByteOrder { LittleEndian, BigEndian };
 enum class ComponentOrder { IQ, QI };
+enum class InputFormat { Raw, Audio, Text, Gzip, Bzip2 };
+
+struct ImportSettings {
+    InputFormat input = InputFormat::Raw;
+    int firstColumn = 1; // One-based text column or audio channel: real / I.
+    int secondColumn = 2; // Q for complex input.
+    QString delimiter = "whitespace";
+    int skipRows = 0;
+    bool operator==(const ImportSettings &) const = default;
+};
 
 // A frame is one instant: one scalar for real data or an I/Q pair for complex
 // data. All offsets/ranges in the DSP API use frames, never component indices.
@@ -51,6 +71,7 @@ struct RecordingDescriptor {
     std::optional<std::uint64_t> dataBytes;
     bool allowPartial = false; // Analyze complete frames present at open; allow appends.
     QString metadataSource = "User import";
+    ImportSettings import;
     std::vector<Capture> captures;
     std::vector<Annotation> annotations;
     void validate() const;
@@ -79,7 +100,7 @@ std::vector<std::complex<double>> decodeSamples(std::span<const std::byte> bytes
 class Recording
 {
   public:
-    explicit Recording(RecordingDescriptor descriptor);
+    explicit Recording(RecordingDescriptor descriptor, const CancelCheck &cancelled = {});
     ~Recording();
     Recording(const Recording &) = delete;
     Recording &operator=(const Recording &) = delete;
@@ -96,6 +117,7 @@ class Recording
   private:
     RecordingDescriptor descriptor_;
     int fd_ = -1;
+    std::unique_ptr<QTemporaryFile> converted_;
     std::uint64_t frames_ = 0;
     std::uint64_t fileSize_ = 0;
     std::uint64_t ignoredTrailingBytes_ = 0;

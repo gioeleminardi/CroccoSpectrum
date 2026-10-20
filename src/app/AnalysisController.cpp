@@ -196,7 +196,7 @@ void AnalysisController::execute(Job job)
         if (job.kind == Kind::Inspect) {
             // Import inspection is independent of FFT length. Even a recording
             // shorter than 256 samples has a valid decoded-sample preview.
-            job.recording = std::make_shared<Recording>(std::move(job.descriptor));
+            job.recording = std::make_shared<Recording>(std::move(job.descriptor), cancelled);
             const FrameRange range{0, std::min<std::uint64_t>(256, job.recording->frameCount())};
             const auto result = analyzeWaveform(*job.recording, range, cancelled);
             if (cancelled())
@@ -204,7 +204,7 @@ void AnalysisController::execute(Job job)
             emit recordingOpened(job.generation, job.recording, range);
             emit waveformReady(job.generation, result);
         } else if (job.kind == Kind::Open) {
-            job.recording = std::make_shared<Recording>(std::move(job.descriptor));
+            job.recording = std::make_shared<Recording>(std::move(job.descriptor), cancelled);
             if (job.range.end == 0)
                 job.range = {0, job.recording->frameCount()};
             job.recording->validateRange(job.range);

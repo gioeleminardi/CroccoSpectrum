@@ -9,6 +9,8 @@ class QLabel;
 class QPlainTextEdit;
 class QDialogButtonBox;
 class QTimer;
+class QSpinBox;
+class QFormLayout;
 namespace rf
 {
 class ImportDialog : public QDialog
@@ -25,8 +27,13 @@ class ImportDialog : public QDialog
 
   private:
     void requestPreview();
+    void updateInputControls();
     RecordingDescriptor base_;
     QComboBox *kind_, *encoding_, *byteOrder_, *componentOrder_;
+    QComboBox *input_, *delimiter_;
+    QSpinBox *firstColumn_, *secondColumn_, *skipRows_;
+    QFormLayout *form_;
+    QLabel *conversion_;
     QCheckBox *partial_;
     QLineEdit *sampleRate_, *centerFrequency_, *startUtc_, *offset_, *length_, *fullScale_;
     QLabel *summary_;

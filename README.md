@@ -53,7 +53,7 @@ growing file, without RF hardware or an acquisition driver.
 | 📊 | **Measure with exact passes** | Interval or whole-recording averages, max hold, exact waterfall overviews, and waveform min/max scans |
 | 🌊 | **Inspect individual samples** | Independent waveform zoom down to one sample, connected I/Q traces, and shared hover/freeze controls |
 | 🎨 | **Make the workspace yours** | Dockable panels, dark/light controls, saved layouts, and five palettes that recolor without rerunning FFTs |
-| 💾 | **Keep and share your work** | Sessions, bookmarks, numeric CSV, plot PNG with metadata, and byte-exact recording excerpts |
+| 💾 | **Keep and share your work** | Sessions, bookmarks, numeric CSV, plot PNG, and recording excerpts with interpretation metadata |
 | 🛠️ | **Automate offline analysis** | A headless CLI for inspection, spectra, averages, waveforms, and sample exports |
 
 CroccoSpectrum is in early development. [Feature status](FEATURE_STATUS.md) lists
@@ -150,12 +150,39 @@ gesture guide. **View** shows or hides panels, including **Baseband waveform**.
 | Byte order | Little-endian and big-endian |
 | Sample rate | Finite positive rates, including fractional values and scientific notation |
 | Raw data layout | Explicit byte offset and optional data length |
+| WAV / AIFF / AIFC | PCM 8/16/24/32-bit and IEEE float32/64; explicit real/I/Q channel selection |
+| Numeric ASCII / CSV / TSV | Explicit real/I/Q columns, separator, skipped header lines, sample rate and full scale |
+| Compressed raw | gzip (`.gz`) and bzip2 (`.bz2`); interpretation applies to decompressed bytes |
 | Metadata | Supported single-stream SigMF core subset and exported `.rfmeta.json` descriptors |
 
 The DSP core uses double precision. Floating-point inputs have an explicit
 full-scale reference; 64-bit integers are subject to double-precision analysis
 limits. Required unsupported SigMF extensions, multiple streams, and later
 embedded capture headers are rejected explicitly.
+
+The import dialog recognizes audio, text and compressed extensions; **Input format**
+can override that choice. Audio defaults to channel 1 as a real signal. Select
+**Complex** and two different channels explicitly for I/Q. Audio imports retain
+the header's sample rate, including fractional AIFF rates; PCM integers are
+normalized to full scale, while floating audio and text use the supplied float
+full-scale reference. Text imports use one-based column numbers, decimal points
+and scientific notation. Choose whitespace, comma, semicolon or tab, and explicitly
+skip header lines. Blank lines and lines starting with `#` are ignored. Selected
+fields must be numbers (including `nan`/`inf`); quoted/multiline CSV fields are
+unsupported. A text line may contain at most 1 MiB.
+Audio containers use RIFF/RIFX WAV or AIFF/AIFC; RF64, compressed audio codecs and
+multiple audio data chunks are unsupported. Truncated containers and incomplete
+sample frames are rejected.
+
+Audio and text are streamed into temporary little-endian float64 files; compressed
+raw is streamed into a temporary file without changing its bytes. Conversion
+finishes before the decoded preview/analysis and needs disk space for the full
+expanded recording. Memory stays bounded independently of recording length.
+The dialog's **Cancel**, the main analysis cancellation command, or CLI SIGINT/
+SIGTERM stop work cooperatively. Temporary files are removed on cancellation,
+failure or recording close. Originals stay read-only and retain change/replacement
+checks. Sessions save the original path and mapping and repeat conversion when
+reopened. Partial/growing mode applies only to raw binary input.
 
 Optional capture timestamps and center frequencies provide UTC and absolute
 frequency readouts. Sample indices remain the exact time reference; UTC aids are
@@ -299,7 +326,7 @@ sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readi
 | --- | --- |
 | **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR, settings, and coverage metadata |
 | **PNG** | Plot snapshot with embedded recording and analysis metadata |
-| **Raw sample range** | Original sample bytes plus a `.rfmeta.json` sidecar |
+| **Raw sample range** | Original raw bytes, decompressed raw bytes, or converted float64 audio/text samples, plus a `.rfmeta.json` sidecar |
 | **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
 
 Recordings are opened read-only. Exports refuse existing output paths, and
@@ -334,6 +361,18 @@ The portable folder includes `croccospectrum-cli`. The examples below use a
 # Inspect metadata and decoded samples; add --partial for a growing download.
 ./build/release/croccospectrum-cli inspect --file capture.iq
 
+# Audio: header sample rate, channel 1 as real; select channels explicitly for IQ.
+./build/release/croccospectrum-cli inspect --file capture.wav
+./build/release/croccospectrum-cli inspect --file capture.aiff \
+  --kind complex --column-i 1 --column-q 2
+
+# Text: explicitly map I/Q columns; skip a header and supply the sample rate.
+./build/release/croccospectrum-cli inspect --file capture.csv \
+  --kind complex --column-i 2 --column-q 3 --skip-rows 1 --sample-rate 48000
+
+# Compressed raw: the same raw interpretation flags apply after decompression.
+./build/release/croccospectrum-cli inspect --file capture.iq.gz --sample-rate 48000
+
 # Make the raw interpretation explicit: signed int16 IQ, little-endian, 100 MS/s.
 ./build/release/croccospectrum-cli spectrum --file capture.iq \
   --kind complex --encoding signed --bits 16 --endian little --order IQ \
@@ -359,12 +398,19 @@ Hz, must lie within the FFT bin-center domain, and must include at least one bin
 For example, `--signal-band 10000:20000 --noise-band 30000:50000` uses different
 signal/noise bandwidths with the normalization above. Raw files
 use the initial import preset unless flags specify another layout. Metadata
-inputs use their saved interpretation; raw-format flags apply to raw binaries.
+inputs use their saved interpretation; raw-format flags apply to raw and compressed
+raw binaries. `--input-format auto|raw|audio|text|gzip|bzip2` overrides extension
+detection. Text requires `--kind` and `--column-i`, plus `--column-q` for complex
+samples. `--delimiter whitespace|comma|semicolon|tab` overrides the default comma
+for `.csv`, tab for `.tsv`, and whitespace otherwise. Audio's sample rate always
+comes from its header. Conversion/decompression is announced on stderr; JSON
+describes the analyzed sample representation and original source path.
 
 ## Build from source
 
 Use a **C++20 compiler**, **CMake 3.22+**, Ninja, pkg-config, **Qt 6.4+** development
-files (Core, Gui, Widgets, Network, and Test), and **FFTW 3** double precision.
+files (Core, Gui, Widgets, Network, and Test), **FFTW 3** double precision,
+**libsndfile**, **zlib**, and **libbzip2**.
 Python with NumPy/SciPy enables independent numerical checks; Node.js enables
 website release-selection tests. Neither is an application runtime dependency.
 
@@ -373,7 +419,8 @@ website release-selection tests. Neither is an application runtime dependency.
 
 ```sh
 sudo apt install build-essential cmake ninja-build pkg-config \
-  qt6-base-dev qt6-wayland libfftw3-dev python3-numpy python3-scipy nodejs
+  qt6-base-dev qt6-wayland libfftw3-dev libsndfile1-dev zlib1g-dev libbz2-dev \
+  python3-numpy python3-scipy nodejs
 ```
 
 </details>
@@ -383,7 +430,8 @@ sudo apt install build-essential cmake ninja-build pkg-config \
 
 ```sh
 sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config \
-  qt6-qtbase-devel qt6-qtwayland fftw-devel python3-numpy python3-scipy nodejs
+  qt6-qtbase-devel qt6-qtwayland fftw-devel libsndfile-devel zlib-devel bzip2-devel \
+  python3-numpy python3-scipy nodejs
 ```
 
 </details>

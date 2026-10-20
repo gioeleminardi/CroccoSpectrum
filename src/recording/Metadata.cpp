@@ -105,6 +105,13 @@ QJsonObject recordingToJson(const RecordingDescriptor &descriptor)
         object["data_bytes"] = decimal(*descriptor.dataBytes);
     if (descriptor.centerFrequency)
         object["center_frequency"] = *descriptor.centerFrequency;
+    if (descriptor.import.input != InputFormat::Raw)
+        object["import"] = QJsonObject{{"schema", 1},
+                                       {"input", static_cast<int>(descriptor.import.input)},
+                                       {"first_column", descriptor.import.firstColumn},
+                                       {"second_column", descriptor.import.secondColumn},
+                                       {"delimiter", descriptor.import.delimiter},
+                                       {"skip_rows", descriptor.import.skipRows}};
     QJsonArray captures;
     for (const auto &capture : descriptor.captures) {
         QJsonObject entry{{"start", decimal(capture.start)}, {"datetime", capture.datetime}};
@@ -132,6 +139,17 @@ RecordingDescriptor recordingFromJson(const QJsonObject &object)
         if (object.contains(field) && !object[field].isArray())
             fail(QString("Invalid array field: ") + field);
     RecordingDescriptor descriptor;
+    if (object.contains("import")) {
+        const auto settings = object["import"].toObject();
+        if (!object["import"].isObject() || settings["schema"].toInt() != 1 ||
+            !settings["delimiter"].isString())
+            fail("Unsupported import settings schema");
+        descriptor.import.input = static_cast<InputFormat>(integerField(settings, "input", -1));
+        descriptor.import.firstColumn = integerField(settings, "first_column", 1);
+        descriptor.import.secondColumn = integerField(settings, "second_column", 2);
+        descriptor.import.skipRows = integerField(settings, "skip_rows", 0);
+        descriptor.import.delimiter = settings["delimiter"].toString();
+    }
     descriptor.path = object.value("path").toString();
     const QString kind = object.value("kind").toString();
     if (kind != "real" && kind != "complex")
