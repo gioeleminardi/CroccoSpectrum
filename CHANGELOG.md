@@ -6,6 +6,8 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Refresh the AppImage runtime binary and matching source pins after an upstream
+  reproducible-build update, restoring release packaging with checksum verification.
 - Add WAV/AIFF/AIFC PCM and floating-point imports, preserving header sample rates
   with explicit real/I/Q channel selection. Add numeric ASCII/CSV/TSV imports
   with explicit column mapping, separators, skipped headers and full scale.
