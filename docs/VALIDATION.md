@@ -6,6 +6,14 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- SciPy reference compatibility (2026-10-21): reproduced the occupied-bandwidth
+  oracle's unsupported `density` keyword failure with SciPy 1.8.0. Omitting the
+  keyword for equal-width histogram cells preserves all numerical assertions.
+  All 397 reference checks pass with Python 3.10.19 / NumPy 1.21.5 / SciPy 1.8.0
+  and Python 3.12.3 / NumPy 1.26.4 / SciPy 1.11.4 against the unchanged stable
+  Release `0.8.0` CLI. All nine local Release CTest suites pass, with the four
+  expected offscreen docking skips and two Wayland URL/live HTTPS skips.
+  The complete Ubuntu 22.04 container/package pipeline was not rerun.
 - Release preparation (2026-10-21, Ubuntu 24.04.5, GCC 13.3.0, Qt 6.4.2,
   FFTW 3.3.10): Debug `0.8.0-dev.local.gaee5fd2.dirty` and stable Release `0.8.0`
   builds pass all nine CTest suites, including 397 independent NumPy/SciPy

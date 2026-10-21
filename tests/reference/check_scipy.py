@@ -159,8 +159,9 @@ with tempfile.TemporaryDirectory(prefix="rf-reference-") as directory:
                         else:
                             # Independent continuous histogram of the SciPy PSD:
                             # constant density in df-wide cells centered on bins.
+                            # Equal widths make the pre-1.10 default normalization equivalent.
                             edges = np.append(frequency - spacing / 2, frequency[-1] + spacing / 2)
-                            distribution = stats.rv_histogram((psd, edges), density=False)
+                            distribution = stats.rv_histogram((psd, edges))
                             lower, upper = distribution.ppf([0.005, 0.995])
                             assert occupied["available"]
                             np.testing.assert_allclose(
