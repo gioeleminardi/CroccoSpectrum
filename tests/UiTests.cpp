@@ -1231,7 +1231,7 @@ class UiTests : public QObject
         result->frequencies.resize(64);
         result->spectrum.power.assign(64, 1e-8);
         for (std::size_t bin = 0; bin < 64; ++bin)
-            result->frequencies[bin] = (static_cast<double>(bin) - 32) * 0.25;
+            result->frequencies[bin] = (static_cast<double>(bin) - 32) * 0.25 + 0.4;
         for (const auto [bin, power] : {std::pair{15, 0.002}, {16, 0.01}, {17, 0.004},
                                        {43, 0.0004}, {44, 0.001}, {45, 0.0002}})
             result->spectrum.power[static_cast<std::size_t>(bin)] = power;
@@ -1263,8 +1263,9 @@ class UiTests : public QObject
         QVERIFY(dialog && table && difference && range);
         QCOMPARE(table->rowCount(), 2);
         QCOMPARE(table->item(0, 1)->text(), QString("16"));
-        QCOMPARE(table->item(0, 2)->text().toDouble(), 1e9 - 4);
-        QVERIFY(table->item(0, 3)->text().toDouble() > 1e9 - 4);
+        QCOMPARE(table->item(0, 2)->text(), QString("999999996"));
+        QCOMPARE(table->item(1, 2)->text(), QString("1000000003"));
+        QVERIFY(table->item(0, 3)->text().toDouble() > 1e9 - 3.6);
         QVERIFY(table->item(0, 4)->text().endsWith(rf::powerUnit(scale)));
         table->selectRow(0);
         table->selectionModel()->select(table->model()->index(1, 0),
@@ -1273,7 +1274,8 @@ class UiTests : public QObject
         QVERIFY(difference->text().contains(trace == 2 ? "-13.0 dB" : "-10.0 dB"));
         QVERIFY(!difference->text().contains("unavailable"));
         plot.setView({}, scale, 0);
-        QCOMPARE(table->item(0, 2)->text().toDouble(), -4.0);
+        QCOMPARE(table->item(0, 2)->text(), QString("-4"));
+        QCOMPARE(table->item(1, 2)->text(), QString("3"));
         QCOMPARE(table->selectionModel()->selectedRows().size(), 2);
         plot.setFrequencyRange(-5, -2);
         QCOMPARE(table->rowCount(), 1);

@@ -4,6 +4,10 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
+## Unreleased
+
+- Round the Spectral peaks window's bin-frequency column to the nearest whole Hz.
+
 ## 0.6.1 — 2026-10-20 — Spectral peaks and recording imports
 
 - Add a Spectral peaks view to the spectrum/average context menus: label the

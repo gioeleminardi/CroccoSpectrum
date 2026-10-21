@@ -402,7 +402,7 @@ void SpectrumPlot::updatePeaks()
         const double center = view_.absoluteFrequency ? center_ : 0;
         const QStringList cells{
             QString("P%1").arg(row + 1), QString::number(peak.bin),
-            QString::number(peak.frequencyHz + center, 'g', 15),
+            QString::number(peak.frequencyHz + center, 'f', 0),
             peak.estimatedHz ? estimatedFrequencyText(*peak.estimatedHz + center,
                                                        frequency[1] - frequency[0]) : "unavailable",
             decibelText(powerToDb(peak.power)) + " " + powerUnit(scale_), peak.limitation};
