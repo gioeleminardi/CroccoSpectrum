@@ -126,7 +126,7 @@ def publish(assets, changelog, repository):
     body = (f"{'Development build from devel' if development else 'Stable release'}\n\n"
             f"Version: {expected}\nCommit: {commit}\nBuild date: {info['built_at']}\n"
             f"CI run: {info['run_url']}\n\n{notes}\n")
-    metadata = {"name": f"Development build {expected}" if development else tag,
+    metadata = {"name": tag,
                 "body": body, "prerelease": development}
     if not ref:
         api(f"{prefix}/git/refs", "POST", {"ref": f"refs/tags/{tag}", "sha": commit})

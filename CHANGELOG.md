@@ -6,6 +6,8 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Name development prereleases after their version tag, such as
+  `vX.Y.Z-dev.###.<sha>`.
 - Upgrade inherited Ubuntu builder packages so release packaging can collect
   sources matching the bundled libraries from current repository indexes.
 - Round the Spectral peaks window's bin-frequency column to the nearest whole Hz.
