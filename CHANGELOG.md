@@ -6,6 +6,8 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Upgrade inherited Ubuntu builder packages so release packaging can collect
+  sources matching the bundled libraries from current repository indexes.
 - Round the Spectral peaks window's bin-frequency column to the nearest whole Hz.
 
 ## 0.6.1 — 2026-10-20 — Spectral peaks and recording imports

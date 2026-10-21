@@ -159,8 +159,9 @@ redeployment for development pushes. See
 
 CI rebuilds the Ubuntu builder without the container layer cache on every run.
 Persistent runners can otherwise retain older binary dependencies after Ubuntu
-mirrors stop indexing their exact source versions. Dependency installation runs
-each time to keep the bundled libraries and accompanying sources aligned.
+mirrors stop indexing their exact source versions. The builder also upgrades
+packages inherited from the digest-pinned base image before installing dependencies,
+so those libraries and their exact accompanying sources stay aligned.
 
 The builder copies Node.js 24.22.0 from a digest-pinned official image for the
 website tests; Ubuntu 22.04's packaged Node.js predates `node:test`. Node.js is a

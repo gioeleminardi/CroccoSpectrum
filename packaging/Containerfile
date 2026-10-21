@@ -4,8 +4,11 @@
 FROM docker.io/library/node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS node
 FROM docker.io/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
 ENV DEBIAN_FRONTEND=noninteractive
+# Upgrade inherited packages too: the pinned base can retain library versions
+# whose matching sources are no longer in the live Ubuntu indexes.
 RUN sed -i 's/^# deb-src /deb-src /' /etc/apt/sources.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     g++ cmake ninja-build pkg-config file desktop-file-utils libfftw3-dev libsndfile1-dev zlib1g-dev libbz2-dev libgl1-mesa-dev libvulkan-dev \
     libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
     libxcb-keysyms1 libxcb-render-util0 libxcb-image0 libxcb-xinerama0 \
