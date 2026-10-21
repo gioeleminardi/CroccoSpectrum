@@ -6,6 +6,16 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Release preparation (2026-10-21, Ubuntu 24.04.5, GCC 13.3.0, Qt 6.4.2,
+  FFTW 3.3.10): Debug `0.8.0-dev.local.gaee5fd2.dirty` and stable Release `0.8.0`
+  builds pass all nine CTest suites, including 397 independent NumPy/SciPy
+  comparisons/invalid-input checks, 108 import reference checks, release pipeline
+  and website release selection. CMake, the stable `BUILD-INFO.json`, GUI/CLI
+  versions and the dated release notes agree on `0.8.0`. The stable GUI passes
+  offline initialization, TLS-backend and font smoke checks. Each offscreen run
+  retains four expected desktop docking skips and two Wayland URL/live HTTPS
+  skips. Portable packaging, sanitizers, native desktop checks, live HTTPS and
+  long-duration stress were not rerun.
 - Saved spectrum banks (2026-10-21, Ubuntu 24.04 Debug
   `0.7.0-dev.local.g0f0d62c.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
   all nine CTest suites pass, including the existing numerical/import references.

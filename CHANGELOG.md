@@ -4,7 +4,7 @@ This file records release history and behavior changes. See
 [Feature status](FEATURE_STATUS.md) for current capabilities and
 [Validation](docs/VALIDATION.md) for test evidence and coverage.
 
-## Unreleased
+## 0.8.0 — 2026-10-21 — Spectrum banks and occupied bandwidth
 
 - Add named saved average spectra with visibility, rename/delete controls, colored
   overlays and per-bin A − B differences in dB. Preserve source/interval, DSP and
