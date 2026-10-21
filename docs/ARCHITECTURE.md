@@ -72,6 +72,30 @@ power. Window weighting can change a finite noise realization's measured power.
 The spectrum/PSD conversion follows the documented
 [SciPy periodogram scaling](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.periodogram.html).
 
+The completed selected band also reports 99% occupied bandwidth (OBW): exclude
+0.5% of its integrated linear power from each end, following the equal-tail
+definition described in [MathWorks OBW](https://www.mathworks.com/help/signal/ref/obw.html).
+This is an equal-tail interval, not a search for the narrowest interval.
+For the discrete-to-continuous edge convention, treat each included bin as a
+constant-density cell `[f[k]-df/2, f[k]+df/2]` containing its full integrated
+power `PSD[k]*df` (or `spectrum_power[k]*df/ENBW`). Accumulate each tail from its
+own end and interpolate linearly inside its crossing cell. If a threshold lands
+exactly on a zero-power gap, retain the outer edge of that gap. The bandwidth is
+`upper_hz - lower_hz`; one populated bin therefore gives `0.99*df`, not zero.
+The cells at FFT boundaries, including real DC/Nyquist, retain their full `df`
+width without clipping or half weighting, consistent with band-power integration.
+Thus OBW edges can extend up to half a bin outside the selected bin-center bounds
+or FFT axis. The two pink markers and lower/upper/width readouts use these edges;
+markers outside the current viewport are clipped for painting only.
+
+OBW includes all measured noise without a noise-floor threshold or subtraction,
+independently of assigned SNR bands. Zero total power, negative/nonfinite bins,
+or unrepresentable integration/edges report unavailable. It uses exact displayed
+FFT bins or the completed linear-power average, never dB or pixel maxima.
+Max-hold OBW describes the composite trace, not necessarily one emission.
+Band choice, FFT resolution, window leakage and noise change the result;
+cell interpolation does not improve resolving power or calibrate the recording.
+
 Right-click assigns a completed selection to a signal or noise band. Assignments
 copy the bin bounds; subsequent selection edits require reassignment to change
 them. Both bands are recomputed from the same single complete FFT window or
@@ -143,6 +167,11 @@ analyzed `[start,end)` frame interval, DSP settings and trace method. CSV bin
 columns retain their original spectrum/PSD units. PNG view settings separately
 record whether the axis shows absolute RF frequency; band metadata always uses
 baseband Hz to remain unambiguous across capture retunes.
+The selected band's `occupied_bandwidth` object contains `available`, `percent`
+(99), `tail_percent` (0.5), `edge_convention`, `noise_treatment`, and, when available,
+`lower_hz`, `upper_hz`, `bandwidth_hz`; unavailable results have a `reason`.
+CLI `--band` uses the same calculation in JSON and CSV metadata. Numeric exports
+retain unrounded edge values; the UI follows the existing whole-Hz convention.
 
 Waterfall measurement changes publish their ordered row-start frame bounds to
 the analysis-interval fields without calling `setRange`. The separate average

@@ -6,6 +6,22 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Occupied bandwidth (2026-10-21, Ubuntu 24.04 Debug
+  `0.6.3-dev.local.g1c17db9.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
+  all nine CTest suites pass. Core reports 87 passed, including analytic OBW
+  cases for flat density, a single bin, unequal separated powers, selected-band
+  exclusion, exact tail ties, FFT endpoints, reversed bounds, both spectral
+  normalizations and zero/invalid inputs. The 397 independent NumPy/SciPy
+  checks now also verify OBW against SciPy PSDs and histogram quantiles across
+  all four windows, real/complex input, spectrum/average traces and both scales,
+  including noise, leakage, DC/Nyquist and silence. UI reports 121 passed with
+  four expected offscreen docking skips; updates report 21 passed with two
+  expected Wayland URL/live HTTPS skips. GUI CSV/PNG and CLI JSON/CSV preserve
+  OBW results and conventions. Focused native X11/XWayland checks report 20 passed
+  at each of normal and doubled scale, with inspected normal/narrow plot renders
+  and readout geometry assertions. These cover FFT/average/max-hold, reversed
+  selections, absolute-frequency display, edits, zero power and clearing.
+  Sanitizers, portable packaging and live HTTPS were not rerun.
 - Spectral peaks (2026-10-20, Ubuntu 24.04 Debug
   `0.6.0-dev.local.gb5f96ee.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
   all nine CTest suites pass. Core reports 86 passed, including 48 tone cases

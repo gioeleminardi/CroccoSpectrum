@@ -1191,6 +1191,90 @@ class UiTests : public QObject
         QVERIFY(plot.measurementText().contains("40.8 dBFS"));
         QVERIFY(plot.measurementText().contains("Max-hold trace"));
     }
+    void occupiedBandwidth_data()
+    {
+        QTest::addColumn<int>("trace");
+        QTest::addColumn<bool>("density");
+        QTest::addColumn<bool>("reversed");
+        for (int trace = 0; trace < 3; ++trace)
+            for (bool density : {false, true})
+                for (bool reversed : {false, true})
+                    QTest::newRow(qPrintable(QString("%1-%2-%3")
+                        .arg(trace).arg(density).arg(reversed)))
+                        << trace << density << reversed;
+    }
+    void occupiedBandwidth()
+    {
+        QFETCH(int, trace);
+        QFETCH(bool, density);
+        QFETCH(bool, reversed);
+        rf::SpectrumPlot plot;
+        plot.resize(600, 310);
+        const auto scale = density ? rf::PowerScale::Density : rf::PowerScale::Spectrum;
+        plot.setView({}, scale, 0);
+        auto result = std::make_shared<rf::PreviewResult>();
+        result->frequencies = {0, 1000, 2000, 3000, 4000, 5000, 6000};
+        result->spectrum.power = {1000, 1000, 1, 2, 1, 1000, 1000};
+        result->spectrum.enbwHz = 1500;
+        for (auto &power : result->spectrum.power)
+            power *= density ? 0.001 : 1.5;
+        auto average = std::make_shared<rf::AverageResult>();
+        average->frequencies = result->frequencies;
+        average->averagePower = result->spectrum.power;
+        average->maxPower = result->spectrum.power;
+        average->maxPower[3] *= 4;
+        average->enbwHz = 1500;
+        average->validWindows = 2;
+        if (trace == 0)
+            plot.setPreview(result);
+        else
+            plot.setAverage(average, trace == 2);
+        plot.show();
+        const QPoint first(243, 200), last(409, 200);
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::ShiftModifier, reversed ? last : first);
+        QVERIFY(!plot.measurementText().contains("99% OBW"));
+        QTest::mouseClick(&plot, Qt::LeftButton, Qt::NoModifier, reversed ? first : last);
+        const auto occupied = plot.bandMeasurements()["selected"].toObject()
+                                  ["occupied_bandwidth"].toObject();
+        QVERIFY(occupied["available"].toBool());
+        const double lower = trace == 2 ? 1550 : 1520;
+        const double upper = trace == 2 ? 4450 : 4480;
+        QCOMPARE(occupied["lower_hz"].toDouble(), lower);
+        QCOMPARE(occupied["upper_hz"].toDouble(), upper);
+        QCOMPARE(occupied["bandwidth_hz"].toDouble(), upper - lower);
+        QVERIFY(plot.measurementText().contains(trace == 2 ? "99% OBW: 2.9 kHz"
+                                                          : "99% OBW: 2.96 kHz"));
+        QVERIFY(plot.measurementText().contains("OBW lower: " + rf::frequencyText(lower)));
+        rf::ViewSettings view;
+        view.absoluteFrequency = true;
+        plot.setView(view, scale, 1e9);
+        QVERIFY(plot.measurementText().contains("OBW lower: " + rf::frequencyText(1e9 + lower)));
+        QCOMPARE(plot.bandMeasurements()["selected"].toObject()["occupied_bandwidth"].toObject(),
+                 occupied);
+        plot.resize(360, 180);
+        QCoreApplication::processEvents();
+        const QRect body(0, 0, plot.width() - 120, 10000);
+        const int textHeight = plot.fontMetrics().boundingRect(
+            body, Qt::TextWordWrap, plot.measurementText()).height();
+        QVERIFY(textHeight <= plot.height() - 86);
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty() && trace == 0 && !density && !reversed) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QVERIFY(plot.grab().save(screenshots + "/occupied-bandwidth-small.png"));
+            plot.resize(700, 360);
+            QVERIFY(plot.grab().save(screenshots + "/occupied-bandwidth.png"));
+        }
+        if (trace == 0) {
+            auto silent = std::make_shared<rf::PreviewResult>(*result);
+            std::fill(silent->spectrum.power.begin(), silent->spectrum.power.end(), 0);
+            plot.setPreview(silent, false);
+            QVERIFY(plot.measurementText().contains("99% OBW: unavailable"));
+            QVERIFY(!plot.bandMeasurements()["selected"].toObject()["occupied_bandwidth"]
+                         .toObject()["available"].toBool());
+        }
+        QTest::keyClick(&plot, Qt::Key_Escape);
+        QVERIFY(plot.bandMeasurements().isEmpty());
+    }
     void spectrumMeasurementUsesEveryBin()
     {
         rf::SpectrumPlot plot;
@@ -1210,6 +1294,10 @@ class UiTests : public QObject
         // Integrate all numerical bins, including a tone between screen sample points.
         QVERIFY(plot.measurementText().contains("0.0 dBFS"));
         QVERIFY(plot.measurementText().contains("Δf: 1.048575 MHz"));
+        const auto occupied = plot.bandMeasurements()["selected"].toObject()
+                                  ["occupied_bandwidth"].toObject();
+        QVERIFY(occupied["available"].toBool());
+        QVERIFY(std::abs(occupied["bandwidth_hz"].toDouble() - 0.99) < 1e-10);
     }
     void spectralPeaks_data()
     {
@@ -1410,7 +1498,7 @@ class UiTests : public QObject
                              10 * std::log10(3.0)) < 1e-12);
         }
         plot.findChild<QAction *>("clearPowerBands")->trigger();
-        QCOMPARE(plot.minimumHeight(), 180);
+        QVERIFY(plot.minimumHeight() >= 180); // The retained selection includes the OBW readout.
         QVERIFY(!plot.bandMeasurements().contains("snr"));
         QVERIFY(!plot.measurementText().isEmpty());
         QTest::keyClick(&plot, Qt::Key_Escape);
@@ -2890,6 +2978,8 @@ class UiTests : public QObject
         selectBand(40, 70);
         spectrum->findChild<QAction *>("setNoiseBand")->trigger();
         const auto exportedBands = spectrum->bandMeasurements();
+        QVERIFY(exportedBands["selected"].toObject()["occupied_bandwidth"].toObject()
+                    ["available"].toBool());
         QVERIFY(exportedBands["snr"].toObject()["available"].toBool());
         const auto nativeDialogs = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
@@ -2978,6 +3068,8 @@ class UiTests : public QObject
         selectBand(40, 70);
         spectrum->findChild<QAction *>("setNoiseBand")->trigger();
         const auto averageBands = spectrum->bandMeasurements();
+        QVERIFY(averageBands["selected"].toObject()["occupied_bandwidth"].toObject()
+                    ["available"].toBool());
         QVERIFY(averageBands["snr"].toObject()["available"].toBool());
         const auto averageCsvPath = directory.filePath("average.csv");
         QTimer::singleShot(0, &window, [&] {

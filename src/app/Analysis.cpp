@@ -696,6 +696,25 @@ QJsonObject measureBands(std::span<const double> frequencies, std::span<const do
         return band;
     };
     addBand("selected", selected);
+    if (selected) {
+        const auto occupied = occupiedBandwidth99(frequencies, powers, scale, enbwHz,
+                                                   selected->first, selected->second);
+        QJsonObject object{{"available", occupied.has_value()},
+                           {"percent", 99},
+                           {"tail_percent", 0.5},
+                           {"edge_convention",
+                            "equal tails; constant density in bin-centered FFT-spacing cells"},
+                           {"noise_treatment", "included; no subtraction"}};
+        if (occupied) {
+            object.insert("lower_hz", occupied->lowerHz);
+            object.insert("upper_hz", occupied->upperHz);
+            object.insert("bandwidth_hz", occupied->bandwidthHz);
+        } else
+            object.insert("reason", "Selected band has zero power or invalid/unrepresentable data");
+        auto band = result["selected"].toObject();
+        band.insert("occupied_bandwidth", object);
+        result.insert("selected", band);
+    }
     const auto signalBand = addBand("signal", signal);
     const auto noiseBand = addBand("noise", noise);
     if (signal && noise) {

@@ -291,6 +291,17 @@ one decimal place; power/SNR calculations and numeric exports retain full precis
 Waterfall duration uses the exact difference between row-start frames. Sampled
 and aggregated rows limit event-boundary resolution.
 
+Completed spectrum selections also show **99% occupied bandwidth (OBW)** with
+lower/upper edges and pink markers. Each tail contains 0.5% of the selected
+band's linear power. Edges interpolate constant density in bin-centered cells
+of width `Fs/N`, including full endpoint cells at DC/Nyquist; they can extend
+half a bin beyond the selected bin centers. A single populated bin has OBW
+`0.99 × Fs/N`. Noise is included without subtraction, even with a noise band
+assigned. Zero or invalid power reports unavailable. Band choice, noise,
+FFT resolution and window leakage affect the result; interpolation adds no
+resolving power. Average traces use the completed linear-power mean; max-hold
+OBW describes its composite trace, whose bins can come from different times.
+
 Right-click a completed spectrum selection and choose **Use selection as signal
 band** or **Use selection as noise band**. Assign two separate bands on the same
 single-frame spectrum or completed interval average. Assignments copy the bounds;
@@ -342,7 +353,7 @@ sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readi
 
 | Output | Contents |
 | --- | --- |
-| **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR, settings, and coverage metadata |
+| **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR/99% OBW, settings, and coverage metadata |
 | **PNG** | Plot snapshot with embedded recording and analysis metadata |
 | **Raw sample range** | Original raw bytes, decompressed raw bytes, or converted float64 audio/text samples, plus a `.rfmeta.json` sidecar |
 | **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
@@ -352,7 +363,9 @@ cancelled writes are not published as completed outputs. Application JSON stores
 sample indices as decimal strings to preserve 64-bit values. Spectrum CSV and PNG
 use the displayed FFT window; average exports use the completed analyzed interval.
 Band metadata includes baseband bounds in Hz, bandwidth, dBFS power, SNR/noise
-normalization, ENBW and status; bin columns keep their spectrum/PSD units. JSON
+normalization, ENBW and status. `band_measurements.selected.occupied_bandwidth`
+contains OBW lower/upper edges and width in baseband Hz, percentage, edge/noise
+conventions and availability. Bin columns keep their spectrum/PSD units. JSON
 represents infinite logarithmic results as `"-inf"`/`"inf"`. Waterfall PNG metadata
 records viewport bounds.
 
@@ -411,7 +424,8 @@ The portable folder includes `croccospectrum-cli`. The examples below use a
 Run `--help` for all format, rate, window, overlap, and output options. Commands
 emit JSON; spectrum and average also support CSV through `--output`. Add
 `--band lower:upper`, `--signal-band lower:upper` and `--noise-band lower:upper`
-to `spectrum` or `average` for integrated power/SNR. Bounds are inclusive baseband
+to `spectrum` or `average` for integrated power/SNR; `--band` also reports 99% OBW
+in JSON and CSV metadata. Bounds are inclusive baseband
 Hz, must lie within the FFT bin-center domain, and must include at least one bin.
 For example, `--signal-band 10000:20000 --noise-band 30000:50000` uses different
 signal/noise bandwidths with the normalization above. Raw files

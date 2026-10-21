@@ -6,6 +6,10 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add selected-band 99% occupied bandwidth with lower/upper edges, width and
+  spectrum markers. Use ENBW-corrected linear power, equal 0.5% tails and
+  interpolation within bin-centered cells, including noise without subtraction.
+  Include results and conventions in CSV/PNG metadata and CLI `--band` JSON.
 - Name development prereleases after their version tag, such as
   `vX.Y.Z-dev.###.<sha>`.
 - Upgrade inherited Ubuntu builder packages so release packaging can collect

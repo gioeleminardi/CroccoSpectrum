@@ -180,6 +180,38 @@ std::optional<BandPower> integrateBand(std::span<const double> frequencies,
     return BandPower{first, last, frequencies[first], frequencies[last], bandwidth, total};
 }
 
+std::optional<OccupiedBandwidth> occupiedBandwidth99(std::span<const double> frequencies,
+                                                    std::span<const double> powers,
+                                                    PowerScale scale, double enbwHz,
+                                                    std::size_t first, std::size_t last)
+{
+    const auto band = integrateBand(frequencies, powers, scale, enbwHz, first, last);
+    if (!band || band->power <= 0)
+        return {};
+    const double spacing = frequencies[1] - frequencies[0];
+    const double factor = scale == PowerScale::Density ? spacing : spacing / enbwHz;
+    const double tail = band->power * 0.005;
+    const auto edge = [&](bool upper) {
+        double excluded = 0;
+        for (std::size_t offset = 0; offset <= band->lastBin - band->firstBin; ++offset) {
+            const auto bin = upper ? band->lastBin - offset : band->firstBin + offset;
+            const double mass = powers[bin] * factor;
+            if (mass > 0 && excluded + mass >= tail) {
+                const double fraction = std::clamp((tail - excluded) / mass, 0.0, 1.0);
+                return frequencies[bin] + (upper ? 0.5 - fraction : fraction - 0.5) * spacing;
+            }
+            excluded += mass;
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    };
+    // Accumulate each small tail from its own edge to avoid subtracting nearly
+    // equal total powers when locating the upper crossing.
+    const double lower = edge(false), upper = edge(true);
+    if (!std::isfinite(lower) || !std::isfinite(upper) || !std::isfinite(upper - lower))
+        return {};
+    return OccupiedBandwidth{lower, upper, upper - lower};
+}
+
 SpectrumEngine::SpectrumEngine(SampleKind kind, double sampleRate, DspSettings settings)
     : kind_(kind), sampleRate_(sampleRate), settings_(settings)
 {

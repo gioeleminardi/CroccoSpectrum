@@ -177,6 +177,42 @@ class CoreTests : public QObject
             }
         }
     }
+    void occupiedBandwidth()
+    {
+        const std::vector<double> frequency{-30, -20, -10, 0, 10, 20, 30};
+        const auto check = [&](std::vector<double> masses, std::size_t first, std::size_t last,
+                               double lower, double upper) {
+            for (const auto scale : {rf::PowerScale::Spectrum, rf::PowerScale::Density}) {
+                auto powers = masses;
+                for (auto &power : powers)
+                    power *= scale == rf::PowerScale::Spectrum ? 2.0 : 0.1;
+                for (bool reverse : {false, true}) {
+                    const auto result = rf::occupiedBandwidth99(frequency, powers, scale, 20,
+                        reverse ? last : first, reverse ? first : last);
+                    QVERIFY(result);
+                    QVERIFY(std::abs(result->lowerHz - lower) < 1e-12);
+                    QVERIFY(std::abs(result->upperHz - upper) < 1e-12);
+                    QVERIFY(std::abs(result->bandwidthHz - (upper - lower)) < 1e-12);
+                }
+            }
+        };
+        check({1, 1, 1, 1, 1, 1, 1}, 0, 6, -34.65, 34.65); // Flat density: 99% of 70 Hz.
+        check({0, 0, 0, 1, 0, 0, 0}, 0, 6, -4.95, 4.95); // One bin retains finite width.
+        check({1000, 1, 0, 0, 0, 3, 1000}, 1, 5, -24.8, 25 - 0.2 / 3); // Selected only.
+        check({1, 0, 198, 0, 1, 0, 0}, 0, 6, -25, 5); // Exact tail ties keep outer edges.
+        check({1, 0, 0, 0, 0, 0, 1}, 0, 0, -34.95, -25.05); // Endpoint cell, no clipping.
+        check({1, 0, 0, 0, 0, 0, 1}, 6, 6, 25.05, 34.95);
+        for (auto invalid : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::infinity()}) {
+            std::vector<double> powers(7, 0);
+            powers[3] = invalid;
+            QVERIFY(!rf::occupiedBandwidth99(frequency, powers, rf::PowerScale::Density, 20, 0, 6));
+        }
+        const std::vector<double> powers(7, 1);
+        QVERIFY(!rf::occupiedBandwidth99(frequency, powers, rf::PowerScale::Spectrum, 0, 0, 6));
+        QVERIFY(!rf::occupiedBandwidth99(frequency, powers, rf::PowerScale::Density, 20, 0, 7));
+        QVERIFY(!rf::occupiedBandwidth99(frequency, {}, rf::PowerScale::Density, 20, 0, 6));
+    }
     void integratedBandAndSnr()
     {
         const std::vector<double> frequency{0, 10, 20, 30, 40, 50};

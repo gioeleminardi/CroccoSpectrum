@@ -472,7 +472,7 @@ void SpectrumPlot::paintPeaks(QPainter &painter, double minimum, double maximum)
 void SpectrumPlot::updateMeasurementHeight()
 {
     int minimum = 180;
-    if (signalBins_ || noiseBins_) {
+    if (measurementBins_) {
         const QRect body(0, 0, std::max(1, width() - 120), 10000);
         minimum = std::max(minimum, fontMetrics().boundingRect(body, Qt::TextWordWrap,
                                                                measurementText()).height() + 86);
@@ -503,6 +503,15 @@ QString SpectrumPlot::measurementText() const
                                        : QString("unavailable"),
              measuring_ ? "Click to set end · Esc to clear"
                         : "Integrated band power: " + power);
+    if (!measuring_) {
+        const auto occupied = band["occupied_bandwidth"].toObject();
+        text += occupied["available"].toBool()
+                    ? QString("\n99% OBW: %1\nOBW lower: %2 · upper: %3")
+                          .arg(frequencyText(occupied["bandwidth_hz"].toDouble()),
+                               frequencyText(occupied["lower_hz"].toDouble() + center),
+                               frequencyText(occupied["upper_hz"].toDouble() + center))
+                    : QString("\n99% OBW: unavailable");
+    }
     for (const auto &name : {QString("signal"), QString("noise")}) {
         const auto assigned = bandMeasurements_[name].toObject();
         if (!assigned.isEmpty()) {
@@ -557,6 +566,15 @@ void SpectrumPlot::paintMeasurement(QPainter &painter)
     painter.setPen(QPen(measurementColor, 1.5, isMeasuring() ? Qt::DashLine : Qt::SolidLine));
     painter.drawLine(QPointF(startX, plot.top()), QPointF(startX, plot.bottom()));
     painter.drawLine(QPointF(endX, plot.top()), QPointF(endX, plot.bottom()));
+    const auto occupied = bandMeasurements_["selected"].toObject()["occupied_bandwidth"].toObject();
+    if (!measuring_ && occupied["available"].toBool()) {
+        painter.setPen(QPen(QColor("#f28ea8"), 1.5, Qt::DashDotLine));
+        for (const auto &name : {QString("lower_hz"), QString("upper_hz")}) {
+            const double x = plot.left() + (occupied[name].toDouble() - left_) /
+                                              (right_ - left_) * plot.width();
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        }
+    }
     painter.restore();
     measurementReadout(painter, plot, measurementText());
 }

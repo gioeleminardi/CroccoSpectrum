@@ -50,6 +50,17 @@ std::optional<BandPower> integrateBand(std::span<const double> frequencies,
                                      std::span<const double> powers, PowerScale scale,
                                      double enbwHz, std::size_t first, std::size_t last);
 
+struct OccupiedBandwidth {
+    double lowerHz = 0, upperHz = 0, bandwidthHz = 0;
+};
+
+// Equal 0.5% power tails within the inclusive selected bins, with noise included.
+// Interpolate constant density in df-wide cells centered on each bin, including endpoints.
+std::optional<OccupiedBandwidth> occupiedBandwidth99(std::span<const double> frequencies,
+                                                    std::span<const double> powers,
+                                                    PowerScale scale, double enbwHz,
+                                                    std::size_t first, std::size_t last);
+
 struct SpectrumResult {
     std::vector<double> power; // Linear power; average before taking logarithms.
     bool valid = true;

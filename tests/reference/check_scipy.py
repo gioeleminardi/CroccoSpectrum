@@ -8,7 +8,7 @@ import tempfile
 
 try:
     import numpy as np
-    from scipy import signal
+    from scipy import signal, stats
 except ImportError:
     print("NumPy/SciPy unavailable: independent reference checks skipped")
     sys.exit(77)
@@ -150,6 +150,25 @@ with tempfile.TemporaryDirectory(prefix="rf-reference-") as directory:
                                 # Different FFT/window implementations can differ at roundoff-only leakage.
                                 if integrated > 1e-25:
                                     np.testing.assert_allclose(band["power_dbfs"], 10 * np.log10(integrated), atol=1e-8, rtol=0)
+                        occupied = measured["selected"]["occupied_bandwidth"]
+                        assert occupied["percent"] == 99
+                        assert occupied["noise_treatment"] == "included; no subtraction"
+                        if expected["selected"][0] == 0:
+                            assert not occupied["available"]
+                            assert "reason" in occupied
+                        else:
+                            # Independent continuous histogram of the SciPy PSD:
+                            # constant density in df-wide cells centered on bins.
+                            edges = np.append(frequency - spacing / 2, frequency[-1] + spacing / 2)
+                            distribution = stats.rv_histogram((psd, edges), density=False)
+                            lower, upper = distribution.ppf([0.005, 0.995])
+                            assert occupied["available"]
+                            np.testing.assert_allclose(
+                                [occupied["lower_hz"], occupied["upper_hz"], occupied["bandwidth_hz"]],
+                                [lower, upper, upper - lower], atol=1e-7, rtol=1e-10)
+                            np.testing.assert_allclose(
+                                distribution.cdf(occupied["upper_hz"]) - distribution.cdf(occupied["lower_hz"]),
+                                0.99, atol=1e-10, rtol=0)
                         total, signal_bw = expected["signal"]
                         noise_total, noise_bw = expected["noise"]
                         normalized_noise = noise_total * signal_bw / noise_bw
