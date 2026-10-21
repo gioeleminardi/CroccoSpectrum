@@ -21,6 +21,7 @@ class QActionGroup;
 namespace rf
 {
 class UpdateChecker;
+class SpectrumBankWidget;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -130,10 +131,11 @@ class MainWindow : public QMainWindow
     UpdateChecker *updateChecker_;
     QString notifiedUpdateVersion_;
     SpectrumPlot *spectrum_, *averagePlot_;
+    SpectrumBankWidget *spectrumBank_;
     WaterfallPlot *waterfall_;
     WaterfallMinimap *minimap_;
     WaveformPlot *waveform_;
-    QDockWidget *controlsDock_, *averageDock_, *waveformDock_, *bookmarksDock_;
+    QDockWidget *controlsDock_, *averageDock_, *waveformDock_, *bookmarksDock_, *spectrumBankDock_;
     QComboBox *fft_, *window_, *scale_, *palette_, *waveformMode_;
     QSpinBox *overlap_;
     QCheckBox *removeDc_, *conjugate_, *autoRange_, *waterfallAutoRangeOnZoom_, *absoluteFrequency_, *maxHold_;

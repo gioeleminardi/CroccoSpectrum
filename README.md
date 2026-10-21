@@ -329,6 +329,29 @@ frequency-only navigation retains independent waveform zoom and exact scans.
 
 ## Measurements and exports
 
+Open **View → Saved spectrum bank** after running an interval or whole-recording
+average, then choose **Capture average**. Capture several intervals, double-click
+names to rename, check/uncheck their legend entries to show/hide colored overlays,
+and use **Delete** to remove selected traces. Saved bins remain unchanged when
+you navigate or run another average. Captures always retain the average, including
+when the Average spectrum panel displays max hold.
+
+Select two checked entries and enable **Show selected A − B (dB)** for the
+per-bin difference, first entry minus second in bank order. Hover for numerical
+readouts. Comparisons use baseband frequencies and require the same source
+identity, sample interpretation and all DSP settings, including overlap and
+scaling. Changing settings retains the bank but grays and excludes incompatible
+traces; switching back restores them. Opening another recording starts a new bank.
+Zero/zero differences are undefined gaps; a single zero power gives ±∞.
+
+Sessions preserve names, visibility, original recording/interval, FFT/window,
+scaling, ENBW, coverage counts and lossless average powers. **Export trace…** and
+**Import trace…** exchange a selected `.rftrace.json` trace with the same metadata;
+imports require the current source and settings to match. A changed source
+identity makes restored traces incompatible. Bank bin storage is limited to
+64 MiB, independently of analysis caches; large session/trace files are limited
+to 96 MiB. Bank sessions use schema 3; existing sessions remain readable.
+
 Right-click the spectrum or average plot and choose **Spectral peaks…** to label
 the twelve strongest local maxima. Search the visible frequency range or the
 completed Shift-click frequency selection. The table follows the displayed FFT,
@@ -356,7 +379,8 @@ sine with peak amplitude 1 is −3.0103 dBFS. These are not calibrated dBm readi
 | **CSV** | Numeric spectrum or average/max-hold bins, band power/SNR/99% OBW, settings, and coverage metadata |
 | **PNG** | Plot snapshot with embedded recording and analysis metadata |
 | **Raw sample range** | Original raw bytes, decompressed raw bytes, or converted float64 audio/text samples, plus a `.rfmeta.json` sidecar |
-| **Session** | Recording interpretation, DSP/view settings, source identity, selection, and bookmarks |
+| **Session** | Recording interpretation, DSP/view settings, source identity, selection, bookmarks, and saved spectrum bank |
+| **Spectrum trace** | Lossless average bins with name/visibility, source, interval, DSP and coverage; `.rftrace.json` |
 
 Recordings are opened read-only. Exports refuse existing output paths, and
 cancelled writes are not published as completed outputs. Application JSON stores

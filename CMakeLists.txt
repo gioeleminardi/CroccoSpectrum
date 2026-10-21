@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(CroccoSpectrum VERSION 0.7.0 LANGUAGES CXX)
+project(CroccoSpectrum VERSION 0.8.0 LANGUAGES CXX)
 include(cmake/BuildVersion.cmake)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -30,7 +30,7 @@ endif()
 
 add_library(rf_core
     src/recording/Recording.cpp src/recording/Metadata.cpp src/recording/Import.cpp
-    src/dsp/Spectrum.cpp src/app/Analysis.cpp src/app/Session.cpp)
+    src/dsp/Spectrum.cpp src/app/Analysis.cpp src/app/Session.cpp src/app/SpectrumBank.cpp)
 target_include_directories(rf_core PUBLIC src)
 target_link_libraries(rf_core PUBLIC Qt6::Core PkgConfig::FFTW Threads::Threads
     PRIVATE PkgConfig::SNDFILE ZLIB::ZLIB BZip2::BZip2)
@@ -38,7 +38,7 @@ target_compile_definitions(rf_core PUBLIC RF_VERSION="${RF_VERSION}" _FILE_OFFSE
 target_compile_options(rf_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
 add_library(rf_ui src/app/AnalysisController.cpp src/ui/Plots.cpp
-    src/app/UpdateChecker.cpp src/ui/ImportDialog.cpp src/ui/MainWindow.cpp)
+    src/app/UpdateChecker.cpp src/ui/ImportDialog.cpp src/ui/MainWindow.cpp src/ui/SpectrumBankWidget.cpp)
 target_link_libraries(rf_ui PUBLIC rf_core Qt6::Widgets Qt6::Network)
 target_compile_options(rf_ui PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 # Embed the original artwork so installed/portable binaries need no asset paths.

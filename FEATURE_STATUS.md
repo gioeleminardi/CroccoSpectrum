@@ -36,6 +36,7 @@ and coverage limitations are recorded in [Validation](docs/VALIDATION.md).
 | dBFS / PSD and real one-sided scaling | Implemented | Explicit full-scale convention; no calibrated dBm |
 | Exact selected/whole-file spectral average | Implemented | Linear mean; invalid/boundary windows counted |
 | Interval max hold | Implemented | Separate result from average |
+| Saved spectrum banks and comparisons | Implemented | Named completed averages; show/hide, rename/delete, colored overlays and A − B in dB; same source/interpretation/DSP; session banks and lossless trace import/export |
 | Full exact waterfall overview | Implemented | Explicit full pass; bounded temporal/frequency maxima plus average |
 | Parallel FFT scans | Implemented | Automatic bounded workers for averages, exact overviews/minimaps and larger previews/waterfalls; ordered reductions; short jobs stay serial |
 | Waveform and exact min/max envelopes | Implemented | Independent time zoom/pan down to single samples; connected I/Q traces and markers; bounded preview and explicit exact scan of the visible waveform interval |

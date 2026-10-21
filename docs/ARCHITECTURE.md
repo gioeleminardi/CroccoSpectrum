@@ -333,13 +333,38 @@ text values, or unchanged decompressed raw data. Float full scale still applies
 at decoding time. Reopening a session reconverts the original path with the saved
 mapping. Ordinary imports retain their direct positional-read behavior.
 
-Preferences and raw sessions use schema 1; converted/compressed sessions use
-schema 2 so older applications reject them instead of reading container bytes as
-raw samples. Recording import mappings have a separately checked schema 1.
-Both session versions remain readable. Treat unknown versions as a
+Preferences and raw sessions without banks use schema 1; converted/compressed
+sessions without banks use schema 2 so older applications reject them instead of
+reading container bytes as raw samples. Sessions containing saved spectrum banks
+use schema 3. Recording import mappings have a separately checked schema 1.
+All three session versions remain readable. Treat unknown versions as a
 recoverable error and preserve the original. Recording-specific settings never
 silently become facts about a new raw file. Preferences save import defaults,
 UI/DSP/view choices, and the application-produced Qt layout state.
+
+`SavedSpectrum` retains an immutable completed linear-power average with its
+original descriptor, stat identity, interval, DSP, ENBW and valid/invalid/boundary/
+trailing coverage. It never uses max hold or previews. The bank owns only average
+bins and their frequency grids, bounded to 64 MiB independently of controller
+caches. Incompatible traces remain retained but are excluded from overlays and
+differences. Compatibility requires equal source identity, interpretation
+(including capture metadata) and all DSP settings; intervals may differ. Bank
+axes always use baseband Hz to avoid confusing retuned captures with absolute RF.
+Differences subtract per-bin logarithms, `10 log10(PA) - 10 log10(PB)`, avoiding
+ratio overflow/underflow; zero/zero is undefined and other zero powers give ±∞.
+
+Schema 3 sessions embed `spectrum_bank`; schema 1 `spectrum_trace` documents hold
+one trace for import/export. Powers are base64 little-endian IEEE float64 in
+`power_f64_le`; baseband grids are reconstructed exactly from FFT length, sample
+rate and sidedness. Import validates complete grid lengths, finite nonnegative
+powers, interval/coverage consistency and the bin-storage budget. Bank JSON is
+bounded to 96 MiB, allowing base64 expansion plus metadata; ordinary metadata
+retains its 4 MiB bound. Session replacement remains atomic; trace export uses
+`ExportFile` and refuses overwrite. Restoring a changed source preserves saved
+provenance and excludes those traces instead of relabeling them as current data.
+Trace import/export runs on a dedicated `AnalysisController`, with cooperative
+cancellation before export publication and generation checks before GUI updates;
+it does not interrupt analysis or navigation work.
 
 When changing measurement behavior, first extend independent/reference fixtures,
 then update comments, the user conventions, changelog, and feature/validation

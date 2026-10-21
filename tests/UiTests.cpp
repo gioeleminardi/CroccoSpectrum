@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/DisplayUnits.h"
 #include "ui/ImportDialog.h"
+#include "ui/SpectrumBankWidget.h"
 #include "recording/Metadata.h"
 #include <QAction>
 #include <QApplication>
@@ -19,6 +20,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
@@ -147,6 +149,175 @@ class UiTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void savedSpectrumBankWorkflow()
+    {
+        QTemporaryDir directory;
+        rf::Preferences preferences;
+        preferences.dsp.fftSize = 256;
+        preferences.dsp.overlapPercent = 0;
+        const auto preferencesPath = directory.filePath("preferences.json");
+        rf::savePreferences(preferencesPath, preferences);
+        const auto descriptor = toneRecording(directory.filePath("intervals.iq"), {8, 8, 32, 32});
+        rf::MainWindow window(nullptr, preferencesPath);
+        window.resize(1440, 1000);
+        window.show();
+        auto *bank = window.findChild<rf::SpectrumBankWidget *>();
+        auto *dock = window.findChild<QDockWidget *>("spectrumBankDock");
+        auto *capture = window.findChild<QPushButton *>("captureSpectrumTrace");
+        auto *legend = window.findChild<QListWidget *>("spectrumBankLegend");
+        auto *difference = window.findChild<QCheckBox *>("spectrumBankDifference");
+        auto *details = window.findChild<QLabel *>("spectrumBankDetails");
+        QVERIFY(bank && dock && capture && legend && difference && details);
+        QVERIFY(!capture->isEnabled());
+        findAction(window, "Saved spectrum bank")->trigger();
+        QVERIFY(dock->isVisible());
+        window.openRecording(descriptor, {0, 512});
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult(), 10000);
+        QVERIFY(!capture->isEnabled()); // Previews cannot become saved averages.
+        findAction(window, "Average analysis interval")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && capture->isEnabled(), 10000);
+        capture->click();
+        QCOMPARE(legend->count(), 1);
+        QVERIFY(legend->item(0)->flags().testFlag(Qt::ItemIsEditable));
+        legend->item(0)->setText("Early interval");
+        QCOMPARE(bank->traces()[0].name, QString("Early interval"));
+        QCOMPARE(bank->traces()[0].average->range, (rf::FrameRange{0, 512}));
+        QVERIFY(bank->traces()[0].average->maxPower.empty());
+        const auto early = bank->traces()[0].average;
+        window.findChild<QLineEdit *>("selectionStart")->setText("512");
+        window.findChild<QLineEdit *>("selectionEnd")->setText("1024");
+        window.findChild<QPushButton *>("applySelection")->click();
+        QVERIFY(!capture->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.selectedRange().begin == 512, 10000);
+        findAction(window, "Average analysis interval")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && capture->isEnabled(), 10000);
+        capture->click();
+        QCOMPARE(legend->count(), 2);
+        legend->item(1)->setText("Late interval");
+        QCOMPARE(bank->traces()[0].average, early); // New work cannot replace saved bins.
+        QCOMPARE(bank->traces()[1].average->range, (rf::FrameRange{512, 1024}));
+        QVERIFY(legend->item(0)->icon().pixmap(16, 16).toImage() !=
+                legend->item(1)->icon().pixmap(16, 16).toImage());
+        legend->item(0)->setSelected(true);
+        legend->item(1)->setSelected(true);
+        QVERIFY(difference->isEnabled());
+        difference->setChecked(true);
+        QVERIFY(details->text().contains("Early interval − Late interval"));
+        auto *plot = bank->findChild<QWidget *>("spectrumBankPlot");
+        QVERIFY(plot);
+        moveMouse(plot, QPoint(plot->width() / 2, 100));
+        QVERIFY(plot->toolTip().contains("(dB)"));
+        const auto screenshots = qEnvironmentVariable("RF_TEST_SCREENSHOT_DIR");
+        if (!screenshots.isEmpty()) {
+            QVERIFY(QDir().mkpath(screenshots));
+            QTRY_VERIFY(details->height() >= details->heightForWidth(details->width()));
+            QVERIFY(dock->grab().save(screenshots + "/spectrum-bank-difference.png"));
+        }
+        difference->setChecked(false);
+        if (!screenshots.isEmpty()) {
+            QTRY_VERIFY(details->height() >= details->heightForWidth(details->width()));
+            QVERIFY(dock->grab().save(screenshots + "/spectrum-bank-overlay.png"));
+        }
+        legend->item(0)->setCheckState(Qt::Unchecked);
+        QVERIFY(!bank->traces()[0].visible);
+        QVERIFY(!difference->isEnabled());
+        QVERIFY(details->text().startsWith("1 / 2 traces shown"));
+        legend->item(0)->setCheckState(Qt::Checked);
+        QVERIFY(difference->isEnabled());
+        legend->clearSelection();
+        legend->setCurrentRow(0);
+
+        const auto nativeDialogs = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        const auto restoreDialogs = qScopeGuard([nativeDialogs] {
+            QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, nativeDialogs);
+        });
+        const auto choosePath = [&](const QString &path) {
+            QTimer::singleShot(0, &window, [&, path] {
+                auto *dialog = window.findChild<QFileDialog *>();
+                if (dialog) {
+                    dialog->selectFile(path);
+                    static_cast<QDialog *>(dialog)->accept();
+                }
+            });
+        };
+        const auto tracePath = directory.filePath("early.rftrace.json");
+        choosePath(tracePath);
+        window.findChild<QPushButton *>("exportSpectrumTrace")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(tracePath) &&
+            window.findChild<QPushButton *>("importSpectrumTrace")->isEnabled(), 10000);
+        QCOMPARE(rf::readSpectrumTrace(tracePath).name, QString("Early interval"));
+        window.findChild<QPushButton *>("deleteSpectrumTrace")->click();
+        QCOMPARE(legend->count(), 1);
+        choosePath(tracePath);
+        window.findChild<QPushButton *>("importSpectrumTrace")->click();
+        QTRY_VERIFY_WITH_TIMEOUT(legend->count() == 2 &&
+            window.findChild<QPushButton *>("importSpectrumTrace")->isEnabled(), 10000);
+        QCOMPARE(bank->traces()[1].average->averagePower, early->averagePower);
+        legend->item(1)->setCheckState(Qt::Unchecked);
+        const auto sessionPath = directory.filePath("bank.rfsession.json");
+        choosePath(sessionPath);
+        findAction(window, "Save session")->trigger();
+        QVERIFY(QFileInfo::exists(sessionPath));
+        QCOMPARE(rf::readSession(sessionPath).spectrumBank.size(), std::size_t{2});
+        window.findChild<QPushButton *>("deleteSpectrumTrace")->click();
+        QCOMPARE(legend->count(), 1);
+        findAction(window, "Reopen last saved session")->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && legend->count() == 2, 10000);
+        QCOMPARE(bank->traces()[1].name, QString("Early interval"));
+        QVERIFY(!bank->traces()[1].visible);
+        QVERIFY(dock->isVisible());
+        auto *fft = window.findChild<QComboBox *>("fftSize");
+        QVERIFY(fft);
+        fft->setCurrentIndex(fft->findData(512));
+        QCOMPARE(bank->traces().size(), std::size_t{2});
+        QVERIFY(details->text().startsWith("0 / 2 traces shown"));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() &&
+                                    window.previewResult()->frequencies.size() == 512, 10000);
+        fft->setCurrentIndex(fft->findData(256));
+        QVERIFY(details->text().startsWith("1 / 2 traces shown"));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy() && window.previewResult() &&
+                                    window.previewResult()->frequencies.size() == 256, 10000);
+        window.openRecording(toneRecording(directory.filePath("other.iq"), {8, 8}));
+        QCOMPARE(legend->count(), 0); // A different recording starts a fresh bank.
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isBusy(), 10000);
+    }
+    void savedSpectrumBankSettingsCompatibility()
+    {
+        QTemporaryDir directory;
+        const auto descriptor = toneRecording(directory.filePath("tones.iq"), {8, 8});
+        rf::Recording recording(descriptor);
+        rf::DspSettings dsp;
+        dsp.fftSize = 256;
+        auto average = rf::analyzeAverage(recording, {0, 512}, dsp, {});
+        rf::SavedSpectrum trace{"A", true, descriptor, recording.identity(), dsp, average};
+        rf::SpectrumBankWidget bank;
+        bank.setContext(descriptor, recording.identity(), dsp);
+        bank.addTrace(trace);
+        trace.name = "B";
+        bank.addTrace(trace);
+        auto *legend = bank.findChild<QListWidget *>();
+        auto *difference = bank.findChild<QCheckBox *>();
+        auto *details = bank.findChild<QLabel *>();
+        legend->item(0)->setSelected(true);
+        legend->item(1)->setSelected(true);
+        QVERIFY(difference->isEnabled());
+        difference->setChecked(true);
+        auto changed = dsp;
+        changed.scale = rf::PowerScale::Density;
+        bank.setContext(descriptor, recording.identity(), changed);
+        QVERIFY(!difference->isEnabled());
+        QVERIFY(!difference->isChecked());
+        QVERIFY(details->text().startsWith("0 / 2 traces shown"));
+        QVERIFY(legend->item(0)->toolTip().contains("Incompatible"));
+        QVERIFY_EXCEPTION_THROWN(bank.addTrace(trace), std::runtime_error);
+        QCOMPARE(bank.traces().size(), std::size_t{2});
+        bank.setContext(descriptor, "replaced source", dsp);
+        QVERIFY(details->text().startsWith("0 / 2 traces shown"));
+        bank.setContext(descriptor, recording.identity(), dsp);
+        QVERIFY(details->text().startsWith("2 / 2 traces shown"));
+        QVERIFY(difference->isEnabled());
+    }
     void absoluteFrequencyDefaultsToKnownCenter_data()
     {
         QTest::addColumn<bool>("known");

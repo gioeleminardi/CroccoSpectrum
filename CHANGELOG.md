@@ -6,6 +6,10 @@ This file records release history and behavior changes. See
 
 ## Unreleased
 
+- Add named saved average spectra with visibility, rename/delete controls, colored
+  overlays and per-bin A − B differences in dB. Preserve source/interval, DSP and
+  complete-pass coverage in session banks and lossless `.rftrace.json` files;
+  restrict comparisons to the same recording/interpretation and DSP settings.
 - Add selected-band 99% occupied bandwidth with lower/upper edges, width and
   spectrum markers. Use ENBW-corrected linear power, equal 0.5% tails and
   interpolation within bin-centered cells, including noise without subtraction.

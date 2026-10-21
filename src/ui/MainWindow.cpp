@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "DisplayUnits.h"
 #include "ImportDialog.h"
+#include "SpectrumBankWidget.h"
 #include "app/UpdateChecker.h"
 #include "recording/Metadata.h"
 #include <QAction>
@@ -266,6 +267,27 @@ MainWindow::MainWindow(QWidget *parent, QString preferencesPath) : QMainWindow(p
     averageDock_ =
         dock(this, "Average spectrum", "averageDock", averageContainer, Qt::RightDockWidgetArea);
     averageDock_->hide();
+    spectrumBank_ = new SpectrumBankWidget(this);
+    spectrumBankDock_ = dock(this, "Saved spectrum bank", "spectrumBankDock", spectrumBank_,
+                             Qt::BottomDockWidgetArea);
+    spectrumBankDock_->hide();
+    connect(spectrumBank_, &SpectrumBankWidget::error, this, &MainWindow::reportError);
+    connect(spectrumBank_, &SpectrumBankWidget::captureRequested, this, [this] {
+        if (!recording_ || !average_)
+            return;
+        try {
+            recording_->verifyUnchanged();
+            auto saved = std::make_shared<AverageResult>(AverageResult{
+                average_->range, average_->frequencies, average_->averagePower, {},
+                average_->validWindows, average_->invalidWindows, average_->boundaryWindows,
+                average_->trailingFrames, average_->enbwHz});
+            spectrumBank_->addTrace({QString("Average %1").arg(spectrumBank_->traces().size() + 1),
+                                     true, recording_->descriptor(), recording_->identity(),
+                                     preferences_.dsp, std::move(saved)});
+        } catch (const std::exception &error) {
+            reportError(QString::fromUtf8(error.what()));
+        }
+    });
     waveformDock_ =
         dock(this, "Baseband waveform", "waveformDock", waveform_, Qt::BottomDockWidgetArea);
     waveformDock_->hide();
@@ -497,7 +519,7 @@ void MainWindow::buildMenus()
         persistPreferences();
     });
     view->addSeparator();
-    for (auto *panel : {controlsDock_, averageDock_, waveformDock_, bookmarksDock_})
+    for (auto *panel : {controlsDock_, averageDock_, waveformDock_, bookmarksDock_, spectrumBankDock_})
         view->addAction(panel->toggleViewAction());
     auto *reset = view->addAction("Reset frequency zoom");
     reset->setShortcut(QKeySequence("Ctrl+0"));
@@ -1036,6 +1058,7 @@ void MainWindow::connectWorker()
                     return;
                 recording_ = std::move(recording);
                 range_ = range;
+                spectrumBank_->setContext(recording_->descriptor(), recording_->identity(), preferences_.dsp);
                 updateRanges();
                 const auto &descriptor = recording_->descriptor();
                 recordingLabel_->setText(
@@ -1068,6 +1091,9 @@ void MainWindow::connectWorker()
                         reportError("Session source identity changed; results are recomputed from "
                                     "the current file");
                     bookmarks_ = restoringSession_->bookmarks;
+                    spectrumBank_->setTraces(restoringSession_->spectrumBank);
+                    if (!restoringSession_->spectrumBank.empty())
+                        spectrumBankDock_->show();
                     restoringSession_.reset();
                 } else {
                     bookmarks_ = descriptor.annotations;
@@ -1164,6 +1190,7 @@ void MainWindow::connectWorker()
                 if (generation != generation_)
                     return;
                 average_ = std::move(result);
+                spectrumBank_->setCaptureAvailable(average_->validWindows > 0);
                 averagePlot_->setAverage(average_, maxHold_->isChecked());
                 averageDock_->show();
                 averageLabel_->setText(
@@ -1291,6 +1318,7 @@ void MainWindow::openRecording(RecordingDescriptor descriptor, FrameRange range,
         minimap_->clear();
         clearMeasurements();
         recording_.reset();
+        spectrumBank_->clear();
         openingPath_ = QFileInfo(sourcePath).absoluteFilePath();
         generation_ = controller_.open(std::move(descriptor), preferences_.dsp, range);
         setBusy(true, "Opening recording…");
@@ -1315,6 +1343,7 @@ void MainWindow::clearMeasurements()
     spectrumPreview_.reset();
     preview_.reset();
     average_.reset();
+    spectrumBank_->setCaptureAvailable(false);
     waveformResult_.reset();
     spectrum_->clear();
     waterfall_->clear();
@@ -1561,6 +1590,8 @@ void MainWindow::updateDsp()
     }
     const bool changed = settings != preferences_.dsp;
     preferences_.dsp = settings;
+    if (recording_)
+        spectrumBank_->setContext(recording_->descriptor(), recording_->identity(), settings);
     resolutionLabel_->setText(
         QString("Bin spacing: %1 Hz\nWindow: %2 · hop: %3\nENBW shown in CSV/numeric results")
             .arg(frequencyNumber(rate / settings.fftSize, 1))
@@ -1716,6 +1747,7 @@ void MainWindow::startAverage(FrameRange range, const QString &message)
         return;
     previewTimer_->stop();
     average_.reset();
+    spectrumBank_->setCaptureAvailable(false);
     averagePlot_->clear();
     generation_ = controller_.average(recording_, range, preferences_.dsp);
     averageDock_->show();
@@ -1910,7 +1942,7 @@ void MainWindow::saveCurrentSession(bool choosePath)
     }
     try {
         saveSession(path, {recording_->descriptor(), preferences_.dsp, preferences_.view, range_,
-                           recording_->identity(), bookmarks_});
+                           recording_->identity(), bookmarks_, spectrumBank_->traces()});
         sessionPath_ = path;
         preferences_.lastSession = path;
         persistPreferences();

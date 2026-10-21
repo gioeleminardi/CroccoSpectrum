@@ -1,6 +1,7 @@
 #include "Session.h"
 #include "recording/Metadata.h"
 #include <QJsonArray>
+#include <QFileInfo>
 #include <cmath>
 #include <initializer_list>
 #include <stdexcept>
@@ -26,7 +27,8 @@ void requireBooleans(const QJsonObject &object, std::initializer_list<const char
 }
 void requireSchema(const QJsonObject &root, const QString &type)
 {
-    if ((root["schema"].toInt() != 1 && !(type == "session" && root["schema"].toInt() == 2)) ||
+    if ((root["schema"].toInt() != 1 &&
+         !(type == "session" && (root["schema"].toInt() == 2 || root["schema"].toInt() == 3))) ||
         root["type"].toString() != type)
         throw std::runtime_error("Unsupported settings/session schema; original file is preserved");
 }
@@ -179,8 +181,10 @@ void savePreferences(const QString &path, const Preferences &preferences)
 
 Session readSession(const QString &path)
 {
-    const auto root = readJsonObject(path);
+    const auto root = readJsonObject(path, spectrumBankJsonBytes);
     requireSchema(root, "session");
+    if (root["schema"].toInt() != 3 && QFileInfo(path).size() > maxMetadataBytes)
+        throw std::runtime_error("Sessions without spectrum banks exceed the 4 MiB limit");
     if (!root["dsp"].isObject() || !root["view"].isObject() || !root["bookmarks"].isArray())
         throw std::runtime_error("Invalid session settings/bookmarks");
     Session session;
@@ -192,6 +196,11 @@ Session readSession(const QString &path)
     if (session.range.size() == 0)
         throw std::runtime_error("Session range is empty");
     session.sourceIdentity = root["source_identity"].toString();
+    if (root["schema"].toInt() == 3) {
+        if (!root["spectrum_bank"].isArray())
+            throw std::runtime_error("Missing session spectrum bank");
+        session.spectrumBank = spectrumBankFromJson(root["spectrum_bank"].toArray());
+    }
     for (const auto value : root["bookmarks"].toArray()) {
         const auto item = value.toObject();
         session.bookmarks.push_back({jsonUnsigned(item["start"], "bookmark start"),
@@ -212,15 +221,21 @@ void saveSession(const QString &path, const Session &session)
         bookmarks.append(QJsonObject{{"start", QString::number(mark.start)},
                                      {"count", QString::number(mark.count)},
                                      {"label", mark.label}});
-    writeJsonAtomic(path, {{"schema", session.recording.import.input == InputFormat::Raw ? 1 : 2},
-                           {"type", "session"},
-                           {"application_version", RF_VERSION},
-                           {"recording", recordingToJson(session.recording)},
-                           {"dsp", dspToJson(session.dsp)},
-                           {"view", viewToJson(session.view)},
-                           {"start", QString::number(session.range.begin)},
-                           {"end", QString::number(session.range.end)},
-                           {"source_identity", session.sourceIdentity},
-                           {"bookmarks", bookmarks}});
+    QJsonObject root{{"schema", session.recording.import.input == InputFormat::Raw ? 1 : 2},
+                     {"type", "session"},
+                     {"application_version", RF_VERSION},
+                     {"recording", recordingToJson(session.recording)},
+                     {"dsp", dspToJson(session.dsp)},
+                     {"view", viewToJson(session.view)},
+                     {"start", QString::number(session.range.begin)},
+                     {"end", QString::number(session.range.end)},
+                     {"source_identity", session.sourceIdentity},
+                     {"bookmarks", bookmarks}};
+    if (!session.spectrumBank.empty()) {
+        root["schema"] = 3;
+        root["spectrum_bank"] = spectrumBankToJson(session.spectrumBank);
+    }
+    writeJsonAtomic(path, root,
+                    session.spectrumBank.empty() ? maxMetadataBytes : spectrumBankJsonBytes);
 }
 } // namespace rf

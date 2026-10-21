@@ -1,5 +1,6 @@
 #pragma once
 #include "Analysis.h"
+#include "SpectrumBank.h"
 #include <QImage>
 #include <QObject>
 #include <atomic>
@@ -51,6 +52,8 @@ class AnalysisController : public QObject
     quint64 samples(std::shared_ptr<Recording> recording, FrameRange range, QString output);
     quint64 csv(CsvRequest request);
     quint64 png(PngRequest request);
+    quint64 readTrace(QString path);
+    quint64 exportTrace(QString path, SavedSpectrum trace);
     void cancel();
   signals:
     void recordingOpened(quint64 generation, std::shared_ptr<rf::Recording> recording,
@@ -63,9 +66,13 @@ class AnalysisController : public QObject
     void finished(quint64 generation, QString message);
     void failed(quint64 generation, QString message);
     void processingChanged(bool active); // Includes queued and executing work.
+    void traceReady(quint64 generation, std::shared_ptr<const rf::SavedSpectrum> trace);
 
   private:
-    enum class Kind { Open, Inspect, Preview, Average, Overview, Waveform, Waterfall, Samples, Csv, Png };
+    enum class Kind {
+        Open, Inspect, Preview, Average, Overview, Waveform, Waterfall, Samples, Csv, Png,
+        ReadTrace, ExportTrace
+    };
     struct Job {
         Kind kind = Kind::Preview;
         quint64 generation = 0;
@@ -78,6 +85,7 @@ class AnalysisController : public QObject
         QString output;
         std::optional<CsvRequest> csv;
         std::optional<PngRequest> png;
+        std::optional<SavedSpectrum> trace;
         std::shared_ptr<std::atomic_bool> cancelled;
     };
     quint64 submit(Job job);
@@ -113,3 +121,4 @@ Q_DECLARE_METATYPE(std::shared_ptr<rf::Recording>)
 Q_DECLARE_METATYPE(std::shared_ptr<const rf::PreviewResult>)
 Q_DECLARE_METATYPE(std::shared_ptr<const rf::AverageResult>)
 Q_DECLARE_METATYPE(std::shared_ptr<const rf::WaveformResult>)
+Q_DECLARE_METATYPE(std::shared_ptr<const rf::SavedSpectrum>)

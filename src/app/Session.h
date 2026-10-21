@@ -1,5 +1,6 @@
 #pragma once
 #include "Analysis.h"
+#include "SpectrumBank.h"
 #include <QByteArray>
 #include <QDateTime>
 #include <QJsonObject>
@@ -45,6 +46,7 @@ struct Session {
     FrameRange range;
     QString sourceIdentity;
     std::vector<Annotation> bookmarks;
+    std::vector<SavedSpectrum> spectrumBank;
 };
 
 QJsonObject dspToJson(const DspSettings &settings);

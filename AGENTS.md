@@ -188,7 +188,8 @@ needs that evidence rather than on every edit.
   path/identity and saved import mapping. Sample exports reset input format to
   raw; converted audio/text exports contain float64, compressed raw exports retain
   decompressed bytes. Partial mode is raw-only. Sessions with import mappings
-  use schema 2; raw sessions and preferences retain schema 1.
+  without spectrum banks use schema 2; raw sessions without banks and preferences
+  retain schema 1. Sessions containing saved spectrum banks use schema 3.
 - Partial imports are fixed snapshots of complete frames at open time. Appends
   are allowed, but truncation below the opening file size or path replacement
   fails. This assumes a stable downloaded prefix and does not verify same-size
@@ -239,6 +240,11 @@ reimplement the same algorithm.
   versions or mandatory metadata semantics clearly; preserve readable existing
   files on failed saves. Raw interpretation must come from the user or metadata,
   never an unannounced device-model assumption.
+- Saved spectrum banks retain completed average bins and their original provenance,
+  with a separate 64 MiB bin-storage budget. Compare only matching source identity,
+  sample interpretation and DSP settings; intervals may differ. Bank session/trace
+  JSON has a 96 MiB bound; ordinary metadata retains its 4 MiB bound. Preserve all
+  three session versions and transactional trace export.
 - Preferences use atomic replacement; measurement exports use temporary files
   and no-overwrite publication through `ExportFile`. Cancellation/failure must
   not expose a partially written file as a completed result.

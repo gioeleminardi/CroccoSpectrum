@@ -14,6 +14,7 @@ AnalysisController::AnalysisController(QObject *parent) : QObject(parent)
     qRegisterMetaType<std::shared_ptr<const PreviewResult>>();
     qRegisterMetaType<std::shared_ptr<const AverageResult>>();
     qRegisterMetaType<std::shared_ptr<const WaveformResult>>();
+    qRegisterMetaType<std::shared_ptr<const SavedSpectrum>>();
     worker_ = std::jthread([this](std::stop_token stop) { run(stop); });
 }
 
@@ -137,6 +138,21 @@ quint64 AnalysisController::png(PngRequest request)
     Job job;
     job.kind = Kind::Png;
     job.png = std::move(request);
+    return submit(std::move(job));
+}
+quint64 AnalysisController::readTrace(QString path)
+{
+    Job job;
+    job.kind = Kind::ReadTrace;
+    job.output = std::move(path);
+    return submit(std::move(job));
+}
+quint64 AnalysisController::exportTrace(QString path, SavedSpectrum trace)
+{
+    Job job;
+    job.kind = Kind::ExportTrace;
+    job.output = std::move(path);
+    job.trace = std::move(trace);
     return submit(std::move(job));
 }
 void AnalysisController::cancel()
@@ -314,6 +330,15 @@ void AnalysisController::execute(Job job)
                 throw Cancelled();
             file.commit();
             emit finished(job.generation, "PNG and embedded analysis metadata exported");
+        } else if (job.kind == Kind::ReadTrace) {
+            auto trace = std::make_shared<const SavedSpectrum>(readSpectrumTrace(job.output, cancelled));
+            if (cancelled())
+                throw Cancelled();
+            emit traceReady(job.generation, std::move(trace));
+            emit finished(job.generation, "Spectrum trace imported");
+        } else if (job.kind == Kind::ExportTrace) {
+            exportSpectrumTrace(job.output, *job.trace, cancelled);
+            emit finished(job.generation, "Spectrum trace exported");
         }
     } catch (const Cancelled &) {
         emit finished(job.generation, "Cancelled; incomplete results discarded");

@@ -6,6 +6,19 @@ The environments and test coverage below define the scope of this evidence.
 
 ## Passed
 
+- Saved spectrum banks (2026-10-21, Ubuntu 24.04 Debug
+  `0.7.0-dev.local.g0f0d62c.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
+  all nine CTest suites pass, including the existing numerical/import references.
+  Core covers real/complex spectrum/PSD differences against a known 6.0206 dB
+  level change, zero-power semantics, compatibility rejection, lossless powers,
+  64-bit intervals, coverage metadata, maximum-length FFT persistence, invalid
+  metadata/arrays, no-overwrite export, atomic save failure and bank limits.
+  UI covers capture/rename/show/hide/delete, distinct legend colors, difference
+  selection, trace import/export, session restore and incompatible settings.
+  Focused native X11/XWayland checks pass at normal and doubled scale, with
+  inspected overlay and difference renders. The full offscreen run retains four
+  expected docking skips and two Wayland URL/live HTTPS skips. Sanitizers,
+  portable packaging, live HTTPS and long-duration stress were not rerun.
 - Occupied bandwidth (2026-10-21, Ubuntu 24.04 Debug
   `0.6.3-dev.local.g1c17db9.dirty`, GCC 13.3.0, Qt 6.4.2, FFTW 3.3.10):
   all nine CTest suites pass. Core reports 87 passed, including analytic OBW

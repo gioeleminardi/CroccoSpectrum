@@ -34,6 +34,217 @@ class CoreTests : public QObject
 {
     Q_OBJECT
   private slots:
+    void savedSpectrumBanks_data()
+    {
+        QTest::addColumn<bool>("real");
+        QTest::addColumn<bool>("density");
+        for (const bool real : {false, true})
+            for (const bool density : {false, true})
+                QTest::newRow(qPrintable(QString("real-%1-density-%2").arg(real).arg(density)))
+                    << real << density;
+    }
+    void savedSpectrumBanks()
+    {
+        QFETCH(bool, real);
+        QFETCH(bool, density);
+        QTemporaryDir directory;
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = writeFile(directory.filePath("levels.iq"),
+                                    QByteArray::fromHex(real ? "0040" : "00400000").repeated(512) +
+                                    QByteArray::fromHex(real ? "0020" : "00200000").repeated(512));
+        descriptor.format.kind = real ? rf::SampleKind::Real : rf::SampleKind::Complex;
+        descriptor.sampleRate = 1024;
+        rf::Recording recording(descriptor);
+        rf::DspSettings dsp;
+        dsp.fftSize = 256;
+        dsp.overlapPercent = 0;
+        dsp.scale = density ? rf::PowerScale::Density : rf::PowerScale::Spectrum;
+        const auto first = rf::analyzeAverage(recording, {0, 512}, dsp, {});
+        const auto second = rf::analyzeAverage(recording, {512, 1024}, dsp, {});
+        rf::SavedSpectrum a{"Loud", true, descriptor, recording.identity(), dsp, first};
+        rf::SavedSpectrum b{"Quiet", false, descriptor, recording.identity(), dsp, second};
+        QVERIFY(rf::spectraCompatible(a, b));
+        const auto difference = rf::spectrumDifference(a, b);
+        const auto dc = real ? 0U : 128U;
+        QVERIFY(std::abs(difference[dc] - 6.020599913279624) < 1e-12);
+        const auto inverse = rf::spectrumDifference(b, a);
+        QVERIFY(std::abs(inverse[dc] + 6.020599913279624) < 1e-12);
+
+        // Preserve full precision, 64-bit indices and nonzero coverage counts.
+        auto metadata = std::make_shared<rf::AverageResult>(*first);
+        metadata->range = {9007199254740993ULL, 9007199254741778ULL};
+        metadata->validWindows = 1;
+        metadata->invalidWindows = 1;
+        metadata->boundaryWindows = 1;
+        metadata->trailingFrames = 17;
+        a.average = metadata;
+        rf::Session session;
+        session.recording = descriptor;
+        session.dsp = dsp;
+        session.range = {0, 1024};
+        session.sourceIdentity = recording.identity();
+        session.spectrumBank = {a, b};
+        const auto path = directory.filePath("bank.rfsession.json");
+        rf::saveSession(path, session);
+        QCOMPARE(rf::readJsonObject(path)["schema"].toInt(), 3);
+        const auto restored = rf::readSession(path).spectrumBank;
+        QCOMPARE(restored.size(), std::size_t{2});
+        QCOMPARE(restored[0].name, a.name);
+        QVERIFY(!restored[1].visible);
+        QCOMPARE(restored[0].sourceIdentity, a.sourceIdentity);
+        QCOMPARE(rf::recordingToJson(restored[0].recording), rf::recordingToJson(a.recording));
+        QCOMPARE(restored[0].dsp, dsp);
+        QCOMPARE(restored[0].average->range, metadata->range);
+        QCOMPARE(restored[0].average->validWindows, std::uint64_t{1});
+        QCOMPARE(restored[0].average->invalidWindows, std::uint64_t{1});
+        QCOMPARE(restored[0].average->boundaryWindows, std::uint64_t{1});
+        QCOMPARE(restored[0].average->trailingFrames, std::uint64_t{17});
+        QCOMPARE(restored[0].average->enbwHz, first->enbwHz);
+        QCOMPARE(restored[0].average->frequencies, first->frequencies);
+        QCOMPARE(restored[0].average->averagePower, first->averagePower);
+
+        const auto tracePath = directory.filePath("one.rftrace.json");
+        rf::exportSpectrumTrace(tracePath, a);
+        const auto imported = rf::readSpectrumTrace(tracePath);
+        QCOMPARE(imported.average->averagePower, a.average->averagePower);
+        QCOMPARE(imported.average->range, a.average->range);
+        QVERIFY(rf::spectraCompatible(imported, b));
+        QVERIFY_EXCEPTION_THROWN(rf::exportSpectrumTrace(tracePath, b), std::runtime_error);
+        QCOMPARE(rf::readSpectrumTrace(tracePath).name, a.name);
+        const auto cancelledPath = directory.filePath("cancelled.rftrace.json");
+        int cancellationChecks = 0;
+        const auto cancelBeforeCommit = [&] {
+            // This 256-point fixture has a trace and a bin-encoding checkpoint,
+            // then the publication checkpoint. Linux temporary files may be unnamed.
+            return ++cancellationChecks == 3;
+        };
+        QVERIFY_EXCEPTION_THROWN(rf::exportSpectrumTrace(cancelledPath, a, cancelBeforeCommit),
+                                 rf::Cancelled);
+        QVERIFY(!QFileInfo::exists(cancelledPath));
+        QVERIFY(QDir(directory.path()).entryList({".croccospectrum-export-*"},
+                                                  QDir::Files | QDir::Hidden).isEmpty());
+        QVERIFY_EXCEPTION_THROWN(rf::readSpectrumTrace(tracePath, [] { return true; }), rf::Cancelled);
+        auto invalid = session;
+        invalid.spectrumBank[0].name.clear();
+        QVERIFY_EXCEPTION_THROWN(rf::saveSession(path, invalid), std::runtime_error);
+        QCOMPARE(rf::readSession(path).spectrumBank[0].name, a.name);
+        session.spectrumBank.clear();
+        rf::saveSession(path, session);
+        QCOMPARE(rf::readJsonObject(path)["schema"].toInt(), 1);
+        QVERIFY(rf::readSession(path).spectrumBank.empty());
+    }
+    void savedSpectrumCompatibilityAndInvalidData()
+    {
+        rf::RecordingDescriptor descriptor;
+        descriptor.path = "same.iq";
+        rf::DspSettings dsp;
+        dsp.fftSize = 256;
+        rf::SpectrumEngine engine(descriptor.format.kind, descriptor.sampleRate, dsp);
+        auto average = std::make_shared<rf::AverageResult>();
+        average->range = {0, 256};
+        average->frequencies = engine.frequencies();
+        average->averagePower.assign(256, 0.25);
+        average->validWindows = 1;
+        average->enbwHz = engine.enbwHz();
+        rf::SavedSpectrum trace{"A", true, descriptor, "identity", dsp, average};
+        rf::validateSpectrumBank({trace});
+        auto other = trace;
+        other.sourceIdentity = "changed";
+        QVERIFY(!rf::spectraCompatible(trace, other));
+        QVERIFY_EXCEPTION_THROWN(rf::spectrumDifference(trace, other), std::runtime_error);
+        other = trace;
+        other.recording.format.componentOrder = rf::ComponentOrder::QI;
+        QVERIFY(!rf::spectraCompatible(trace, other));
+        other = trace;
+        other.recording.sampleRate *= 2;
+        QVERIFY(!rf::spectraCompatible(trace, other));
+        for (int field = 0; field < 6; ++field) {
+            other = trace;
+            switch (field) {
+            case 0: other.dsp.fftSize *= 2; break;
+            case 1: other.dsp.window = rf::Window::Rectangular; break;
+            case 2: other.dsp.scale = rf::PowerScale::Density; break;
+            case 3: other.dsp.overlapPercent = 0; break;
+            case 4: other.dsp.removeDc = true; break;
+            case 5: other.dsp.conjugate = true; break;
+            }
+            QVERIFY(!rf::spectraCompatible(trace, other));
+        }
+        for (const auto *field : {"power_f64_le", "valid_windows", "enbw_hz", "end", "visible"}) {
+            auto array = rf::spectrumBankToJson({trace});
+            auto object = array[0].toObject();
+            object[field] = "invalid";
+            array[0] = object;
+            QVERIFY_EXCEPTION_THROWN(rf::spectrumBankFromJson(array), std::runtime_error);
+        }
+        auto array = rf::spectrumBankToJson({trace});
+        auto object = array[0].toObject();
+        auto encoded = object["power_f64_le"].toString();
+        encoded[0] = '?';
+        object["power_f64_le"] = encoded;
+        array[0] = object;
+        QVERIFY_EXCEPTION_THROWN(rf::spectrumBankFromJson(array), std::runtime_error);
+        array = rf::spectrumBankToJson({trace});
+        object = array[0].toObject();
+        auto settings = object["dsp"].toObject();
+        settings.remove("window");
+        object["dsp"] = settings;
+        array[0] = object;
+        QVERIFY_EXCEPTION_THROWN(rf::spectrumBankFromJson(array), std::runtime_error);
+        auto b = std::make_shared<rf::AverageResult>(*average);
+        b->averagePower[0] = 0;
+        average->averagePower[1] = 0;
+        average->averagePower[2] = b->averagePower[2] = 0;
+        other = trace;
+        other.average = b;
+        const auto difference = rf::spectrumDifference(trace, other);
+        QCOMPARE(difference[0], std::numeric_limits<double>::infinity());
+        QCOMPARE(difference[1], -std::numeric_limits<double>::infinity());
+        QVERIFY(std::isnan(difference[2]));
+        average->averagePower[0] = -1;
+        QVERIFY_EXCEPTION_THROWN(rf::validateSpectrumBank({trace}), std::runtime_error);
+        average->averagePower[0] = std::numeric_limits<double>::infinity();
+        QVERIFY_EXCEPTION_THROWN(rf::validateSpectrumBank({trace}), std::runtime_error);
+    }
+    void savedSpectrumLargeArraysAndBudget()
+    {
+        QTemporaryDir directory;
+        rf::SavedSpectrum trace;
+        trace.name = "Large FFT";
+        trace.sourceIdentity = "identity";
+        trace.recording.path = "large.iq";
+        trace.recording.sampleRate = 1048576;
+        trace.dsp.fftSize = 1048576;
+        auto average = std::make_shared<rf::AverageResult>();
+        average->range = {0, 1048576};
+        average->validWindows = 1;
+        average->enbwHz = 1.5;
+        average->frequencies.resize(1048576);
+        average->averagePower.assign(1048576, 0.125);
+        for (std::size_t bin = 0; bin < average->frequencies.size(); ++bin)
+            average->frequencies[bin] = static_cast<double>(bin) - 524288;
+        trace.average = average;
+        rf::Session session;
+        session.recording = trace.recording;
+        session.range = average->range;
+        session.spectrumBank = {trace};
+        const auto path = directory.filePath("large.rfsession.json");
+        rf::saveSession(path, session);
+        QVERIFY(QFileInfo(path).size() > rf::maxMetadataBytes);
+        QCOMPARE(rf::readSession(path).spectrumBank[0].average->averagePower, average->averagePower);
+        QVERIFY_EXCEPTION_THROWN(rf::validateSpectrumBank(std::vector<rf::SavedSpectrum>(5, trace)),
+                                 std::runtime_error);
+        auto array = rf::spectrumBankToJson({trace});
+        const auto item = array[0].toObject();
+        for (int copy = 0; copy < 4; ++copy)
+            array.append(item);
+        QVERIFY_EXCEPTION_THROWN(rf::spectrumBankFromJson(array), std::runtime_error);
+        auto legacy = rf::readJsonObject(path, rf::spectrumBankJsonBytes);
+        legacy["schema"] = 1;
+        const auto legacyPath = directory.filePath("oversize-legacy.rfsession.json");
+        rf::writeJsonAtomic(legacyPath, legacy, rf::spectrumBankJsonBytes);
+        QVERIFY_EXCEPTION_THROWN(rf::readSession(legacyPath), std::runtime_error);
+    }
     void spectralPeakTones_data()
     {
         QTest::addColumn<int>("window");

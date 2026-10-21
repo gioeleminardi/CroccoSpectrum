@@ -11,6 +11,7 @@ std::uint64_t jsonUnsigned(const QJsonValue &value, const QString &field);
 QJsonObject recordingToJson(const RecordingDescriptor &descriptor);
 RecordingDescriptor recordingFromJson(const QJsonObject &object);
 RecordingDescriptor readSigMf(const QString &metadataPath);
-QJsonObject readJsonObject(const QString &path);
-void writeJsonAtomic(const QString &path, const QJsonObject &object);
+QJsonObject readJsonObject(const QString &path, qint64 maximumBytes = maxMetadataBytes);
+void writeJsonAtomic(const QString &path, const QJsonObject &object,
+                     qint64 maximumBytes = maxMetadataBytes);
 } // namespace rf

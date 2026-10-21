@@ -31,6 +31,17 @@ QT_QPA_PLATFORM=xcb build/debug/rf-ui-tests dockDragPlacement maximizedFloatingD
 
 These desktop checks require a live display; headless runs skip them.
 
+Saved spectrum banks have core coverage for real/complex spectrum/PSD differences,
+lossless trace/session round trips (including indices above 2^53 and maximum FFT
+length), invalid metadata/arrays, compatibility and storage limits. The focused UI
+workflow covers capture, rename, visibility, overlays, differences, import/export,
+deletion, session restore and setting changes. Render the panel at both scales:
+
+```sh
+QT_QPA_PLATFORM=xcb RF_TEST_SCREENSHOT_DIR=/tmp/bank-normal build/debug/rf-ui-tests savedSpectrumBankWorkflow savedSpectrumBankSettingsCompatibility
+QT_QPA_PLATFORM=xcb QT_SCALE_FACTOR=2 RF_TEST_SCREENSHOT_DIR=/tmp/bank-doubled build/debug/rf-ui-tests savedSpectrumBankWorkflow savedSpectrumBankSettingsCompatibility
+```
+
 ASAN/UBSAN require the runtime matching the compiler. Use the Ubuntu container
 from README when the host compiler installation lacks matching sanitizer libs.
 Configure `-DRF_ENABLE_ASAN=ON` in a separate build and run the CTest suites.

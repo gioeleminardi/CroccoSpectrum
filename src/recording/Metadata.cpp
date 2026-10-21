@@ -55,27 +55,31 @@ std::uint64_t jsonUnsigned(const QJsonValue &value, const QString &field)
     fail("Invalid or overflowing unsigned field: " + field);
 }
 
-QJsonObject readJsonObject(const QString &path)
+QJsonObject readJsonObject(const QString &path, qint64 maximumBytes)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         fail("Cannot read metadata/settings: " + file.errorString());
-    if (file.size() > maxMetadataBytes)
-        fail("Metadata/settings exceed the 4 MiB limit");
+    if (file.size() > maximumBytes)
+        fail(QString("Metadata/settings exceed the %1 MiB limit").arg(maximumBytes / (1024 * 1024)));
     QJsonParseError error;
-    const auto document = QJsonDocument::fromJson(file.read(maxMetadataBytes + 1), &error);
+    const auto bytes = file.read(maximumBytes + 1);
+    if (bytes.size() > maximumBytes)
+        fail(QString("Metadata/settings exceed the %1 MiB limit").arg(maximumBytes / (1024 * 1024)));
+    const auto document = QJsonDocument::fromJson(bytes, &error);
     if (error.error != QJsonParseError::NoError || !document.isObject())
         fail("Invalid JSON: " + error.errorString());
     return document.object();
 }
 
-void writeJsonAtomic(const QString &path, const QJsonObject &object)
+void writeJsonAtomic(const QString &path, const QJsonObject &object, qint64 maximumBytes)
 {
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Indented);
     // Saving must obey the same bound as reading. Otherwise a large notes/
     // annotations session could successfully replace a file we cannot reopen.
-    if (bytes.size() > maxMetadataBytes)
-        fail("Settings/metadata exceed the 4 MiB limit; original file preserved");
+    if (bytes.size() > maximumBytes)
+        fail(QString("Settings/metadata exceed the %1 MiB limit; original file preserved")
+                 .arg(maximumBytes / (1024 * 1024)));
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         fail("Cannot save: " + file.errorString());
